@@ -1,4 +1,5 @@
 // 従業員の取得・追加・氏名管理を行う
+//console.log()
 
 //　従業員一覧を取得する関数
 function getEmployees() {
@@ -7,10 +8,18 @@ function getEmployees() {
   
   //データが入っている最後の行番号を取得
   const last_row = empSheet.getLastRow()
-  var empRange = empSheet.getRange(2, 1, last_row, 2);// シートの中のヘッダーを除く範囲を取得
-  var empValues = empRange.getValues();// [従業員番号, 名前] の配列をまとめて取得
-  var employees = [];
-  for (var i = 0; i < empValues.length; i++) {
+  
+  //範囲取得(2行目から、A列から、~行分、2列分)
+  const empRange = empSheet.getRange(2, 1, last_row - 1, 2)
+
+  //全員分の[従業員番号, 名前]を2次元配列で取得
+  const empValues = empRange.getValues();// の配列をまとめて取得
+
+  //従業員の最終結果を格納する配列を用意(letじゃない理由はpushは配列を入れ替えるのではなく、加えるだけだから)
+  const employees = [];
+
+  //[{id: 1, name: 'freee　花子' },...]のようにオブジェクト要素を持つ配列を作成。またIdか名前が空白のものは加えない。
+  for (let i = 0; i < empValues.length; i++) {
     var empId = empValues[i][0];
     var empName = empValues[i][1];
     if (empId === "" || empName === "") { // 従業員番号か名前が空の行は一覧に含めない
@@ -21,6 +30,8 @@ function getEmployees() {
       'name': empName
     })
   }
+  console.log(empValues)
+  console.log(employees)
   return employees
 }
 
