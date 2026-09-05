@@ -1,3 +1,5 @@
+// 従業員の取得・追加・氏名管理を行う
+
 function getEmployees() {
   var empSheet = getSheet(SHEET_NAMES.EMPLOYEES)
   var last_row = empSheet.getLastRow()

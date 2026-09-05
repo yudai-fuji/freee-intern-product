@@ -1,3 +1,5 @@
+// 出退勤・休憩・労働時間・給与計算を行う
+
 function recordClock(empId, type) {
   if (CLOCK_TYPES.indexOf(type) === -1) {
     throw new Error('不正な打刻種別です')

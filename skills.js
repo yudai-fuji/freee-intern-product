@@ -1,3 +1,5 @@
+// 従業員のスキル評価・更新日を管理する
+
 function ensureSkillSheetHeader(sheet) {
   var headerRange = sheet.getRange(1, 1, 1, SKILL_SHEET_HEADER.length);
   var currentHeader = headerRange.getValues()[0];

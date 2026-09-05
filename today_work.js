@@ -1,3 +1,5 @@
+// その日の担当ポジション・確認事項を管理する
+
 function ensureTodayWorkSheet() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(SHEET_NAMES.TODAY_WORK);

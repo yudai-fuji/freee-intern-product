@@ -1,3 +1,5 @@
+//　アプリ全体で共通して使う定数・設定値をまとめる
+
 var SHEET_NAMES = {
   CHECK_RESULT: 'チェック結果',
   EMPLOYEES: '従業員名簿',
