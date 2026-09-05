@@ -1,6 +1,6 @@
 //　アプリ全体で共通して使う定数・設定値をまとめる
 
-var SHEET_NAMES = {
+const SHEET_NAMES = {
   CHECK_RESULT: 'チェック結果',
   EMPLOYEES: '従業員名簿',
   TIME_CLOCKS: '打刻履歴',
@@ -9,9 +9,9 @@ var SHEET_NAMES = {
   TODAY_WORK: '本日の業務'
 };
 
-var SKILL_ITEMS = ['接客', 'レジ', 'バー', '厨房', '肉の仕込み', '締め作業'];
+const SKILL_ITEMS = ['接客', 'レジ', 'バー', '厨房', '肉の仕込み', '締め作業'];
 
-var SKILL_SHEET_HEADER = [
+const SKILL_SHEET_HEADER = [
   '従業員ID', '氏名',
   '接客評価', '更新日',
   'レジ評価', '更新日',
@@ -21,16 +21,16 @@ var SKILL_SHEET_HEADER = [
   '締め作業評価', '更新日'
 ];
 
-var SKILL_LEVELS = ['◎', '○', '△', '×'];
+const SKILL_LEVELS = ['◎', '○', '△', '×'];
 
-var TIME_ZONE = 'Asia/Tokyo';
+const TIME_ZONE = 'Asia/Tokyo';
 
-var UNRECORDED_LABEL = '未打刻';
+const UNRECORDED_LABEL = '未打刻';
 
-var NO_VALUE_LABEL = '-';
+const NO_VALUE_LABEL = '-';
 
-var CLOCK_TYPES = ['出勤', '退勤', '休憩開始', '休憩終了'];
+const CLOCK_TYPES = ['出勤', '退勤', '休憩開始', '休憩終了'];
 
-var POSITION_ITEMS = ['ホール', '厨房', '肉の仕込み', '締め作業'];
+const POSITION_ITEMS = ['ホール', '厨房', '肉の仕込み', '締め作業'];
 
-var TODAY_WORK_SHEET_HEADER = ['日付', '従業員ID', 'ポジション', '確認事項'];
+const TODAY_WORK_SHEET_HEADER = ['日付', '従業員ID', 'ポジション', '確認事項'];

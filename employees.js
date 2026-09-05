@@ -1,8 +1,12 @@
 // 従業員の取得・追加・氏名管理を行う
 
+//　従業員一覧を取得する関数
 function getEmployees() {
-  var empSheet = getSheet(SHEET_NAMES.EMPLOYEES)
-  var last_row = empSheet.getLastRow()
+  //従業員名簿のシートを取得
+  const empSheet = getSheet(SHEET_NAMES.EMPLOYEES)
+  
+  //データが入っている最後の行番号を取得
+  const last_row = empSheet.getLastRow()
   var empRange = empSheet.getRange(2, 1, last_row, 2);// シートの中のヘッダーを除く範囲を取得
   var empValues = empRange.getValues();// [従業員番号, 名前] の配列をまとめて取得
   var employees = [];
@@ -20,6 +24,7 @@ function getEmployees() {
   return employees
 }
 
+// 従業員を追加
 function addEmployee(lastName, firstName) {
   lastName = String(lastName).trim();
   firstName = String(firstName).trim();
@@ -54,6 +59,7 @@ function addEmployee(lastName, firstName) {
   return '従業員を追加しました'
 }
 
+// 従業員IDと名前の対応表をつくる
 function getEmployeeNameMap() {
   var employees = getEmployees();
   var nameByEmpId = {};
