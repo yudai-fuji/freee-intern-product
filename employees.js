@@ -20,8 +20,8 @@ function getEmployees() {
 
   //[{id: 1, name: 'freee　花子' },...]のようにオブジェクト要素を持つ配列を作成。またIdか名前が空白のものは加えない。
   for (let i = 0; i < empValues.length; i++) {
-    var empId = empValues[i][0];
-    var empName = empValues[i][1];
+    const empId = empValues[i][0];
+    const empName = empValues[i][1];
     if (empId === "" || empName === "") { // 従業員番号か名前が空の行は一覧に含めない
       continue;
     }
@@ -30,30 +30,41 @@ function getEmployees() {
       'name': empName
     })
   }
-  console.log(empValues)
-  console.log(employees)
   return employees
 }
 
 // 従業員を追加
 function addEmployee(lastName, firstName) {
+  //.trim()で文字列に含まれる余分な空白を削除
   lastName = String(lastName).trim();
   firstName = String(firstName).trim();
+
   if (lastName === "" || firstName === "") {
     throw new Error('姓と名を入力してください')
   }
 
-  var empSheet = getSheet(SHEET_NAMES.EMPLOYEES)
-  var last_row = empSheet.getLastRow()
-  var empRange = empSheet.getRange(2, 1, last_row, 2);
-  var empValues = empRange.getValues();
+  //'従業員名簿'をスプシから取得
+  const empSheet = getSheet(SHEET_NAMES.EMPLOYEES)
 
-  var targetRow = -1;// 空き番号が見つかったシート上の行番号
+  //データが入っている最後の行番号を取得
+  const last_row = empSheet.getLastRow()
+
+  //(開始行, 開始列, 行数, 列数)
+  const empRange = empSheet.getRange(2, 1, last_row - 1, 2);
+
+  //全員分の[従業員番号, 名前]を2次元配列で取得
+  const empValues = empRange.getValues();
+  console.log(empValues)
+  console.log(empValues.length)
+  
+  //このあとに使う変数、-1なのはまだ見つかってないことを明示する一般的な使い方らしい
+  let targetRow = -1
+
   for (var i = 0; i < empValues.length; i++) {
-    var empId = empValues[i][0];
-    var empName = empValues[i][1];
+    const empId = empValues[i][0];
+    const empName = empValues[i][1];
     if (empId !== "" && empName === "") {
-      targetRow = i + 2;// ヘッダー行の分だけシート上の行番号は配列の添字より2大きい
+      targetRow = i + 2;
       break;
     }
   }
@@ -62,8 +73,10 @@ function addEmployee(lastName, firstName) {
     throw new Error('空いている従業員番号がありません')
   }
 
-  var partTimeMark = '\u25CB'; // U+25CB WHITE CIRCLE。既存データの○と完全に一致させるため、コードポイントで指定して誤字を防ぐ
+  //〇のUniコードを代入
+  const partTimeMark = '\u25CB'
 
+  //対象の行の2列目に名前、3列目に〇をセット
   empSheet.getRange(targetRow, 2).setValue(lastName + ' ' + firstName)
   empSheet.getRange(targetRow, 3).setValue(partTimeMark)
 
@@ -72,10 +85,16 @@ function addEmployee(lastName, firstName) {
 
 // 従業員IDと名前の対応表をつくる
 function getEmployeeNameMap() {
-  var employees = getEmployees();
-  var nameByEmpId = {};
-  for (var i = 0; i < employees.length; i++) {
-    nameByEmpId[String(employees[i]['id'])] = employees[i]['name'];
+  //上の関数から取得するものを参照して
+  const employees = getEmployees();
+
+  //空のオブジェクトを作成
+  const nameByEmpId = {};
+
+  //[employees[i].id]というキーに、名前を対応させる。ちなみにキーは文字列なのでString()を使用。
+  for (let i = 0; i < employees.length; i++) {
+    nameByEmpId[String(employees[i].id)] = employees[i].name;
   }
+  
   return nameByEmpId;
 }
