@@ -1,35 +1,57 @@
 // 出退勤・休憩・労働時間・給与計算を行う
 
+//打刻履歴をおこなう
 function recordClock(empId, type) {
-  if (CLOCK_TYPES.indexOf(type) === -1) {
-    throw new Error('不正な打刻種別です')
-  }
-  var timeClocksSheet = getSheet(SHEET_NAMES.TIME_CLOCKS)
-  var targetRow = timeClocksSheet.getLastRow() + 1
-  var now = new Date()
-  timeClocksSheet.getRange(targetRow, 1).setValue(empId)
-  timeClocksSheet.getRange(targetRow, 2).setValue(type)
-  timeClocksSheet.getRange(targetRow, 3).setValue(now)
 
-  var formattedTime = Utilities.formatDate(now, TIME_ZONE, "HH:mm:ss")
-  return type + 'を記録しました（' + formattedTime + '）'
+  //打刻履歴に引数の種別があれば0,なければ-1
+  if (CLOCK_TYPES.indexOf(type) === -1) {
+    throw new Error('不正な打刻種別です');
+  }
+
+  //"打刻履歴"シートを取得
+  const timeClocksSheet = getSheet(SHEET_NAMES.TIME_CLOCKS);
+
+  //書き込み先の空白の行を指定
+  const targetRow = timeClocksSheet.getLastRow() + 1;
+
+  //時刻インスタンスを作成
+  const now = new Date();
+
+  //先ほどの行の 1列目:Id、2列目:種別、3列目:現在時刻 を書き込む
+  timeClocksSheet.getRange(targetRow, 1).setValue(empId);
+  timeClocksSheet.getRange(targetRow, 2).setValue(type);
+  timeClocksSheet.getRange(targetRow, 3).setValue(now);
+
+  //now の日時を、Asia/Tokyo の時刻として、時:分:秒 形式の文字列に変換
+  const formattedTime = Utilities.formatDate(now, TIME_ZONE, "HH:mm:ss");
+  
+  return type + `を記録しました（${formattedTime}）`;
 }
 
+//
 function resetClockRecords() {
-  var sheet = getSheet(SHEET_NAMES.TIME_CLOCKS);
-  var lastRow = sheet.getLastRow();
+  const sheet = getSheet(SHEET_NAMES.TIME_CLOCKS);
+  const lastRow = sheet.getLastRow();
 
+  //対象の範囲をすべて削除
   if (lastRow >= 2) {
     sheet.getRange(2, 1, lastRow - 1, 3).clearContent();
   }
 }
 
+
+
 function getTodayAttendances() {
-  var now = new Date();
-  var today = Utilities.formatDate(now, TIME_ZONE, 'yyyy/MM/dd');
-  var weekdayLabels = ['日', '月', '火', '水', '木', '金', '土'];
-  var dateLabel = Utilities.formatDate(now, TIME_ZONE, 'yyyy年M月d日') +
-    '（' + weekdayLabels[now.getDay()] + '）';
+  const now = new Date();
+  
+  //プログラム内部用の日付
+  const today = Utilities.formatDate(now, TIME_ZONE, 'yyyy/MM/dd');
+  
+  const weekdayLabels = ['日', '月', '火', '水', '木', '金', '土'];
+
+  //now.getDay()で数字を取得。日曜日なら0。
+  const dateLabel = Utilities.formatDate(now, TIME_ZONE, 'yyyy年M月d日') +
+    `（${weekdayLabels[now.getDay()]}）`;
 
   return {
     'date': dateLabel,
@@ -38,47 +60,59 @@ function getTodayAttendances() {
 }
 
 function buildAttendances(targetDate) {
-  var timeClocksSheet = getSheet(SHEET_NAMES.TIME_CLOCKS);
-  var lastRow = timeClocksSheet.getLastRow();
-  if (lastRow < 2) { // ヘッダー行しか無い＝打刻が1件も無い
+  
+  const timeClocksSheet = getSheet(SHEET_NAMES.TIME_CLOCKS);
+  const lastRow = timeClocksSheet.getLastRow();
+
+  //ヘッダーしかないので空の配列を返す
+  if (lastRow < 2) {
     return [];
   }
 
-  // [従業員番号, 種別, 日時] の配列をまとめて取得する
-  var clockValues = timeClocksSheet.getRange(2, 1, lastRow - 1, 3).getValues();
+  //[Id,種別,日付]の二次元配列を返す
+  const clockValues = timeClocksSheet.getRange(2, 1, lastRow - 1, 3).getValues();
 
-  var eventsByEmpId = {}; // 従業員番号 -> その日の打刻イベント { type, time } の配列
-  var empIds = []; // 集計結果を配列に戻すための従業員番号の一覧
+  const eventsByEmpId = {}; 
+  const empIds = []; 
 
-  for (var i = 0; i < clockValues.length; i++) {
-    var empId = clockValues[i][0];
-    var type = clockValues[i][1];
-    var clockedAt = clockValues[i][2];
+  
 
-    // 従業員番号か日時が欠けている行は、打刻として成立していないので集計しない
+  for (let i = 0; i < clockValues.length; i++) {
+    const empId = clockValues[i][0];
+    const type = clockValues[i][1];
+    const clockedAt = clockValues[i][2];
+
+    //instanceofはこの変数の値はDateオブジェクトか？
     if (empId === '' || !(clockedAt instanceof Date)) {
       continue;
     }
+
+    //まあ丁寧すぎるチェック
     if (Utilities.formatDate(clockedAt, TIME_ZONE, 'yyyy/MM/dd') !== targetDate) {
-      continue; // 対象日以外の打刻は無視する
+      continue; 
     }
 
-    if (!eventsByEmpId[empId]) {
-      eventsByEmpId[empId] = [];
+    if (!eventsByEmpId[String(empId)]) {
+
+      //{1: [],...}
+      eventsByEmpId[String(empId)] = [];
+
+      //重複なしで、その日に打刻が存在した従業員番号の配列を作成
       empIds.push(empId);
     }
-    eventsByEmpId[empId].push({ 'type': type, 'time': clockedAt });
+    eventsByEmpId[String(empId)].push({ 'type': type, 'time': clockedAt });
   }
 
-  var summaryByEmpId = {}; // 従業員番号 -> summarizeDayEvents() の結果
-  for (var e = 0; e < empIds.length; e++) {
-    summaryByEmpId[empIds[e]] = summarizeDayEvents(eventsByEmpId[empIds[e]]);
+  const summaryByEmpId = {}; 
+
+  for (let e = 0; e < empIds.length; e++) {
+    summaryByEmpId[String(empIds[e])] = summarizeDayEvents(eventsByEmpId[String(empIds[e])]);
   }
 
-  // 出勤が早い順に並べる。出勤の打刻が無い従業員は並べようが無いので末尾へ回す
+  
   empIds.sort(function (a, b) {
-    var aClockInAt = summaryByEmpId[a].clockInAt;
-    var bClockInAt = summaryByEmpId[b].clockInAt;
+    var aClockInAt = summaryByEmpId[String(a)].clockInAt;
+    var bClockInAt = summaryByEmpId[String(b)].clockInAt;
     if (aClockInAt === null && bClockInAt === null) {
       return 0;
     }
@@ -93,18 +127,17 @@ function buildAttendances(targetDate) {
 
   var nameByEmpId = getEmployeeNameMap();
   var rateByEmpId = getEmployeeRateMap();
-  var isHolidayRate = isHolidayDate(targetDate); // 土日、または「祝日」シートに登録された日なら休日加給を適用する
+  var isHolidayRate = isHolidayDate(targetDate);
 
   var attendances = [];
   for (var j = 0; j < empIds.length; j++) {
     var id = empIds[j];
-    var summary = summaryByEmpId[id];
+    var summary = summaryByEmpId[String(id)];
     var actualMinutes = calcActualWorkingMinutes(summary.clockInAt, summary.clockOutAt, summary.breakMinutes);
     var rate = rateByEmpId[String(id)] || { 'base': 0, 'holidayBonus': 0 };
 
     attendances.push({
-      // 名簿から消された従業員の打刻が残っていても行が消えないよう、番号を出して気付けるようにする
-      'name': nameByEmpId[id] || ('従業員番号 ' + id),
+      'name': nameByEmpId[String(id)] || ('従業員番号 ' + id),
       'clockIn': formatClockTime(summary.clockInAt),
       'clockOut': formatClockTime(summary.clockOutAt),
       'breakTime': formatBreakTime(summary.breakMinutes, summary.breakOngoing),
