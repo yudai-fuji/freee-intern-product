@@ -59,7 +59,7 @@ function addEmployee(lastName, firstName) {
   //このあとに使う変数、-1なのはまだ見つかってないことを明示する一般的な使い方らしい
   let targetRow = -1;
 
-  for (var i = 0; i < empValues.length; i++) {
+  for (let i = 0; i < empValues.length; i++) {
     const empId = empValues[i][0];
     const empName = empValues[i][1];
     if (empId !== "" && empName === "") {

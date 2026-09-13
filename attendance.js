@@ -109,10 +109,10 @@ function buildAttendances(targetDate) {
     summaryByEmpId[String(empIds[e])] = summarizeDayEvents(eventsByEmpId[String(empIds[e])]);
   }
 
-  
+  //functionは比較関数。empIdsの中身から2つとって大きさを比較。returnが正ならb a、負ならa bの順にする。
   empIds.sort(function (a, b) {
-    var aClockInAt = summaryByEmpId[String(a)].clockInAt;
-    var bClockInAt = summaryByEmpId[String(b)].clockInAt;
+    const aClockInAt = summaryByEmpId[String(a)].clockInAt;
+    const bClockInAt = summaryByEmpId[String(b)].clockInAt;
     if (aClockInAt === null && bClockInAt === null) {
       return 0;
     }
@@ -125,16 +125,16 @@ function buildAttendances(targetDate) {
     return aClockInAt.getTime() - bClockInAt.getTime();
   });
 
-  var nameByEmpId = getEmployeeNameMap();
-  var rateByEmpId = getEmployeeRateMap();
-  var isHolidayRate = isHolidayDate(targetDate);
+  const nameByEmpId = getEmployeeNameMap();
+  const rateByEmpId = getEmployeeRateMap();
+  const isHolidayRate = isHolidayDate(targetDate);
 
-  var attendances = [];
-  for (var j = 0; j < empIds.length; j++) {
-    var id = empIds[j];
-    var summary = summaryByEmpId[String(id)];
-    var actualMinutes = calcActualWorkingMinutes(summary.clockInAt, summary.clockOutAt, summary.breakMinutes);
-    var rate = rateByEmpId[String(id)] || { 'base': 0, 'holidayBonus': 0 };
+  const attendances = [];
+  for (let j = 0; j < empIds.length; j++) {
+    const id = empIds[j];
+    const summary = summaryByEmpId[String(id)];
+    const actualMinutes = calcActualWorkingMinutes(summary.clockInAt, summary.clockOutAt, summary.breakMinutes);
+    const rate = rateByEmpId[String(id)] || { 'base': 0, 'holidayBonus': 0 };
 
     attendances.push({
       'name': nameByEmpId[String(id)] || ('従業員番号 ' + id),
@@ -151,21 +151,21 @@ function buildAttendances(targetDate) {
 function summarizeDayEvents(events) {
   events.sort(function (a, b) { return a.time.getTime() - b.time.getTime(); });
 
-  var clockInAt = null;
-  var clockOutAt = null;
-  var breakMinutes = 0;
-  var breakStartAt = null;
+  let clockInAt = null;
+  let clockOutAt = null;
+  let breakMinutes = 0;
+  let breakStartAt = null;
 
-  for (var i = 0; i < events.length; i++) {
-    var ev = events[i];
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i];
     if (ev.type === '出勤') {
       if (clockInAt === null) {
         clockInAt = ev.time;
       }
     } else if (ev.type === '退勤') {
-      clockOutAt = ev.time; // 時刻順に処理しているので、上書きしていけば最も遅い退勤が残る
+      clockOutAt = ev.time; 
     } else if (ev.type === '休憩開始') {
-      if (breakStartAt === null) { // 休憩中に重ねて押された場合は無視する
+      if (breakStartAt === null) { 
         breakStartAt = ev.time;
       }
     } else if (ev.type === '休憩終了') {
@@ -188,8 +188,8 @@ function calcActualWorkingMinutes(clockInAt, clockOutAt, breakMinutes) {
   if (clockInAt === null || clockOutAt === null) {
     return null;
   }
-  var grossMinutes = Math.floor((clockOutAt.getTime() - clockInAt.getTime()) / (60 * 1000));
-  var actualMinutes = grossMinutes - breakMinutes;
+  const grossMinutes = Math.floor((clockOutAt.getTime() - clockInAt.getTime()) / (60 * 1000));
+  const actualMinutes = grossMinutes - breakMinutes;
   if (actualMinutes < 0) {
     return null;
   }
@@ -197,15 +197,15 @@ function calcActualWorkingMinutes(clockInAt, clockOutAt, breakMinutes) {
 }
 
 function getEmployeeRateMap() {
-  var empSheet = getSheet(SHEET_NAMES.EMPLOYEES);
-  var lastRow = empSheet.getLastRow();
-  var rateByEmpId = {};
+  const empSheet = getSheet(SHEET_NAMES.EMPLOYEES);
+  const lastRow = empSheet.getLastRow();
+  const rateByEmpId = {};
   if (lastRow < 2) {
     return rateByEmpId;
   }
-  var empValues = empSheet.getRange(2, 1, lastRow - 1, 5).getValues(); // A:従業員番号 ... D:基本時給 E:休日加給
-  for (var i = 0; i < empValues.length; i++) {
-    var empId = empValues[i][0];
+  const empValues = empSheet.getRange(2, 1, lastRow - 1, 5).getValues(); // A:従業員番号 ... D:基本時給 E:休日加給
+  for (let i = 0; i < empValues.length; i++) {
+    const empId = empValues[i][0];
     if (empId === '') {
       continue;
     }
@@ -218,8 +218,8 @@ function getEmployeeRateMap() {
 }
 
 function isHolidayDate(targetDate) {
-  var date = new Date(targetDate);
-  var isWeekend = (date.getDay() === 0 || date.getDay() === 6);
+  const date = new Date(targetDate);
+  const isWeekend = (date.getDay() === 0 || date.getDay() === 6);
   if (isWeekend) {
     return true;
   }
@@ -227,18 +227,18 @@ function isHolidayDate(targetDate) {
 }
 
 function getHolidayDateSet() {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.HOLIDAYS);
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.HOLIDAYS);
   if (!sheet) {
     return {};
   }
-  var lastRow = sheet.getLastRow();
+  const lastRow = sheet.getLastRow();
   if (lastRow < 1) {
     return {};
   }
-  var values = sheet.getRange(1, 1, lastRow, 1).getValues();
-  var holidaySet = {};
-  for (var i = 0; i < values.length; i++) {
-    var value = values[i][0];
+  const values = sheet.getRange(1, 1, lastRow, 1).getValues();
+  const holidaySet = {};
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i][0];
     if (value instanceof Date) {
       holidaySet[Utilities.formatDate(value, TIME_ZONE, 'yyyy/MM/dd')] = true;
     }
@@ -257,8 +257,8 @@ function formatMinutesLabel(totalMinutes) {
   if (totalMinutes === null) {
     return NO_VALUE_LABEL;
   }
-  var hours = Math.floor(totalMinutes / 60);
-  var minutes = totalMinutes % 60;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
   if (hours === 0) {
     return minutes + '分';
   }
@@ -282,7 +282,7 @@ function formatEstimatedWage(actualMinutes, rate, isHolidayRate) {
   if (actualMinutes === null) {
     return NO_VALUE_LABEL;
   }
-  var hourlyRate = rate.base + (isHolidayRate ? rate.holidayBonus : 0);
-  var wage = Math.floor(actualMinutes / 60 * hourlyRate);
+  const hourlyRate = rate.base + (isHolidayRate ? rate.holidayBonus : 0);
+  const wage = Math.floor(actualMinutes / 60 * hourlyRate);
   return wage.toLocaleString('ja-JP') + '円';
 }

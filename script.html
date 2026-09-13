@@ -271,6 +271,9 @@
         } else if (sectionName === 'skill') {
           document.getElementById('section_skill').style.display = 'block';
           loadSkills(); // 開くたびに最新のスキル情報を読み直す
+        } else if (sectionName === 'shift') {
+          document.getElementById('section_shift').style.display = 'block';
+          loadShiftMonth(shiftYear, shiftMonth); // 開くたびに表示中の月のシフト状況を読み直す
         } else {
           document.getElementById('preparing_heading').textContent = navItem.textContent;
           document.getElementById('section_preparing').style.display = 'block';
@@ -641,6 +644,714 @@
           messageEl.classList.add('error');
         } else {
           messageEl.classList.remove('error');
+        }
+      }
+
+      // 店長画面：シフト作成
+      // カレンダーで表示中の年月。初回はサーバーが返す今日の年月に合わせるため null から始める
+      let shiftYear = null;
+      let shiftMonth = null;
+      let shiftSelectedDate = null; // 選択中の日付キー（'yyyy/MM/dd'）
+      let shiftMonthDays = {}; // 日付キーごとの { status, warnings }
+      let shiftTodayKey = ''; // サーバー側で判定した今日の日付キー
+      let shiftDayEmployees = []; // 編集欄の従業員selectに出す一覧
+      let shiftDayRequestId = 0; // 日別データの取得が前後したとき、古い結果を捨てるための番号
+      let isShiftSaving = false; // 二重保存を防ぐ
+
+      const SHIFT_WEEKDAY_LABELS = ['日', '月', '火', '水', '木', '金', '土'];
+
+      /**
+       * 指定した年月のシフト状況（日付ごとの状態と確認事項）をサーバーから取得する
+       * year・month に null を渡した場合は、サーバー側で今日を含む月が選ばれる
+       */
+      function loadShiftMonth(year, month) {
+        setShiftMonthButtonsDisabled(true);
+        showShiftMessage('読み込み中...', false);
+
+        google.script.run
+          .withSuccessHandler(function (result) {
+            setShiftMonthButtonsDisabled(false);
+            shiftYear = result.year;
+            shiftMonth = result.month;
+            shiftTodayKey = result.today;
+            shiftMonthDays = result.days;
+
+            // 表示中の月から外れた日付を選んだままにしない
+            if (shiftSelectedDate !== null &&
+                shiftSelectedDate.indexOf(buildShiftMonthPrefix(result.year, result.month)) !== 0) {
+              shiftSelectedDate = null;
+              hideShiftDetail();
+            }
+
+            showShiftMessage('', false);
+            renderShiftCalendar();
+          })
+          .withFailureHandler(function (error) {
+            // 通信に失敗しても前月・翌月ボタンは押せる状態に戻す（表示中の年月は変更しない）
+            setShiftMonthButtonsDisabled(false);
+            showShiftMessage('エラー: ' + error.message, true);
+          })
+          .getShiftMonth(year, month);
+      }
+
+      function setShiftMonthButtonsDisabled(disabled) {
+        document.getElementById('shift_prev_btn').disabled = disabled;
+        document.getElementById('shift_next_btn').disabled = disabled;
+      }
+
+      /**
+       * 前月・翌月ボタンで表示月を切り替え、その月のデータを取り直す
+       */
+      function changeShiftMonth(offset) {
+        if (shiftYear === null || shiftMonth === null) {
+          // 最初の読み込みに失敗して表示中の年月が分からない状態。
+          // ボタンが何も起きないまま終わらないよう、今月の取得からやり直す
+          loadShiftMonth(null, null);
+          return;
+        }
+        let nextYear = shiftYear;
+        let nextMonth = shiftMonth + offset;
+        if (nextMonth < 1) {
+          nextMonth = 12;
+          nextYear = nextYear - 1;
+        } else if (nextMonth > 12) {
+          nextMonth = 1;
+          nextYear = nextYear + 1;
+        }
+        loadShiftMonth(nextYear, nextMonth);
+      }
+
+      function buildShiftMonthPrefix(year, month) {
+        return year + '/' + ('0' + month).slice(-2) + '/';
+      }
+
+      function buildShiftDateKey(year, month, day) {
+        return buildShiftMonthPrefix(year, month) + ('0' + day).slice(-2);
+      }
+
+      /**
+       * 表示中の月の日付セルを日曜〜土曜の7列で描画する
+       * 月初より前・月末より後のセルは空欄にする
+       */
+      function renderShiftCalendar() {
+        document.getElementById('shift_month_label').textContent = shiftYear + '年' + shiftMonth + '月';
+
+        const calendar = document.getElementById('shift_calendar');
+        calendar.innerHTML = '';
+
+        const firstWeekday = new Date(shiftYear, shiftMonth - 1, 1).getDay(); // 0=日曜
+        const lastDay = new Date(shiftYear, shiftMonth, 0).getDate(); // 翌月0日＝当月末日
+        const cellCount = Math.ceil((firstWeekday + lastDay) / 7) * 7;
+
+        for (let i = 0; i < cellCount; i++) {
+          const day = i - firstWeekday + 1;
+          if (day < 1 || day > lastDay) {
+            const empty = document.createElement('div');
+            empty.className = 'shift-day-empty';
+            calendar.appendChild(empty);
+            continue;
+          }
+          calendar.appendChild(createShiftDayCell(day, i % 7));
+        }
+      }
+
+      /**
+       * 日付セル1つ分（日付・状態の印・要確認の吹き出し）を作る
+       */
+      function createShiftDayCell(day, weekdayIndex) {
+        const dateKey = buildShiftDateKey(shiftYear, shiftMonth, day);
+        const dayData = shiftMonthDays[dateKey];
+        const status = dayData ? dayData.status : 'uncreated';
+        const warnings = (dayData && dayData.warnings) ? dayData.warnings : [];
+
+        const cell = document.createElement('button');
+        cell.type = 'button';
+        cell.className = 'shift-day-cell';
+        cell.dataset.dateKey = dateKey;
+        if (status === 'warning') {
+          cell.classList.add('warning');
+        }
+        if (dateKey === shiftTodayKey) {
+          cell.classList.add('today');
+        }
+        const isSelected = (dateKey === shiftSelectedDate);
+        if (isSelected) {
+          cell.classList.add('selected');
+        }
+        cell.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+        cell.setAttribute('aria-label', shiftMonth + '月' + day + '日 ' + getShiftStatusText(status, warnings.length));
+
+        const number = document.createElement('span');
+        number.className = 'shift-day-number';
+        number.textContent = String(day);
+        cell.appendChild(number);
+
+        const statusBox = document.createElement('span');
+        statusBox.className = 'shift-day-status';
+
+        const mark = document.createElement('span');
+        mark.className = 'shift-mark shift-mark-' + status;
+        mark.textContent = getShiftMarkText(status);
+        statusBox.appendChild(mark);
+
+        const label = document.createElement('span');
+        label.className = 'shift-day-label';
+        label.textContent = getShiftLabelText(status, warnings.length);
+        statusBox.appendChild(label);
+
+        cell.appendChild(statusBox);
+
+        if (status === 'warning') {
+          const tooltip = createShiftTooltip(dateKey, warnings, weekdayIndex);
+          cell.setAttribute('aria-describedby', tooltip.id);
+          cell.appendChild(tooltip);
+        }
+
+        cell.addEventListener('click', function () {
+          selectShiftDate(dateKey);
+        });
+
+        return cell;
+      }
+
+      function getShiftMarkText(status) {
+        if (status === 'ok') {
+          return '○';
+        }
+        if (status === 'warning') {
+          return '△！';
+        }
+        return '—';
+      }
+
+      function getShiftLabelText(status, warningCount) {
+        if (status === 'warning') {
+          return warningCount + '件';
+        }
+        if (status === 'uncreated') {
+          return '未作成';
+        }
+        return '';
+      }
+
+      function getShiftStatusText(status, warningCount) {
+        if (status === 'ok') {
+          return '作成済み・問題なし';
+        }
+        if (status === 'warning') {
+          return '要確認 ' + warningCount + '件';
+        }
+        return '未作成';
+      }
+
+      /**
+       * 要確認の日に付ける吹き出しを作る
+       * セルは button なので、マウスを乗せたときだけでなくキーボードでフォーカスしたときにも表示される
+       */
+      function createShiftTooltip(dateKey, warnings, weekdayIndex) {
+        const tooltip = document.createElement('span');
+        tooltip.className = 'shift-tooltip';
+        tooltip.id = 'shift_tooltip_' + dateKey.replace(/\//g, '');
+        tooltip.setAttribute('role', 'tooltip');
+        if (weekdayIndex === 0) {
+          tooltip.classList.add('shift-tooltip-start'); // 日曜の列は左端に寄せる
+        } else if (weekdayIndex === 6) {
+          tooltip.classList.add('shift-tooltip-end'); // 土曜の列は右端に寄せる
+        }
+        for (let i = 0; i < warnings.length; i++) {
+          tooltip.appendChild(createShiftWarningItem(warnings[i]));
+        }
+        return tooltip;
+      }
+
+      /**
+       * 確認事項1件分（時間帯・内容・理由）を作る
+       * button の中（吹き出し）にも置けるよう、div ではなく span で組み立てる
+       */
+      function createShiftWarningItem(warning) {
+        const item = document.createElement('span');
+        item.className = 'shift-warning-item';
+
+        const time = document.createElement('span');
+        time.className = 'shift-warning-time';
+        time.textContent = warning.time;
+        item.appendChild(time);
+
+        const title = document.createElement('span');
+        title.className = 'shift-warning-title';
+        title.textContent = warning.title;
+        item.appendChild(title);
+
+        const reason = document.createElement('span');
+        reason.className = 'shift-warning-reason';
+        reason.textContent = warning.reason;
+        item.appendChild(reason);
+
+        return item;
+      }
+
+      /**
+       * 日付を選択状態にし、その日の編集欄を読み込む
+       */
+      function selectShiftDate(dateKey) {
+        shiftSelectedDate = dateKey;
+
+        const cells = document.querySelectorAll('.shift-day-cell');
+        for (let i = 0; i < cells.length; i++) {
+          const isSelected = (cells[i].dataset.dateKey === dateKey);
+          if (isSelected) {
+            cells[i].classList.add('selected');
+          } else {
+            cells[i].classList.remove('selected');
+          }
+          cells[i].setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+        }
+
+        loadShiftDay(dateKey);
+      }
+
+      /**
+       * 選択した日のシフト割当・必要人数条件・従業員一覧をサーバーから取得する
+       * 取得中に別の日付へ切り替えられた場合は、戻ってきた結果を反映しない
+       */
+      function loadShiftDay(dateKey) {
+        shiftDayRequestId++;
+        const requestId = shiftDayRequestId;
+
+        document.getElementById('shift_detail').style.display = 'block';
+        document.getElementById('shift_detail_body').style.display = 'none';
+        document.getElementById('shift_detail_heading').textContent = formatShiftDateLabel(dateKey) + 'のシフト';
+        document.getElementById('shift_detail_warnings').innerHTML = '';
+        showShiftDetailMessage('読み込み中...', false);
+        showShiftSaveStatus('', false);
+
+        google.script.run
+          .withSuccessHandler(function (result) {
+            if (requestId !== shiftDayRequestId) {
+              return;
+            }
+            renderShiftDay(result);
+          })
+          .withFailureHandler(function (error) {
+            if (requestId !== shiftDayRequestId) {
+              return;
+            }
+            showShiftDetailMessage('エラー: ' + error.message, true);
+          })
+          .getShiftDay(dateKey);
+      }
+
+      /**
+       * 取得した1日分のシフトを編集欄に描画する
+       */
+      function renderShiftDay(result) {
+        shiftDayEmployees = result.employees;
+        renderShiftWarnings(result.warnings);
+
+        const assignmentTbody = document.getElementById('shift_assignment_tbody');
+        assignmentTbody.innerHTML = '';
+        for (let i = 0; i < result.assignments.length; i++) {
+          assignmentTbody.appendChild(createShiftAssignmentRow(result.assignments[i]));
+        }
+        refreshShiftEmptyRow(assignmentTbody, 6, 'シフトの割当はまだありません');
+
+        const requirementTbody = document.getElementById('shift_requirement_tbody');
+        requirementTbody.innerHTML = '';
+        for (let r = 0; r < result.requirements.length; r++) {
+          requirementTbody.appendChild(createShiftRequirementRow(result.requirements[r]));
+        }
+        refreshShiftEmptyRow(requirementTbody, 5, '必要人数条件はまだありません');
+
+        showShiftDetailMessage('', false);
+        document.getElementById('shift_detail_body').style.display = 'block';
+      }
+
+      /**
+       * 確認事項を編集欄にも表示する
+       * ホバーできない環境では吹き出しを読めないため、同じ内容をここに出す
+       */
+      function renderShiftWarnings(warnings) {
+        const container = document.getElementById('shift_detail_warnings');
+        container.innerHTML = '';
+        if (!warnings || warnings.length === 0) {
+          return;
+        }
+
+        const heading = document.createElement('div');
+        heading.className = 'shift-warning-heading';
+        heading.textContent = '確認事項（' + warnings.length + '件）';
+        container.appendChild(heading);
+
+        for (let i = 0; i < warnings.length; i++) {
+          container.appendChild(createShiftWarningItem(warnings[i]));
+        }
+      }
+
+      /**
+       * 行が1件も無いときだけ、表に「まだありません」の1行を出す
+       */
+      function refreshShiftEmptyRow(tbody, columnCount, message) {
+        const emptyRow = tbody.querySelector('.shift-empty-row');
+        const hasRow = (tbody.querySelector('.shift-row') !== null);
+
+        if (hasRow) {
+          if (emptyRow) {
+            tbody.removeChild(emptyRow);
+          }
+          return;
+        }
+        if (emptyRow) {
+          return;
+        }
+
+        const row = document.createElement('tr');
+        row.className = 'shift-empty-row';
+        const cell = document.createElement('td');
+        cell.className = 'shift-table-empty';
+        cell.colSpan = columnCount;
+        cell.textContent = message;
+        row.appendChild(cell);
+        tbody.appendChild(row);
+      }
+
+      /**
+       * シフト割当の1行分（従業員・出勤・退勤・ポジション・備考・削除）を作る
+       */
+      function createShiftAssignmentRow(assignment) {
+        const row = document.createElement('tr');
+        row.className = 'shift-row';
+
+        const employeeOptions = [];
+        for (let i = 0; i < shiftDayEmployees.length; i++) {
+          employeeOptions.push({
+            'value': String(shiftDayEmployees[i].id),
+            'label': shiftDayEmployees[i].name
+          });
+        }
+
+        row.appendChild(createShiftCell(
+          createShiftSelect('shift-employee-select', employeeOptions, assignment.employeeId, '未選択')));
+        row.appendChild(createShiftCell(createShiftTimeInput('shift-start-time', assignment.startTime)));
+        row.appendChild(createShiftCell(createShiftTimeInput('shift-end-time', assignment.endTime)));
+        row.appendChild(createShiftCell(
+          createShiftSelect('shift-position-select', getShiftPositionOptions(), assignment.position, '未選択')));
+
+        const noteInput = document.createElement('input');
+        noteInput.type = 'text';
+        noteInput.className = 'shift-note-input';
+        noteInput.value = assignment.note;
+        row.appendChild(createShiftCell(noteInput));
+
+        row.appendChild(createShiftCell(
+          createShiftDeleteButton(row, 6, 'シフトの割当はまだありません')));
+
+        return row;
+      }
+
+      /**
+       * 必要人数条件の1行分（開始・終了・ポジション・必要人数・削除）を作る
+       */
+      function createShiftRequirementRow(requirement) {
+        const row = document.createElement('tr');
+        row.className = 'shift-row';
+
+        row.appendChild(createShiftCell(createShiftTimeInput('shift-requirement-start-time', requirement.startTime)));
+        row.appendChild(createShiftCell(createShiftTimeInput('shift-requirement-end-time', requirement.endTime)));
+        row.appendChild(createShiftCell(
+          createShiftSelect('shift-requirement-position-select', getShiftPositionOptions(), requirement.position, '未選択')));
+
+        const countInput = document.createElement('input');
+        countInput.type = 'number';
+        countInput.className = 'shift-required-count-input';
+        countInput.min = '1';
+        countInput.step = '1';
+        countInput.value = String(requirement.requiredCount);
+        row.appendChild(createShiftCell(countInput));
+
+        row.appendChild(createShiftCell(
+          createShiftDeleteButton(row, 5, '必要人数条件はまだありません')));
+
+        return row;
+      }
+
+      function createShiftCell(child) {
+        const cell = document.createElement('td');
+        cell.appendChild(child);
+        return cell;
+      }
+
+      function createShiftTimeInput(className, value) {
+        const input = document.createElement('input');
+        input.type = 'time';
+        input.className = className;
+        input.value = value;
+        return input;
+      }
+
+      function getShiftPositionOptions() {
+        const options = [];
+        for (let i = 0; i < POSITION_ITEMS.length; i++) {
+          options.push({ 'value': POSITION_ITEMS[i], 'label': POSITION_ITEMS[i] });
+        }
+        return options;
+      }
+
+      /**
+       * 選択肢のselectを作る
+       * 保存済みの値が選択肢に無い場合（名簿から消えた従業員など）は、その値の選択肢を足して
+       * 画面を開いただけで内容が別の値に変わってしまわないようにする
+       */
+      function createShiftSelect(className, options, selectedValue, placeholder) {
+        const select = document.createElement('select');
+        select.className = className;
+        const currentValue = selectedValue ? String(selectedValue) : '';
+
+        const emptyOption = document.createElement('option');
+        emptyOption.value = '';
+        emptyOption.textContent = placeholder;
+        select.appendChild(emptyOption);
+
+        let hasCurrentValue = false;
+        for (let i = 0; i < options.length; i++) {
+          const option = document.createElement('option');
+          option.value = options[i].value;
+          option.textContent = options[i].label;
+          select.appendChild(option);
+          if (options[i].value === currentValue) {
+            hasCurrentValue = true;
+          }
+        }
+
+        if (currentValue !== '' && !hasCurrentValue) {
+          const unknownOption = document.createElement('option');
+          unknownOption.value = currentValue;
+          unknownOption.textContent = currentValue + '（選択肢にありません）';
+          select.appendChild(unknownOption);
+        }
+
+        select.value = currentValue;
+        return select;
+      }
+
+      function createShiftDeleteButton(row, columnCount, emptyMessage) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'shift-delete-btn';
+        button.textContent = '削除';
+        button.addEventListener('click', function () {
+          const tbody = row.parentNode;
+          tbody.removeChild(row);
+          refreshShiftEmptyRow(tbody, columnCount, emptyMessage);
+        });
+        return button;
+      }
+
+      function addShiftAssignmentRow() {
+        const tbody = document.getElementById('shift_assignment_tbody');
+        tbody.appendChild(createShiftAssignmentRow({
+          'employeeId': '',
+          'startTime': '',
+          'endTime': '',
+          'position': '',
+          'note': ''
+        }));
+        refreshShiftEmptyRow(tbody, 6, 'シフトの割当はまだありません');
+      }
+
+      function addShiftRequirementRow() {
+        const tbody = document.getElementById('shift_requirement_tbody');
+        tbody.appendChild(createShiftRequirementRow({
+          'startTime': '',
+          'endTime': '',
+          'position': '',
+          'requiredCount': 1
+        }));
+        refreshShiftEmptyRow(tbody, 5, '必要人数条件はまだありません');
+      }
+
+      function collectShiftAssignments() {
+        const rows = document.getElementById('shift_assignment_tbody').querySelectorAll('.shift-row');
+        const assignments = [];
+        for (let i = 0; i < rows.length; i++) {
+          assignments.push({
+            'employeeId': rows[i].querySelector('.shift-employee-select').value,
+            'startTime': rows[i].querySelector('.shift-start-time').value,
+            'endTime': rows[i].querySelector('.shift-end-time').value,
+            'position': rows[i].querySelector('.shift-position-select').value,
+            'note': rows[i].querySelector('.shift-note-input').value
+          });
+        }
+        return assignments;
+      }
+
+      function collectShiftRequirements() {
+        const rows = document.getElementById('shift_requirement_tbody').querySelectorAll('.shift-row');
+        const requirements = [];
+        for (let i = 0; i < rows.length; i++) {
+          requirements.push({
+            'startTime': rows[i].querySelector('.shift-requirement-start-time').value,
+            'endTime': rows[i].querySelector('.shift-requirement-end-time').value,
+            'position': rows[i].querySelector('.shift-requirement-position-select').value,
+            'requiredCount': rows[i].querySelector('.shift-required-count-input').value
+          });
+        }
+        return requirements;
+      }
+
+      /**
+       * 保存前にブラウザ側でも入力を確認する（同じ内容をサーバー側でも検証する）
+       * 問題があればエラーメッセージ、問題が無ければ空文字を返す
+       * 人員不足や勤務時間の重複は保存できる確認事項なので、ここでは止めない
+       */
+      function validateShiftRowsOnClient(assignments, requirements) {
+        for (let i = 0; i < assignments.length; i++) {
+          const label = 'シフト割当' + (i + 1) + '行目：';
+          if (assignments[i].employeeId === '') {
+            return label + '従業員を選択してください';
+          }
+          if (assignments[i].position === '') {
+            return label + 'ポジションを選択してください';
+          }
+          if (assignments[i].startTime === '') {
+            return label + '出勤時刻を入力してください';
+          }
+          if (assignments[i].endTime === '') {
+            return label + '退勤時刻を入力してください';
+          }
+          // 'HH:mm' は桁が揃っているので、文字列のまま比較しても時刻の前後を判定できる
+          if (assignments[i].startTime >= assignments[i].endTime) {
+            return label + '出勤時刻は退勤時刻より前にしてください';
+          }
+        }
+
+        for (let r = 0; r < requirements.length; r++) {
+          const label = '必要人数条件' + (r + 1) + '行目：';
+          if (requirements[r].position === '') {
+            return label + 'ポジションを選択してください';
+          }
+          if (requirements[r].startTime === '') {
+            return label + '開始時刻を入力してください';
+          }
+          if (requirements[r].endTime === '') {
+            return label + '終了時刻を入力してください';
+          }
+          if (requirements[r].startTime >= requirements[r].endTime) {
+            return label + '開始時刻は終了時刻より前にしてください';
+          }
+          const requiredCount = Number(requirements[r].requiredCount);
+          if (!isFinite(requiredCount) || Math.floor(requiredCount) !== requiredCount || requiredCount < 1) {
+            return label + '必要人数は1以上の整数で入力してください';
+          }
+        }
+
+        return '';
+      }
+
+      /**
+       * 選択中の日のシフトをまとめて保存する
+       * 保存中はボタンを無効化し、保存が終わったら表示中の月を取り直して印を更新する
+       */
+      function submitShiftDay() {
+        if (isShiftSaving || shiftSelectedDate === null) {
+          return;
+        }
+
+        const assignments = collectShiftAssignments();
+        const requirements = collectShiftRequirements();
+        const errorMessage = validateShiftRowsOnClient(assignments, requirements);
+        if (errorMessage !== '') {
+          showShiftSaveStatus(errorMessage, true);
+          return;
+        }
+
+        isShiftSaving = true;
+        const saveBtn = document.getElementById('shift_save_btn');
+        saveBtn.disabled = true;
+        saveBtn.textContent = '保存中...';
+        showShiftSaveStatus('', false);
+
+        const savedDateKey = shiftSelectedDate;
+        google.script.run
+          .withSuccessHandler(function (result) {
+            finishShiftSaving();
+            showShiftSaveStatus(result.message, false);
+            // 保存した日の確認事項と、カレンダーの印（○／△！）を最新の内容に更新する
+            if (shiftSelectedDate === savedDateKey) {
+              renderShiftWarnings(result.warnings);
+            }
+            loadShiftMonth(shiftYear, shiftMonth);
+          })
+          .withFailureHandler(function (error) {
+            finishShiftSaving();
+            showShiftSaveStatus('エラー: ' + error.message, true);
+          })
+          .saveShiftDay(savedDateKey, assignments, requirements);
+      }
+
+      function finishShiftSaving() {
+        isShiftSaving = false;
+        const saveBtn = document.getElementById('shift_save_btn');
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'この日のシフトを保存';
+      }
+
+      function hideShiftDetail() {
+        document.getElementById('shift_detail').style.display = 'none';
+        document.getElementById('shift_detail_body').style.display = 'none';
+        document.getElementById('shift_detail_warnings').innerHTML = '';
+        document.getElementById('shift_assignment_tbody').innerHTML = '';
+        document.getElementById('shift_requirement_tbody').innerHTML = '';
+        showShiftSaveStatus('', false);
+      }
+
+      /**
+       * 日付キー（'yyyy/MM/dd'）を「2026年9月2日（水）」のような表示用文字列にする
+       */
+      function formatShiftDateLabel(dateKey) {
+        const parts = dateKey.split('/');
+        const year = Number(parts[0]);
+        const month = Number(parts[1]);
+        const day = Number(parts[2]);
+        const weekday = SHIFT_WEEKDAY_LABELS[new Date(year, month - 1, day).getDay()];
+        return year + '年' + month + '月' + day + '日（' + weekday + '）';
+      }
+
+      /**
+       * カレンダーの上に出す一行メッセージ（読み込み中・エラー）を切り替える
+       */
+      function showShiftMessage(message, isError) {
+        const messageEl = document.getElementById('shift_message');
+        messageEl.textContent = message;
+        if (isError) {
+          messageEl.classList.add('error');
+        } else {
+          messageEl.classList.remove('error');
+        }
+      }
+
+      /**
+       * 編集欄の代わりに出す一行メッセージ（読み込み中・エラー）を切り替える
+       */
+      function showShiftDetailMessage(message, isError) {
+        const messageEl = document.getElementById('shift_detail_message');
+        messageEl.textContent = message;
+        if (isError) {
+          messageEl.classList.add('error');
+        } else {
+          messageEl.classList.remove('error');
+        }
+      }
+
+      /**
+       * 保存ボタンの横に出す状態（保存中・完了・エラー）を切り替える
+       */
+      function showShiftSaveStatus(message, isError) {
+        const statusEl = document.getElementById('shift_save_status');
+        statusEl.textContent = message;
+        if (isError) {
+          statusEl.classList.add('error');
+        } else {
+          statusEl.classList.remove('error');
         }
       }
     </script>

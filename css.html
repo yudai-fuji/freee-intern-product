@@ -458,4 +458,332 @@
     font-size: 15px;
     color: #e53935;
   }
+  /* 店長画面：シフト作成 */
+  .shift-month-switch {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    max-width: 960px;
+    margin: 24px auto 0;
+  }
+  .shift-month-btn {
+    padding: 6px 20px;
+    font-size: 20px;
+    line-height: 1.2;
+    background-color: #e8e8e8;
+    color: #444;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .shift-month-btn:hover {
+    background-color: #dcdcdc;
+  }
+  .shift-month-btn:disabled {
+    color: #999;
+    cursor: not-allowed;
+  }
+  .shift-month-label {
+    font-size: 24px;
+    font-weight: bold;
+    min-width: 160px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .shift-message {
+    max-width: 960px;
+    margin-left: auto;
+    margin-right: auto;
+    text-align: center;
+  }
+  /* 曜日見出しとカレンダー本体は同じ列幅・同じ最大幅にして、列を縦に揃える */
+  .shift-weekdays,
+  .shift-calendar {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    max-width: 960px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .shift-weekday {
+    padding: 8px 0;
+    font-size: 16px;
+    color: #666;
+    text-align: center;
+  }
+  .shift-weekday.sunday {
+    color: #e53935;
+  }
+  .shift-weekday.saturday {
+    color: #3f6fd1;
+  }
+  .shift-calendar {
+    border-top: 1px solid #ccc;
+    border-left: 1px solid #ccc;
+  }
+  .shift-day-cell,
+  .shift-day-empty {
+    min-height: 96px;
+    padding: 8px;
+    border: none;
+    border-right: 1px solid #ccc;
+    border-bottom: 1px solid #ccc;
+    background-color: #fff;
+  }
+  .shift-day-cell {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    font-family: inherit;
+    font-size: 16px;
+    color: #333;
+    text-align: left;
+    cursor: pointer;
+  }
+  .shift-day-cell:hover {
+    background-color: #f0f4fa;
+  }
+  .shift-day-cell:focus-visible {
+    outline: 2px solid #3f6fd1;
+    outline-offset: -3px;
+  }
+  .shift-day-cell.selected {
+    background-color: #dce7f8;
+    box-shadow: inset 0 0 0 2px #3f6fd1;
+  }
+  .shift-day-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    font-size: 17px;
+    border-radius: 50%;
+    font-variant-numeric: tabular-nums;
+  }
+  /* 今日は日付を塗りつぶした丸で示し、選択中（セルの背景色）と見分けられるようにする */
+  .shift-day-cell.today .shift-day-number {
+    background-color: #3f6fd1;
+    color: #fff;
+    font-weight: bold;
+  }
+  .shift-day-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .shift-mark {
+    font-size: 20px;
+    line-height: 1;
+  }
+  .shift-mark-ok {
+    color: #43a047;
+  }
+  .shift-mark-warning {
+    color: #ef6c00;
+  }
+  .shift-mark-uncreated {
+    color: #9e9e9e;
+  }
+  .shift-day-label {
+    font-size: 13px;
+    color: #767676;
+    white-space: nowrap;
+  }
+  .shift-day-cell.warning .shift-day-label {
+    color: #ef6c00;
+  }
+  /* 要確認の吹き出し。マウスを乗せたときとキーボードでフォーカスしたときに表示する */
+  .shift-tooltip {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 50;
+    width: 260px;
+    padding: 10px 12px;
+    background-color: #fff;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    text-align: left;
+    white-space: normal;
+    cursor: default;
+  }
+  /* 端の列では吹き出しが画面の外へはみ出さないよう、内側へ寄せる */
+  .shift-tooltip.shift-tooltip-start {
+    left: 0;
+    transform: none;
+  }
+  .shift-tooltip.shift-tooltip-end {
+    left: auto;
+    right: 0;
+    transform: none;
+  }
+  .shift-day-cell:hover .shift-tooltip,
+  .shift-day-cell:focus .shift-tooltip {
+    display: block;
+  }
+  .shift-warning-item {
+    display: block;
+  }
+  .shift-warning-item + .shift-warning-item {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #eee;
+  }
+  .shift-warning-time {
+    display: block;
+    font-size: 13px;
+    color: #ef6c00;
+    font-variant-numeric: tabular-nums;
+  }
+  .shift-warning-title {
+    display: block;
+    font-size: 15px;
+    color: #333;
+  }
+  .shift-warning-reason {
+    display: block;
+    font-size: 13px;
+    color: #767676;
+  }
+  .shift-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 24px;
+    max-width: 960px;
+    margin: 12px auto 0;
+    font-size: 15px;
+    color: #666;
+  }
+  .shift-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  /* 店長画面：シフト作成（日付ごとの編集欄） */
+  .shift-detail {
+    max-width: 960px;
+    margin: 28px auto 0;
+    padding-top: 20px;
+    border-top: 1px solid #ccc;
+  }
+  .shift-detail-heading {
+    font-size: 22px;
+    margin: 0;
+  }
+  .shift-subheading {
+    font-size: 18px;
+    margin: 24px 0 8px;
+  }
+  /* ホバーできない環境でも確認事項を読めるよう、吹き出しと同じ内容を編集欄にも出す */
+  .shift-detail-warnings:not(:empty) {
+    margin-top: 8px;
+    padding: 12px 14px;
+    background-color: #fff8e6;
+    border-left: 4px solid #ef6c00;
+    border-radius: 6px;
+  }
+  .shift-warning-heading {
+    font-size: 15px;
+    font-weight: bold;
+    margin-bottom: 8px;
+  }
+  .shift-table th,
+  .shift-table td {
+    padding: 8px 10px;
+    font-size: 15px;
+  }
+  .shift-table select,
+  .shift-table input {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 5px 8px;
+    font-family: inherit;
+    font-size: 15px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+  }
+  .shift-table .shift-required-count-input {
+    max-width: 90px;
+  }
+  .shift-table-empty {
+    color: #767676;
+  }
+  .shift-delete-btn {
+    padding: 5px 12px;
+    font-size: 14px;
+    background-color: #f5f5f5;
+    color: #555;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .shift-delete-btn:hover {
+    background-color: #e8e8e8;
+  }
+  .shift-add-btn {
+    margin-top: 10px;
+    padding: 6px 18px;
+    font-size: 15px;
+    background-color: #e8e8e8;
+    color: #444;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .shift-add-btn:hover {
+    background-color: #dcdcdc;
+  }
+  .shift-save-row {
+    display: flex;
+    align-items: center;
+    margin-top: 28px;
+  }
+  .shift-save-btn {
+    padding: 10px 24px;
+    font-size: 16px;
+    background-color: #3f6fd1;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .shift-save-btn:hover {
+    background-color: #35609c;
+  }
+  .shift-save-btn:disabled {
+    background-color: #9db3dc;
+    cursor: not-allowed;
+  }
+  .shift-save-status {
+    margin-left: 12px;
+    font-size: 15px;
+    color: #43a047;
+  }
+  .shift-save-status.error {
+    color: #e53935;
+  }
+  /* 画面が狭いときはカレンダーのセルを詰め、状態の文字は記号だけにする */
+  @media (max-width: 900px) {
+    .shift-day-cell,
+    .shift-day-empty {
+      min-height: 74px;
+      padding: 6px 4px;
+    }
+    .shift-day-label {
+      display: none;
+    }
+    .shift-tooltip {
+      width: 210px;
+    }
+  }
 </style>

@@ -1,0 +1,16 @@
+<script>
+    const POSITION_ITEMS = <?!= JSON.stringify(POSITION_ITEMS) ?>;
+    //従業員と店長の画面を切り替える
+    function showScreen(screenName) {
+        const isEmployee = (screenName === 'employee');
+        document.getElementById('employee_screen').style.display = isEmployee ? 'block': 'none';
+        document.getElementById('manager_screen').style.display = isEmployee ? 'none': 'block';//ornerに名前変更？
+        document.getElementById('to_manager_btn').style.display = isEmployee ? 'inline-block': 'none';
+        document.getElementById('to_employee_btn').style.display = isEmployee ? 'none': 'inline-block';
+
+        if(!isEmployee && document.getElementById('section_dashboard').style.display !== 'none') {
+            loadTodayWork();
+        }
+
+    }
+</script>
