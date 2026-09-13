@@ -94,7 +94,9 @@ function getDefaultSkillUpdatedAt() {
   return updatedAt;
 }
 
-function getSkillMatrix() {
+function getSkillMatrix(authToken) {
+  requireManagerRole_(authToken);
+
   const employees = getEmployees();
   const skillMapByEmpId = getEmployeeSkillMap();
   const updatedAtMapByEmpId = getEmployeeSkillUpdatedAtMap();
@@ -127,7 +129,9 @@ function findSkillRowByEmpId(sheet, empId) {
   return -1;
 }
 
-function saveEmployeeSkills(empId, skillValues) {
+function saveEmployeeSkills(empId, skillValues, authToken) {
+  requireManagerRole_(authToken);
+
   const nameByEmpId = getEmployeeNameMap();
   const empName = nameByEmpId[String(empId)];
   if (!empName) {

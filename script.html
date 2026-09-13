@@ -2,11 +2,35 @@
       let selectedEmpId = null;
       let clockIntervalId = null;
 
+      // ログイン状態。トークンは GAS が発行したものをそのまま持ち、店長専用の通信に添えて渡す
+      let authToken = '';
+
+      // ログインのたびに増やす通し番号。ログアウトをまたいで遅れて届いた通信結果を捨てるために使う
+      let loginSessionId = 0;
+
+      // 無操作の判定に使う時間（ミリ秒）
+      const IDLE_NOTICE_MS = 14 * 60 * 1000;
+      const IDLE_LOGOUT_MS = 15 * 60 * 1000;
+
+      // 無操作時間を調べる間隔（ミリ秒）
+      const IDLE_CHECK_INTERVAL_MS = 1000;
+
+      // マウス移動で最終操作時刻を更新する間隔の下限（ミリ秒）
+      const ACTIVITY_UPDATE_INTERVAL_MS = 1000;
+
+      // 最後に操作した時刻（ブラウザ内だけで持ち、サーバーへは送らない）
+      let lastActivityAt = 0;
+      let idleTimerId = null;
+      let isIdleNoticeShown = false;
+
       // 打刻がまだ無いことを表す表示文字列（code.js の UNRECORDED_LABEL と揃える）
       const UNRECORDED_LABEL = '未打刻';
 
       // ポジション候補（code.js の POSITION_ITEMS をそのまま埋め込み、二重管理しない）
       const POSITION_ITEMS = <?!= JSON.stringify(POSITION_ITEMS) ?>;
+
+      // 役割名（config.js の定数をそのまま埋め込み、二重管理しない）
+      const ROLE_MANAGER = <?!= JSON.stringify(ROLE_MANAGER) ?>;
 
       window.addEventListener('load', function () {
         const items = document.querySelectorAll('.employee-item');
@@ -22,23 +46,330 @@
             showManagerSection(this);
           });
         }
+
+        // 画面内の操作をここで一度だけ登録する。ログインのたびには登録しないので二重に動かない
+        document.addEventListener('mousemove', function () { handleUserActivity(true); });
+        document.addEventListener('click', function () { handleUserActivity(false); });
+        document.addEventListener('keydown', function () { handleUserActivity(false); });
+        // スクロールは要素ごとに起きて上まで伝わらないので、捕捉フェーズでまとめて受け取る
+        document.addEventListener('scroll', function () { handleUserActivity(false); }, true);
+
+        // パスコード欄では Enter キーでもログインできるようにする
+        document.getElementById('login_passcode').addEventListener('keydown', function (event) {
+          if (event.key === 'Enter') {
+            submitLogin();
+          }
+        });
+
+        showScreen('login');
       });
 
       /**
-       * 従業員画面と店長画面を切り替える
+       * ログイン画面・従業員画面・店長画面を切り替える
        * ページ遷移はせず表示/非表示を操作するだけなので、選択中の従業員などの状態は保持される
+       * @param {string} screenName 'login' / 'employee' / 'manager'
+       * @return {void} 戻り値なし
        */
       function showScreen(screenName) {
+        const isLogin = (screenName === 'login');
         const isEmployee = (screenName === 'employee');
+        document.getElementById('login_screen').style.display = isLogin ? 'flex' : 'none';
         document.getElementById('employee_screen').style.display = isEmployee ? 'block' : 'none';
-        document.getElementById('manager_screen').style.display = isEmployee ? 'none' : 'block';
-        document.getElementById('to_manager_btn').style.display = isEmployee ? 'inline-block' : 'none';
-        document.getElementById('to_employee_btn').style.display = isEmployee ? 'none' : 'inline-block';
+        document.getElementById('manager_screen').style.display = (!isLogin && !isEmployee) ? 'block' : 'none';
+        // ログアウトボタンはログイン後だけ、両画面とも同じ位置に出す
+        document.getElementById('logout_btn').style.display = isLogin ? 'none' : 'inline-block';
 
-        // 従業員画面から店長画面へ切り替えたとき、ダッシュボードが表示中なら本日の業務設定を読み直す
+        if (isLogin) {
+          document.getElementById('login_passcode').focus();
+          return;
+        }
+
+        // 店長画面を表示したとき、ダッシュボードが表示中なら本日の業務設定を読み直す
         if (!isEmployee && document.getElementById('section_dashboard').style.display !== 'none') {
           loadTodayWork();
         }
+      }
+
+      /**
+       * 入力されたパスコードでログインする
+       * 照合は GAS 側で行い、成功したときだけトークンと役割を受け取る
+       * @return {void} 戻り値なし
+       */
+      function submitLogin() {
+        const passcodeInput = document.getElementById('login_passcode');
+        // 先頭の 0 を保持するため、数値に変換せず文字列のまま渡す
+        const passcode = passcodeInput.value;
+        const loginBtn = document.getElementById('login_btn');
+
+        if (passcode === '') {
+          showLoginError('パスコードを入力してください');
+          return;
+        }
+
+        showLoginError('');
+        loginBtn.disabled = true;
+
+        google.script.run
+          .withSuccessHandler(function (result) {
+            loginBtn.disabled = false;
+            if (!result.success) {
+              showLoginError(result.message);
+              passcodeInput.value = '';
+              passcodeInput.focus();
+              return;
+            }
+            startLoginSession(result.token, result.role);
+          })
+          .withFailureHandler(function (error) {
+            loginBtn.disabled = false;
+            showLoginError('エラー: ' + error.message);
+          })
+          .login(passcode);
+      }
+
+      /**
+       * ログイン成功後に、役割に応じた画面と無操作時間の監視を用意する
+       * @param {string} token GAS が発行したログイントークン
+       * @param {string} role サーバー側で判定された役割
+       * @return {void} 戻り値なし
+       */
+      function startLoginSession(token, role) {
+        authToken = token;
+        loginSessionId++;
+
+        document.getElementById('login_passcode').value = '';
+        showLoginError('');
+        showScreen(role === ROLE_MANAGER ? 'manager' : 'employee');
+        startIdleWatch(); // ログイン成功の時点から無操作時間を数え始める
+      }
+
+      /**
+       * ログイン画面のエラー文言を出し分ける
+       * @param {string} message 表示する文言（空文字で消す）
+       * @return {void} 戻り値なし
+       */
+      function showLoginError(message) {
+        document.getElementById('login_error').textContent = message;
+      }
+
+      /**
+       * ログアウトの確認ダイアログを開く
+       * @return {void} 戻り値なし
+       */
+      function openLogoutModal() {
+        document.getElementById('logout_overlay').style.display = 'flex';
+      }
+
+      /**
+       * ログアウトの確認ダイアログを閉じる（キャンセルのときは現在の画面に留まる）
+       * @return {void} 戻り値なし
+       */
+      function closeLogoutModal() {
+        document.getElementById('logout_overlay').style.display = 'none';
+      }
+
+      /**
+       * ログアウトの確認ダイアログの背景クリックを受け取る
+       * @param {Event} event クリックイベント
+       * @return {void} 戻り値なし
+       */
+      function handleLogoutOverlayClick(event) {
+        // 暗い背景そのものをクリックしたときだけ閉じる（モーダル本体のクリックは無視）
+        if (event.target === event.currentTarget) {
+          closeLogoutModal();
+        }
+      }
+
+      /**
+       * 確認ダイアログでログアウトが確定されたときの処理
+       * @return {void} 戻り値なし
+       */
+      function confirmLogout() {
+        closeLogoutModal();
+        doLogout();
+      }
+
+      /**
+       * ログイン状態と画面をログイン前に戻す（手動ログアウト・自動ログアウトの両方から呼ぶ）
+       * 打刻の記録には一切触れないので、勤務中・休憩中の状態や保存済みデータは変わらない
+       * @return {void} 戻り値なし
+       */
+      function doLogout() {
+        const usedToken = authToken;
+        authToken = '';
+        loginSessionId++; // これ以降に遅れて届いた通信結果は画面へ反映しない
+
+        stopIdleWatch();
+        hideIdleNotice();
+        closeAllModals();
+        resetEmployeeScreen();
+        resetManagerScreen();
+
+        document.getElementById('login_passcode').value = '';
+        showLoginError('');
+        showScreen('login');
+
+        // サーバー側のトークンも無効にする（結果は画面に影響しないので待たない）
+        if (usedToken !== '') {
+          google.script.run.logout(usedToken);
+        }
+      }
+
+      /**
+       * 開いているダイアログをすべて閉じる
+       * @return {void} 戻り値なし
+       */
+      function closeAllModals() {
+        const overlays = document.querySelectorAll('.modal-overlay');
+        for (let i = 0; i < overlays.length; i++) {
+          overlays[i].style.display = 'none';
+        }
+      }
+
+      /**
+       * 従業員画面の一時的な表示（選択中の従業員・打刻メッセージ・本日の業務）を消す
+       * 打刻済みのデータには触れない
+       * @return {void} 戻り値なし
+       */
+      function resetEmployeeScreen() {
+        selectedEmpId = null;
+
+        const items = document.querySelectorAll('.employee-item');
+        for (let i = 0; i < items.length; i++) {
+          items[i].classList.remove('selected');
+        }
+
+        if (clockIntervalId) {
+          clearInterval(clockIntervalId);
+          clockIntervalId = null;
+        }
+
+        document.getElementById('right_panel').style.display = 'none';
+        document.getElementById('selected_emp_name').innerHTML = '';
+        document.getElementById('record_message').innerHTML = '';
+        hideTodayWorkCard();
+      }
+
+      /**
+       * 店長画面の表示をダッシュボードに戻し、読み込み済みの内容を残さない
+       * @return {void} 戻り値なし
+       */
+      function resetManagerScreen() {
+        const navItems = document.querySelectorAll('.manager-nav-item');
+        for (let i = 0; i < navItems.length; i++) {
+          const isDashboard = (navItems[i].dataset.section === 'dashboard');
+          if (isDashboard) {
+            navItems[i].classList.add('selected');
+          } else {
+            navItems[i].classList.remove('selected');
+          }
+        }
+
+        const sections = document.querySelectorAll('.manager-section');
+        for (let j = 0; j < sections.length; j++) {
+          sections[j].style.display = (sections[j].id === 'section_dashboard') ? 'block' : 'none';
+        }
+
+        hideShiftDetail();
+        shiftSelectedDate = null;
+        ingredientBoard = null;
+        document.getElementById('ingredient_body').style.display = 'none';
+      }
+
+      /**
+       * 無操作時間の監視を始める
+       * 始める前に必ず前のタイマーを止めるので、ログインを繰り返しても重複しない
+       * @return {void} 戻り値なし
+       */
+      function startIdleWatch() {
+        stopIdleWatch();
+        lastActivityAt = Date.now();
+        idleTimerId = setInterval(checkIdleTime, IDLE_CHECK_INTERVAL_MS);
+      }
+
+      /**
+       * 無操作時間の監視を止める
+       * @return {void} 戻り値なし
+       */
+      function stopIdleWatch() {
+        if (idleTimerId) {
+          clearInterval(idleTimerId);
+          idleTimerId = null;
+        }
+      }
+
+      /**
+       * 最後の操作からの経過時間を調べ、予告通知と自動ログアウトを行う
+       * 時刻の差で判定するため、途中で操作があっても数え間違えない
+       * @return {void} 戻り値なし
+       */
+      function checkIdleTime() {
+        if (authToken === '') {
+          return;
+        }
+
+        const idleTime = Date.now() - lastActivityAt;
+        if (idleTime >= IDLE_LOGOUT_MS) {
+          doLogout(); // 確認ダイアログは出さずにパスコード入力画面へ戻す
+          return;
+        }
+        if (idleTime >= IDLE_NOTICE_MS) {
+          showIdleNotice();
+        }
+      }
+
+      /**
+       * 画面内の操作を受け取り、最後に操作した時刻を更新する
+       * サーバーへは送らず、ブラウザ内だけで記録する
+       * @param {boolean} isThrottled 回数を間引く操作（マウス移動）なら true
+       * @return {void} 戻り値なし
+       */
+      function handleUserActivity(isThrottled) {
+        if (authToken === '') {
+          return;
+        }
+
+        const now = Date.now();
+        // マウス移動は回数が多いので、前回の更新から一定時間あいたときだけ更新する
+        if (isThrottled && (now - lastActivityAt) < ACTIVITY_UPDATE_INTERVAL_MS) {
+          return;
+        }
+
+        lastActivityAt = now;
+        if (isIdleNoticeShown) {
+          hideIdleNotice(); // 通知が出ていたら操作ですぐ消し、この時点から数え直す
+        }
+      }
+
+      /**
+       * ログアウト予告の通知を表示する（すでに出ているときは何もしない）
+       * @return {void} 戻り値なし
+       */
+      function showIdleNotice() {
+        if (isIdleNoticeShown) {
+          return;
+        }
+        isIdleNoticeShown = true;
+        document.getElementById('idle_notice').classList.add('show');
+      }
+
+      /**
+       * ログアウト予告の通知を消す
+       * @return {void} 戻り値なし
+       */
+      function hideIdleNotice() {
+        isIdleNoticeShown = false;
+        document.getElementById('idle_notice').classList.remove('show');
+      }
+
+      /**
+       * 通信を始めたときのログインが今も続いているかを調べる
+       * ログアウト後に遅れて届いた結果で、以前の画面を出し直さないために使う
+       * @param {number} sessionId 通信を始めた時点の loginSessionId
+       * @return {boolean} 同じログインが続いていれば true
+       */
+      function isSameLoginSession(sessionId) {
+        return authToken !== '' && sessionId === loginSessionId;
       }
 
       function selectEmployee(el) {
@@ -88,15 +419,24 @@
         // 打刻ボタンを押した時点の従業員IDを保持しておく。本日の業務情報の取得が終わるまでの間に
         // 別の従業員へ選択が切り替えられても、この従業員ID宛の結果しか画面に反映しないようにするため
         const empIdAtClick = selectedEmpId;
+        const sessionId = loginSessionId;
         document.getElementById('record_message').innerHTML = '登録中...';
         google.script.run
           .withSuccessHandler(function (message) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
             showRecordMessage(message);
             if (type === '出勤') {
               loadTodayWorkInfo(empIdAtClick);
             }
           })
-          .withFailureHandler(showRecordError)
+          .withFailureHandler(function (error) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
+            showRecordError(error);
+          })
           .recordClock(selectedEmpId, type);
       }
 
@@ -114,15 +454,16 @@
        * 取得中に従業員が切り替えられていた場合は、結果が戻ってきても表示しない（安全のためのガード）
        */
       function loadTodayWorkInfo(empId) {
+        const sessionId = loginSessionId;
         google.script.run
           .withSuccessHandler(function (info) {
-            if (selectedEmpId !== empId) {
+            if (!isSameLoginSession(sessionId) || selectedEmpId !== empId) {
               return;
             }
             renderTodayWorkCard(info);
           })
           .withFailureHandler(function () {
-            if (selectedEmpId !== empId) {
+            if (!isSameLoginSession(sessionId) || selectedEmpId !== empId) {
               return;
             }
             showTodayWorkFetchError();
@@ -233,11 +574,18 @@
         submitBtn.disabled = true;
         submitBtn.innerHTML = '登録中...';
 
+        const sessionId = loginSessionId;
         google.script.run
           .withSuccessHandler(function () {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
             window.location.reload();
           })
           .withFailureHandler(function (error) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
             errorEl.innerHTML = error.message;
             submitBtn.disabled = false;
             submitBtn.innerHTML = '登録';
@@ -274,6 +622,9 @@
         } else if (sectionName === 'shift') {
           document.getElementById('section_shift').style.display = 'block';
           loadShiftMonth(shiftYear, shiftMonth); // 開くたびに表示中の月のシフト状況を読み直す
+        } else if (sectionName === 'ingredient') {
+          document.getElementById('section_ingredient').style.display = 'block';
+          loadIngredientBoard(); // 開くたびに最新の在庫・確認事項を読み直す
         } else {
           document.getElementById('preparing_heading').textContent = navItem.textContent;
           document.getElementById('section_preparing').style.display = 'block';
@@ -287,10 +638,21 @@
         document.getElementById('today_work_table').style.display = 'none';
         showTodayWorkMessage('読み込み中...', false);
 
+        const sessionId = loginSessionId;
         google.script.run
-          .withSuccessHandler(renderTodayWork)
-          .withFailureHandler(showTodayWorkError)
-          .getTodayWorkSettings();
+          .withSuccessHandler(function (result) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
+            renderTodayWork(result);
+          })
+          .withFailureHandler(function (error) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
+            showTodayWorkError(error);
+          })
+          .getTodayWorkSettings(authToken);
       }
 
       /**
@@ -375,18 +737,25 @@
         statusSpan.textContent = '保存中...';
         statusSpan.classList.remove('error');
 
+        const sessionId = loginSessionId;
         google.script.run
           .withSuccessHandler(function (message) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
             saveBtn.disabled = false;
             statusSpan.textContent = message;
             statusSpan.classList.remove('error');
           })
           .withFailureHandler(function (error) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
             saveBtn.disabled = false;
             statusSpan.textContent = 'エラー: ' + error.message;
             statusSpan.classList.add('error');
           })
-          .saveTodayWork(empId, select.value, textarea.value);
+          .saveTodayWork(empId, select.value, textarea.value, authToken);
       }
 
       function showTodayWorkError(error) {
@@ -414,10 +783,21 @@
         document.getElementById('attendance_table').style.display = 'none';
         showAttendanceMessage('読み込み中...', false);
 
+        const sessionId = loginSessionId;
         google.script.run
-          .withSuccessHandler(renderAttendances)
-          .withFailureHandler(showAttendanceError)
-          .getTodayAttendances();
+          .withSuccessHandler(function (result) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
+            renderAttendances(result);
+          })
+          .withFailureHandler(function (error) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
+            showAttendanceError(error);
+          })
+          .getTodayAttendances(authToken);
       }
 
       /**
@@ -494,10 +874,21 @@
         document.getElementById('skill_table').style.display = 'none';
         showSkillMessage('読み込み中...', false);
 
+        const sessionId = loginSessionId;
         google.script.run
-          .withSuccessHandler(renderSkills)
-          .withFailureHandler(showSkillError)
-          .getSkillMatrix();
+          .withSuccessHandler(function (matrix) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
+            renderSkills(matrix);
+          })
+          .withFailureHandler(function (error) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
+            showSkillError(error);
+          })
+          .getSkillMatrix(authToken);
       }
 
       /**
@@ -603,19 +994,26 @@
         statusSpan.textContent = '保存中...';
         statusSpan.classList.remove('error');
 
+        const sessionId = loginSessionId;
         google.script.run
           .withSuccessHandler(function (result) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
             saveBtn.disabled = false;
             statusSpan.textContent = result.message;
             statusSpan.classList.remove('error');
             updateSkillRowDates(row, result.updatedAt);
           })
           .withFailureHandler(function (error) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
             saveBtn.disabled = false;
             statusSpan.textContent = 'エラー: ' + error.message;
             statusSpan.classList.add('error');
           })
-          .saveEmployeeSkills(empId, skillValues);
+          .saveEmployeeSkills(empId, skillValues, authToken);
       }
 
       /**
@@ -668,8 +1066,12 @@
         setShiftMonthButtonsDisabled(true);
         showShiftMessage('読み込み中...', false);
 
+        const sessionId = loginSessionId;
         google.script.run
           .withSuccessHandler(function (result) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
             setShiftMonthButtonsDisabled(false);
             shiftYear = result.year;
             shiftMonth = result.month;
@@ -687,11 +1089,14 @@
             renderShiftCalendar();
           })
           .withFailureHandler(function (error) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
             // 通信に失敗しても前月・翌月ボタンは押せる状態に戻す（表示中の年月は変更しない）
             setShiftMonthButtonsDisabled(false);
             showShiftMessage('エラー: ' + error.message, true);
           })
-          .getShiftMonth(year, month);
+          .getShiftMonth(year, month, authToken);
       }
 
       function setShiftMonthButtonsDisabled(disabled) {
@@ -917,6 +1322,7 @@
       function loadShiftDay(dateKey) {
         shiftDayRequestId++;
         const requestId = shiftDayRequestId;
+        const sessionId = loginSessionId;
 
         document.getElementById('shift_detail').style.display = 'block';
         document.getElementById('shift_detail_body').style.display = 'none';
@@ -927,18 +1333,18 @@
 
         google.script.run
           .withSuccessHandler(function (result) {
-            if (requestId !== shiftDayRequestId) {
+            if (!isSameLoginSession(sessionId) || requestId !== shiftDayRequestId) {
               return;
             }
             renderShiftDay(result);
           })
           .withFailureHandler(function (error) {
-            if (requestId !== shiftDayRequestId) {
+            if (!isSameLoginSession(sessionId) || requestId !== shiftDayRequestId) {
               return;
             }
             showShiftDetailMessage('エラー: ' + error.message, true);
           })
-          .getShiftDay(dateKey);
+          .getShiftDay(dateKey, authToken);
       }
 
       /**
@@ -1271,8 +1677,12 @@
         showShiftSaveStatus('', false);
 
         const savedDateKey = shiftSelectedDate;
+        const sessionId = loginSessionId;
         google.script.run
           .withSuccessHandler(function (result) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
             finishShiftSaving();
             showShiftSaveStatus(result.message, false);
             // 保存した日の確認事項と、カレンダーの印（○／△！）を最新の内容に更新する
@@ -1282,10 +1692,13 @@
             loadShiftMonth(shiftYear, shiftMonth);
           })
           .withFailureHandler(function (error) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
             finishShiftSaving();
             showShiftSaveStatus('エラー: ' + error.message, true);
           })
-          .saveShiftDay(savedDateKey, assignments, requirements);
+          .saveShiftDay(savedDateKey, assignments, requirements, authToken);
       }
 
       function finishShiftSaving() {
@@ -1354,4 +1767,1293 @@
           statusEl.classList.remove('error');
         }
       }
+
+      // 店長画面：食材管理
+      // サーバーから受け取った最新の食材管理情報。保存のたびに丸ごと入れ替える
+      let ingredientBoard = null;
+      // 表示中のタブ（原材料／仕込み済み）と保存状態の絞り込み（空文字はすべて）
+      let ingredientCategory = '原材料';
+      let ingredientStorageFilter = '';
+      // 操作ごとの「操作キー」。再送しても在庫が二重に動かないよう、保存が成功するまで同じ値を使う
+      const ingredientOperationKeys = {};
+      // 各モーダルが対象にしている在庫明細
+      let ingredientTargetLot = null;
+
+      /**
+       * 食材管理の情報をサーバーから取得する
+       */
+      function loadIngredientBoard() {
+        document.getElementById('ingredient_reload_btn').disabled = true;
+        showIngredientMessage('読み込み中...', false);
+
+        const sessionId = loginSessionId;
+        google.script.run
+          .withSuccessHandler(function (board) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
+            document.getElementById('ingredient_reload_btn').disabled = false;
+            showIngredientMessage('', false);
+            applyIngredientBoard(board);
+          })
+          .withFailureHandler(function (error) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
+            document.getElementById('ingredient_reload_btn').disabled = false;
+            document.getElementById('ingredient_body').style.display = 'none';
+            showIngredientMessage('エラー: ' + error.message, true);
+          })
+          .getIngredientBoard(authToken);
+      }
+
+      /**
+       * 受け取った食材管理情報で画面を作り直す
+       */
+      function applyIngredientBoard(board) {
+        ingredientBoard = board;
+        document.getElementById('ingredient_body').style.display = 'block';
+        renderIngredientAlerts();
+        renderIngredientTable();
+      }
+
+      function showIngredientMessage(message, isError) {
+        const messageEl = document.getElementById('ingredient_message');
+        messageEl.textContent = message;
+        if (isError) {
+          messageEl.classList.add('error');
+        } else {
+          messageEl.classList.remove('error');
+        }
+      }
+
+      /**
+       * 画面上部の確認事項（期限未設定・期限接近・残量不足・発注）を描画する
+       * 色だけで区別せず、見出しと本文の言葉でも状態が分かるようにする
+       */
+      function renderIngredientAlerts() {
+        const container = document.getElementById('ingredient_alerts');
+        container.innerHTML = '';
+
+        const groups = [
+          { 'key': 'expiryUnset', 'title': '期限が未設定・不明', 'level': 'check' },
+          { 'key': 'expiryNear', 'title': '期限切れ・期限が近い', 'level': 'warning' },
+          { 'key': 'lowStock', 'title': '残量不足', 'level': 'warning' },
+          { 'key': 'order', 'title': '発注の確認', 'level': 'info' },
+          { 'key': 'pending', 'title': '保存が完了していない明細', 'level': 'warning' }
+        ];
+
+        let total = 0;
+        for (let i = 0; i < groups.length; i++) {
+          const items = ingredientBoard.alerts[groups[i].key] || [];
+          if (items.length === 0) {
+            continue;
+          }
+          total = total + items.length;
+          container.appendChild(createIngredientAlertCard(groups[i], items));
+        }
+
+        if (total === 0) {
+          const emptyCard = document.createElement('div');
+          emptyCard.className = 'ingredient-alert-card ingredient-alert-none';
+          emptyCard.textContent = '確認が必要な食材はありません（' + ingredientBoard.nowText + ' 時点）';
+          container.appendChild(emptyCard);
+        }
+      }
+
+      /**
+       * 確認事項の1グループ分のカードを作る
+       */
+      function createIngredientAlertCard(group, items) {
+        const card = document.createElement('div');
+        card.className = 'ingredient-alert-card ingredient-alert-' + group.level;
+
+        const heading = document.createElement('div');
+        heading.className = 'ingredient-alert-heading';
+        heading.textContent = group.title + '：' + items.length + '件';
+        card.appendChild(heading);
+
+        const list = document.createElement('ul');
+        list.className = 'ingredient-alert-list';
+        for (let i = 0; i < items.length; i++) {
+          const item = document.createElement('li');
+          const title = document.createElement('span');
+          title.className = 'ingredient-alert-title';
+          title.textContent = items[i].title;
+          item.appendChild(title);
+          const detail = document.createElement('span');
+          detail.className = 'ingredient-alert-detail';
+          detail.textContent = items[i].detail;
+          item.appendChild(detail);
+
+          // 発注の記録は、誤って登録したときに取り消せるようにする（在庫は動かない）
+          if (group.key === 'order' && items[i].orderId) {
+            const orderId = items[i].orderId;
+            item.appendChild(createIngredientRowButton('発注の記録を取り消す', function () {
+              cancelIngredientOrderRecord(orderId);
+            }));
+          }
+          list.appendChild(item);
+        }
+        card.appendChild(list);
+        return card;
+      }
+
+      /**
+       * 発注の記録を取り消す（実際の注文には関係せず、在庫も増減しない）
+       */
+      function cancelIngredientOrderRecord(orderId) {
+        showIngredientMessage('発注の記録を取り消しています...', false);
+        const sessionId = loginSessionId;
+        google.script.run
+          .withSuccessHandler(function (result) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
+            applyIngredientBoard(result.board);
+            showIngredientMessage(result.message, false);
+          })
+          .withFailureHandler(function (error) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
+            showIngredientMessage('エラー: ' + error.message, true);
+          })
+          .cancelIngredientOrder({
+            'operationKey': createIngredientOperationKey(),
+            'orderId': orderId,
+            'actorEmpId': selectedEmpId ? String(selectedEmpId) : '',
+            'authToken': authToken
+          });
+      }
+
+      /**
+       * タブと絞り込みに合う在庫明細だけを取り出す
+       */
+      function getIngredientVisibleLots() {
+        const lots = [];
+        for (let i = 0; i < ingredientBoard.lots.length; i++) {
+          const lot = ingredientBoard.lots[i];
+          if (lot.category !== ingredientCategory) {
+            continue;
+          }
+          if (ingredientStorageFilter !== '' && lot.storageState !== ingredientStorageFilter) {
+            continue;
+          }
+          lots.push(lot);
+        }
+        return lots;
+      }
+
+      /**
+       * 在庫一覧の表を描画する（原材料と仕込み済みで列の構成が変わる）
+       */
+      function renderIngredientTable() {
+        const thead = document.getElementById('ingredient_thead');
+        const tbody = document.getElementById('ingredient_tbody');
+        thead.innerHTML = '';
+        tbody.innerHTML = '';
+
+        const isRawMaterial = (ingredientCategory === '原材料');
+        const columns = isRawMaterial
+          ? ['食材名', '残量の目安', '保存状態', '表示期限／使用期限', '冷凍した日時', '操作']
+          : ['食材名', '残量の目安', '仕込み日時', '使用期限', '保存状態', '確認事項', '操作'];
+
+        const headRow = document.createElement('tr');
+        for (let i = 0; i < columns.length; i++) {
+          const th = document.createElement('th');
+          th.textContent = columns[i];
+          headRow.appendChild(th);
+        }
+        thead.appendChild(headRow);
+
+        const lots = getIngredientVisibleLots();
+        const listMessage = document.getElementById('ingredient_list_message');
+        if (lots.length === 0) {
+          document.getElementById('ingredient_table').style.display = 'none';
+          listMessage.textContent = '表示できる在庫がありません。「入荷を記録」「仕込みを記録」から登録してください';
+          listMessage.classList.remove('error');
+          return;
+        }
+        listMessage.textContent = '';
+
+        for (let i = 0; i < lots.length; i++) {
+          tbody.appendChild(createIngredientRow(lots[i], isRawMaterial));
+        }
+        document.getElementById('ingredient_table').style.display = 'table';
+      }
+
+      /**
+       * 在庫一覧の1行分を作る
+       */
+      function createIngredientRow(lot, isRawMaterial) {
+        const row = document.createElement('tr');
+        row.appendChild(createIngredientNameCell(lot));
+        row.appendChild(createIngredientTextCell(lot.quantityText));
+
+        if (isRawMaterial) {
+          row.appendChild(createIngredientTextCell(lot.storageState));
+          row.appendChild(createIngredientExpiryCell(lot));
+          row.appendChild(createIngredientTextCell(lot.frozenText));
+        } else {
+          row.appendChild(createIngredientTextCell(lot.preparedAtText));
+          row.appendChild(createIngredientExpiryCell(lot));
+          row.appendChild(createIngredientTextCell(lot.storageState));
+          row.appendChild(createIngredientIssueCell(lot));
+        }
+        row.appendChild(createIngredientActionCell(lot));
+        return row;
+      }
+
+      function createIngredientTextCell(text) {
+        const cell = document.createElement('td');
+        cell.textContent = (text === '' || text === undefined || text === null) ? '-' : text;
+        return cell;
+      }
+
+      /**
+       * 食材名のセル。原材料一覧では確認事項も小さく添える
+       */
+      function createIngredientNameCell(lot) {
+        const cell = document.createElement('td');
+        const name = document.createElement('div');
+        name.className = 'ingredient-name';
+        name.textContent = lot.name;
+        cell.appendChild(name);
+
+        if (ingredientCategory === '原材料' && lot.issues.length > 0) {
+          const note = document.createElement('div');
+          note.className = 'ingredient-row-issue';
+          note.textContent = lot.issues.join(' / ');
+          cell.appendChild(note);
+        }
+        return cell;
+      }
+
+      /**
+       * 期限のセル。状態は色だけでなく文言でも示す
+       */
+      function createIngredientExpiryCell(lot) {
+        const cell = document.createElement('td');
+        const label = document.createElement('span');
+        label.className = 'ingredient-expiry ingredient-expiry-' + getIngredientExpiryClass(lot.expiry.state);
+        label.textContent = lot.expiry.label;
+        cell.appendChild(label);
+        return cell;
+      }
+
+      function getIngredientExpiryClass(state) {
+        if (state === '期限切れ') {
+          return 'expired';
+        }
+        if (state === '期限接近') {
+          return 'soon';
+        }
+        if (state === '要確認') {
+          return 'unknown';
+        }
+        return 'ok';
+      }
+
+      function createIngredientIssueCell(lot) {
+        const cell = document.createElement('td');
+        cell.textContent = lot.issues.length === 0 ? '特になし' : lot.issues.join(' / ');
+        if (lot.issues.length > 0) {
+          cell.classList.add('ingredient-row-issue');
+        }
+        return cell;
+      }
+
+      /**
+       * 操作ボタン（残量更新・詳細・冷凍／解凍）のセルを作る
+       */
+      function createIngredientActionCell(lot) {
+        const cell = document.createElement('td');
+        cell.className = 'ingredient-action-cell';
+
+        cell.appendChild(createIngredientRowButton('残量更新', function () {
+          openIngredientAmountModal(lot.id);
+        }));
+        cell.appendChild(createIngredientRowButton('詳細', function () {
+          openIngredientDetailModal(lot.id);
+        }));
+        if (lot.storageState === '冷蔵') {
+          cell.appendChild(createIngredientRowButton('冷凍に移す', function () {
+            openIngredientFreezeModal(lot.id);
+          }));
+        } else {
+          cell.appendChild(createIngredientRowButton(lot.storageState === '冷凍' ? '解凍する' : '解凍の完了', function () {
+            openIngredientThawModal(lot.id);
+          }));
+        }
+        return cell;
+      }
+
+      function createIngredientRowButton(label, handler) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'ingredient-row-btn';
+        button.textContent = label;
+        button.addEventListener('click', handler);
+        return button;
+      }
+
+      /**
+       * タブ（原材料／仕込み済み）を切り替える
+       */
+      function selectIngredientCategory(button) {
+        const tabs = document.querySelectorAll('.ingredient-tab');
+        for (let i = 0; i < tabs.length; i++) {
+          tabs[i].classList.remove('selected');
+        }
+        button.classList.add('selected');
+        ingredientCategory = button.dataset.category;
+        renderIngredientTable();
+      }
+
+      /**
+       * 保存状態（冷蔵・冷凍・解凍中）の絞り込みを切り替える
+       */
+      function selectIngredientStorage(button) {
+        const filters = document.querySelectorAll('.ingredient-filter');
+        for (let i = 0; i < filters.length; i++) {
+          filters[i].classList.remove('selected');
+        }
+        button.classList.add('selected');
+        ingredientStorageFilter = button.dataset.storage;
+        renderIngredientTable();
+      }
+
+      /**
+       * 在庫IDから表示中の明細を探す
+       */
+      function findIngredientLotById(lotId) {
+        for (let i = 0; i < ingredientBoard.lots.length; i++) {
+          if (ingredientBoard.lots[i].id === lotId) {
+            return ingredientBoard.lots[i];
+          }
+        }
+        return null;
+      }
+
+      // 食材管理のモーダル共通処理
+
+      /**
+       * モーダルを開く
+       * 開くたびに新しい操作キーを作り、保存が成功するまでは同じキーを使い続ける
+       * （通信が途中で切れて再送になっても、サーバー側で同じ操作と分かり在庫が二重に動かない）
+       */
+      function openIngredientModal(overlayId, keyName) {
+        if (!ingredientBoard) {
+          showIngredientMessage('食材の情報を読み込めていません。「更新」を押してください', true);
+          return false;
+        }
+        ingredientOperationKeys[keyName] = createIngredientOperationKey();
+        document.getElementById(overlayId).style.display = 'flex';
+        return true;
+      }
+
+      function closeIngredientModal(overlayId) {
+        document.getElementById(overlayId).style.display = 'none';
+      }
+
+      function handleIngredientOverlayClick(event) {
+        // 暗い背景そのものをクリックしたときだけ閉じる（モーダル本体のクリックは無視）
+        if (event.target === event.currentTarget) {
+          event.currentTarget.style.display = 'none';
+        }
+      }
+
+      /**
+       * 1回の保存を表す操作キーを作る
+       */
+      function createIngredientOperationKey() {
+        return 'op-' + Date.now() + '-' + Math.random().toString(36).substring(2, 10);
+      }
+
+      /**
+       * サーバーへ保存し、成功したら最新の内容で画面を作り直す
+       * 保存中はボタンを押せなくし、失敗したときは入力を残したままエラーだけを出す
+       */
+      function runIngredientSave(config) {
+        const submitBtn = document.getElementById(config.submitBtnId);
+        const errorEl = document.getElementById(config.errorId);
+        if (submitBtn.disabled) {
+          return; // 保存中の連打は無視する
+        }
+        errorEl.textContent = '';
+
+        let payload;
+        try {
+          payload = config.buildPayload();
+        } catch (error) {
+          errorEl.textContent = error.message;
+          return;
+        }
+        payload.operationKey = ingredientOperationKeys[config.keyName];
+        payload.actorEmpId = selectedEmpId ? String(selectedEmpId) : '';
+        // 店長専用の保存なので、サーバー側で権限を確認できるようトークンを添える
+        payload.authToken = authToken;
+
+        const originalLabel = submitBtn.textContent;
+        submitBtn.disabled = true;
+        submitBtn.textContent = '保存中...';
+
+        const sessionId = loginSessionId;
+        const runner = google.script.run
+          .withSuccessHandler(function (result) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
+            submitBtn.disabled = false;
+            submitBtn.textContent = originalLabel;
+            ingredientOperationKeys[config.keyName] = createIngredientOperationKey();
+            if (config.keepOpen !== true) {
+              closeIngredientModal(config.overlayId);
+            }
+            applyIngredientBoard(result.board);
+            showIngredientMessage(result.message, false);
+            if (config.onSuccess) {
+              config.onSuccess();
+            }
+          })
+          .withFailureHandler(function (error) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
+            submitBtn.disabled = false;
+            submitBtn.textContent = originalLabel;
+            // 保存できていないので成功の表示はせず、入力内容はそのまま残す
+            errorEl.textContent = 'エラー: ' + error.message;
+          });
+        runner[config.method](payload);
+      }
+
+      /**
+       * select の選択肢を作り直す
+       * @param {string} selectId 対象のselectのid
+       * @param {Array<Object>} options { value, label } の配列
+       * @param {string} selectedValue 選んでおく値
+       * @param {string} placeholder 先頭に出す未選択の文言（不要なら空文字）
+       */
+      function fillIngredientSelect(selectId, options, selectedValue, placeholder) {
+        const select = document.getElementById(selectId);
+        select.innerHTML = '';
+        if (placeholder !== '') {
+          const emptyOption = document.createElement('option');
+          emptyOption.value = '';
+          emptyOption.textContent = placeholder;
+          select.appendChild(emptyOption);
+        }
+        for (let i = 0; i < options.length; i++) {
+          const option = document.createElement('option');
+          option.value = options[i].value;
+          option.textContent = options[i].label;
+          select.appendChild(option);
+        }
+        select.value = (selectedValue === undefined || selectedValue === null) ? '' : selectedValue;
+      }
+
+      /**
+       * 値と表示が同じ選択肢の配列を作る
+       */
+      function toIngredientOptions(values) {
+        const options = [];
+        for (let i = 0; i < values.length; i++) {
+          options.push({ 'value': values[i], 'label': values[i] });
+        }
+        return options;
+      }
+
+      /**
+       * 食材マスタの選択肢を作る
+       * @param {string} category '原材料' か '仕込み済み'。空文字ならすべて
+       */
+      function getIngredientMasterOptions(category) {
+        const options = [];
+        for (let i = 0; i < ingredientBoard.masters.length; i++) {
+          const master = ingredientBoard.masters[i];
+          if (!master.active) {
+            continue;
+          }
+          if (category !== '' && master.category !== category) {
+            continue;
+          }
+          options.push({ 'value': master.id, 'label': master.name });
+        }
+        return options;
+      }
+
+      function findIngredientMasterById(ingredientId) {
+        for (let i = 0; i < ingredientBoard.masters.length; i++) {
+          if (ingredientBoard.masters[i].id === ingredientId) {
+            return ingredientBoard.masters[i];
+          }
+        }
+        return null;
+      }
+
+      function findIngredientSupplierById(supplierId) {
+        for (let i = 0; i < ingredientBoard.suppliers.length; i++) {
+          if (ingredientBoard.suppliers[i].id === supplierId) {
+            return ingredientBoard.suppliers[i];
+          }
+        }
+        return null;
+      }
+
+      /**
+       * 食材を選び直したとき、その食材の既定単位を単位のselectに反映する
+       */
+      function applyIngredientDefaultUnit(ingredientSelectId, unitSelectId) {
+        const master = findIngredientMasterById(document.getElementById(ingredientSelectId).value);
+        if (master && master.defaultUnit !== '') {
+          document.getElementById(unitSelectId).value = master.defaultUnit;
+        }
+      }
+
+      // 入力欄で使う日付・日時の文字列を作る（ブラウザの表示は端末の時計、保存時はGAS側で日本時間として扱う）
+      function formatIngredientInputDate(date) {
+        const pad = function (n) { return ('0' + n).slice(-2); };
+        return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
+      }
+
+      function formatIngredientInputDateTime(date) {
+        const pad = function (n) { return ('0' + n).slice(-2); };
+        return formatIngredientInputDate(date) + 'T' + pad(date.getHours()) + ':' + pad(date.getMinutes());
+      }
+
+      /**
+       * 日時の入力欄に「いま」を入れる（過去の日時に直すこともできる）
+       */
+      function setIngredientNow(inputId) {
+        document.getElementById(inputId).value = formatIngredientInputDateTime(new Date());
+      }
+
+      /**
+       * 入力必須の項目が空でないかを確かめる
+       */
+      function requireIngredientValue(inputId, label) {
+        const value = document.getElementById(inputId).value;
+        if (value === '' || value === null) {
+          throw new Error(label + 'を入力してください');
+        }
+        return value;
+      }
+
+      // 入荷を記録
+
+      function openIngredientReceiveModal() {
+        if (!openIngredientModal('ingredient_receive_overlay', 'receive')) {
+          return;
+        }
+        const pendingOrders = [];
+        for (let i = 0; i < ingredientBoard.orders.length; i++) {
+          const order = ingredientBoard.orders[i];
+          if (order.status === '発注済み') {
+            pendingOrders.push({
+              'value': order.id,
+              'label': order.name + ' ' + order.quantity + order.unit +
+                '（入荷予定 ' + (order.expectedDate === '' ? '未設定' : order.expectedDate) + '）'
+            });
+          }
+        }
+        fillIngredientSelect('receive_order', pendingOrders, '', '発注と結び付けない');
+        fillIngredientSelect('receive_ingredient', getIngredientMasterOptions(''), '', '食材を選んでください');
+        fillIngredientSelect('receive_unit', toIngredientOptions(ingredientBoard.units), '', '');
+        fillIngredientSelect('receive_expiry_kind', toIngredientOptions(ingredientBoard.expiryKinds), '表示期限', '');
+        document.getElementById('receive_quantity').value = '';
+        document.getElementById('receive_date').value = formatIngredientInputDate(new Date());
+        document.getElementById('receive_storage').value = '冷蔵';
+        document.getElementById('receive_expiry_date').value = '';
+        document.getElementById('receive_note').value = '';
+        document.getElementById('receive_error').textContent = '';
+        toggleIngredientExpiryDateInput();
+      }
+
+      /**
+       * 期限の種類が「不明」のときは期限日を入力できないようにする
+       */
+      function toggleIngredientExpiryDateInput() {
+        const isUnknown = (document.getElementById('receive_expiry_kind').value === '不明');
+        const dateInput = document.getElementById('receive_expiry_date');
+        dateInput.disabled = isUnknown;
+        if (isUnknown) {
+          dateInput.value = '';
+        }
+      }
+
+      /**
+       * 発注済みを選んだとき、食材・数量・単位を入荷の入力欄に写す
+       */
+      function applyIngredientOrderToReceiveForm() {
+        const orderId = document.getElementById('receive_order').value;
+        if (orderId === '') {
+          return;
+        }
+        for (let i = 0; i < ingredientBoard.orders.length; i++) {
+          const order = ingredientBoard.orders[i];
+          if (order.id !== orderId) {
+            continue;
+          }
+          document.getElementById('receive_ingredient').value = order.ingredientId;
+          document.getElementById('receive_quantity').value = order.quantity;
+          document.getElementById('receive_unit').value = order.unit;
+          return;
+        }
+      }
+
+      function submitIngredientReceive() {
+        runIngredientSave({
+          'overlayId': 'ingredient_receive_overlay',
+          'errorId': 'receive_error',
+          'submitBtnId': 'receive_submit_btn',
+          'keyName': 'receive',
+          'method': 'saveIngredientReceive',
+          'buildPayload': function () {
+            return {
+              'ingredientId': requireIngredientValue('receive_ingredient', '食材'),
+              'quantity': requireIngredientValue('receive_quantity', '数量'),
+              'unit': document.getElementById('receive_unit').value,
+              'receivedDate': requireIngredientValue('receive_date', '入荷日'),
+              'storageState': document.getElementById('receive_storage').value,
+              'expiryKind': document.getElementById('receive_expiry_kind').value,
+              'expiryDate': document.getElementById('receive_expiry_date').value,
+              'note': document.getElementById('receive_note').value,
+              'orderId': document.getElementById('receive_order').value
+            };
+          }
+        });
+      }
+
+      // 仕込みを記録
+
+      function openIngredientPrepModal() {
+        if (!openIngredientModal('ingredient_prep_overlay', 'prep')) {
+          return;
+        }
+        fillIngredientSelect('prep_ingredient', getIngredientMasterOptions('仕込み済み'), '', '仕込み品を選んでください');
+        fillIngredientSelect('prep_unit', toIngredientOptions(ingredientBoard.units), '', '');
+        document.getElementById('prep_quantity').value = '';
+        document.getElementById('prep_prepared_at').value = formatIngredientInputDateTime(new Date());
+        document.getElementById('prep_prepared_unknown').checked = false;
+        document.getElementById('prep_use_by').value = '';
+        document.getElementById('prep_storage').value = '冷蔵';
+        document.getElementById('prep_note').value = '';
+        document.getElementById('prep_error').textContent = '';
+        document.getElementById('prep_consume_tbody').innerHTML = '';
+        toggleIngredientPreparedUnknown();
+      }
+
+      /**
+       * 仕込み日時が「不明」のときは日時の入力欄を使えないようにする
+       */
+      function toggleIngredientPreparedUnknown() {
+        const isUnknown = document.getElementById('prep_prepared_unknown').checked;
+        document.getElementById('prep_prepared_at').disabled = isUnknown;
+      }
+
+      /**
+       * 仕込みで使った原材料の行を1行増やす
+       */
+      function addIngredientConsumeRow() {
+        const tbody = document.getElementById('prep_consume_tbody');
+        const row = document.createElement('tr');
+
+        const lotCell = document.createElement('td');
+        const select = document.createElement('select');
+        select.className = 'ingredient-consume-lot';
+        const emptyOption = document.createElement('option');
+        emptyOption.value = '';
+        emptyOption.textContent = '原材料の明細を選んでください';
+        select.appendChild(emptyOption);
+        for (let i = 0; i < ingredientBoard.lots.length; i++) {
+          const lot = ingredientBoard.lots[i];
+          if (lot.category !== '原材料' || lot.status !== '有効') {
+            continue;
+          }
+          const option = document.createElement('option');
+          option.value = lot.id;
+          option.textContent = lot.name + '（' + lot.quantityText + '・' + lot.storageState + '）';
+          select.appendChild(option);
+        }
+        lotCell.appendChild(select);
+        row.appendChild(lotCell);
+
+        const remainCell = document.createElement('td');
+        const remainInput = document.createElement('input');
+        remainInput.type = 'number';
+        remainInput.className = 'ingredient-consume-remain';
+        remainInput.step = '0.01';
+        remainInput.min = '0';
+        remainCell.appendChild(remainInput);
+        const unitLabel = document.createElement('span');
+        unitLabel.className = 'modal-unit';
+        remainCell.appendChild(unitLabel);
+        select.addEventListener('change', function () {
+          const lot = findIngredientLotById(select.value);
+          unitLabel.textContent = lot ? lot.unit : '';
+        });
+        row.appendChild(remainCell);
+
+        const actionCell = document.createElement('td');
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'shift-delete-btn';
+        deleteBtn.textContent = '削除';
+        deleteBtn.addEventListener('click', function () {
+          tbody.removeChild(row);
+        });
+        actionCell.appendChild(deleteBtn);
+        row.appendChild(actionCell);
+
+        tbody.appendChild(row);
+      }
+
+      /**
+       * 仕込みで使った原材料の入力内容を集める
+       */
+      function collectIngredientConsumptions() {
+        const consumptions = [];
+        const rows = document.getElementById('prep_consume_tbody').querySelectorAll('tr');
+        for (let i = 0; i < rows.length; i++) {
+          const lotId = rows[i].querySelector('.ingredient-consume-lot').value;
+          const remaining = rows[i].querySelector('.ingredient-consume-remain').value;
+          if (lotId === '' && remaining === '') {
+            continue;
+          }
+          if (lotId === '') {
+            throw new Error('使った原材料の明細を選んでください');
+          }
+          if (remaining === '') {
+            throw new Error('使った原材料の「仕込み後の残量」を入力してください');
+          }
+          const lot = findIngredientLotById(lotId);
+          consumptions.push({
+            'lotId': lotId,
+            'version': lot ? lot.version : '',
+            'remainingQuantity': remaining
+          });
+        }
+        return consumptions;
+      }
+
+      function submitIngredientPrep() {
+        runIngredientSave({
+          'overlayId': 'ingredient_prep_overlay',
+          'errorId': 'prep_error',
+          'submitBtnId': 'prep_submit_btn',
+          'keyName': 'prep',
+          'method': 'saveIngredientPrep',
+          'buildPayload': function () {
+            const isUnknown = document.getElementById('prep_prepared_unknown').checked;
+            return {
+              'ingredientId': requireIngredientValue('prep_ingredient', '仕込み品'),
+              'quantity': requireIngredientValue('prep_quantity', '仕込んだ数量'),
+              'unit': document.getElementById('prep_unit').value,
+              'preparedAt': isUnknown ? '' : requireIngredientValue('prep_prepared_at', '仕込んだ日時'),
+              'preparedAtUnknown': isUnknown,
+              'useByDate': document.getElementById('prep_use_by').value,
+              'storageState': document.getElementById('prep_storage').value,
+              'note': document.getElementById('prep_note').value,
+              'consumptions': collectIngredientConsumptions()
+            };
+          }
+        });
+      }
+
+      // 残量の更新
+
+      function openIngredientAmountModal(lotId) {
+        if (!openIngredientModal('ingredient_amount_overlay', 'amount')) {
+          return;
+        }
+        ingredientTargetLot = findIngredientLotById(lotId);
+        document.getElementById('amount_target').textContent =
+          ingredientTargetLot.name + '（現在 ' + ingredientTargetLot.quantityText + '・' + ingredientTargetLot.storageState + '）';
+        document.getElementById('amount_quantity').value = ingredientTargetLot.quantity;
+        document.getElementById('amount_unit').textContent = ingredientTargetLot.unit;
+        document.getElementById('amount_finish').checked = false;
+        document.getElementById('amount_error').textContent = '';
+      }
+
+      function submitIngredientAmount() {
+        runIngredientSave({
+          'overlayId': 'ingredient_amount_overlay',
+          'errorId': 'amount_error',
+          'submitBtnId': 'amount_submit_btn',
+          'keyName': 'amount',
+          'method': 'saveIngredientAmount',
+          'buildPayload': function () {
+            return {
+              'lotId': ingredientTargetLot.id,
+              'version': ingredientTargetLot.version,
+              'quantity': requireIngredientValue('amount_quantity', '現在のおおよその残量'),
+              'finish': document.getElementById('amount_finish').checked
+            };
+          }
+        });
+      }
+
+      // 冷凍に移す（脂の取り分けも同じ画面から記録する）
+
+      function openIngredientFreezeModal(lotId) {
+        if (!openIngredientModal('ingredient_freeze_overlay', 'freeze')) {
+          return;
+        }
+        ingredientTargetLot = findIngredientLotById(lotId);
+        document.getElementById('freeze_target').textContent =
+          ingredientTargetLot.name + '（現在 ' + ingredientTargetLot.quantityText + '・' + ingredientTargetLot.storageState + '）';
+        document.querySelector('input[name="freeze_mode"][value="lot"]').checked = true;
+        document.getElementById('freeze_quantity').value = '';
+        document.getElementById('freeze_unit').textContent = ingredientTargetLot.unit;
+        document.getElementById('freeze_source_unit').textContent = ingredientTargetLot.unit;
+        document.getElementById('freeze_fat_quantity').value = '';
+        document.getElementById('freeze_source_remaining').value = '';
+        fillIngredientSelect('freeze_fat_unit', toIngredientOptions(ingredientBoard.units), ingredientTargetLot.unit, '');
+        document.getElementById('freeze_frozen_at').value = formatIngredientInputDateTime(new Date());
+        document.getElementById('freeze_use_by').value = '';
+        document.getElementById('freeze_error').textContent = '';
+        toggleIngredientFreezeMode();
+      }
+
+      /**
+       * 「この食材を冷凍する」と「脂を取り分けて冷凍する」で入力欄を切り替える
+       */
+      function toggleIngredientFreezeMode() {
+        const isFat = (document.querySelector('input[name="freeze_mode"]:checked').value === 'fat');
+        document.getElementById('freeze_lot_fields').style.display = isFat ? 'none' : 'block';
+        document.getElementById('freeze_fat_fields').style.display = isFat ? 'block' : 'none';
+      }
+
+      /**
+       * 冷凍する量に在庫の全量を入れる
+       */
+      function setIngredientFreezeAll() {
+        document.getElementById('freeze_quantity').value = ingredientTargetLot.quantity;
+      }
+
+      function submitIngredientFreeze() {
+        const isFat = (document.querySelector('input[name="freeze_mode"]:checked').value === 'fat');
+        runIngredientSave({
+          'overlayId': 'ingredient_freeze_overlay',
+          'errorId': 'freeze_error',
+          'submitBtnId': 'freeze_submit_btn',
+          'keyName': 'freeze',
+          'method': isFat ? 'saveIngredientFat' : 'saveIngredientFreeze',
+          'buildPayload': function () {
+            const payload = {
+              'lotId': ingredientTargetLot.id,
+              'version': ingredientTargetLot.version,
+              'frozenAt': requireIngredientValue('freeze_frozen_at', '冷凍した日時'),
+              'useByDate': document.getElementById('freeze_use_by').value
+            };
+            if (isFat) {
+              payload.fatQuantity = requireIngredientValue('freeze_fat_quantity', '脂の量');
+              payload.fatUnit = document.getElementById('freeze_fat_unit').value;
+              payload.sourceRemainingQuantity = requireIngredientValue('freeze_source_remaining', '取り分けたあとの元の食材の残量');
+            } else {
+              payload.quantity = requireIngredientValue('freeze_quantity', '冷凍する量');
+            }
+            return payload;
+          }
+        });
+      }
+
+      // 解凍（開始と完了）
+
+      function openIngredientThawModal(lotId) {
+        if (!openIngredientModal('ingredient_thaw_overlay', 'thaw')) {
+          return;
+        }
+        ingredientTargetLot = findIngredientLotById(lotId);
+        document.getElementById('thaw_target').textContent =
+          ingredientTargetLot.name + '（現在 ' + ingredientTargetLot.quantityText + '・' + ingredientTargetLot.storageState + '）';
+
+        const isFrozen = (ingredientTargetLot.storageState === '冷凍');
+        // 冷凍中なら「開始」、解凍中なら「完了」しか記録できないようにする
+        document.getElementById('thaw_mode_start').checked = isFrozen;
+        document.getElementById('thaw_mode_start').disabled = !isFrozen;
+        document.getElementById('thaw_mode_complete').checked = !isFrozen;
+        document.getElementById('thaw_mode_complete').disabled = isFrozen;
+
+        document.getElementById('thaw_quantity').value = '';
+        document.getElementById('thaw_unit').textContent = ingredientTargetLot.unit;
+        document.getElementById('thaw_started_at').value = formatIngredientInputDateTime(new Date());
+        document.getElementById('thaw_completed_at').value = formatIngredientInputDateTime(new Date());
+        document.getElementById('thaw_use_by').value = ingredientTargetLot.useByDate === ''
+          ? '' : ingredientTargetLot.useByDate.replace(/\//g, '-');
+        document.getElementById('thaw_error').textContent = '';
+        toggleIngredientThawMode();
+      }
+
+      /**
+       * 「解凍を開始する」と「解凍の完了を記録する」で入力欄を切り替える
+       */
+      function toggleIngredientThawMode() {
+        const isStart = document.getElementById('thaw_mode_start').checked;
+        document.getElementById('thaw_start_fields').style.display = isStart ? 'block' : 'none';
+        document.getElementById('thaw_complete_fields').style.display = isStart ? 'none' : 'block';
+      }
+
+      function setIngredientThawAll() {
+        document.getElementById('thaw_quantity').value = ingredientTargetLot.quantity;
+      }
+
+      function submitIngredientThaw() {
+        const isStart = document.getElementById('thaw_mode_start').checked;
+        runIngredientSave({
+          'overlayId': 'ingredient_thaw_overlay',
+          'errorId': 'thaw_error',
+          'submitBtnId': 'thaw_submit_btn',
+          'keyName': 'thaw',
+          'method': isStart ? 'saveIngredientThawStart' : 'saveIngredientThawComplete',
+          'buildPayload': function () {
+            const payload = {
+              'lotId': ingredientTargetLot.id,
+              'version': ingredientTargetLot.version,
+              'useByDate': document.getElementById('thaw_use_by').value
+            };
+            if (isStart) {
+              payload.quantity = requireIngredientValue('thaw_quantity', '解凍する量');
+              payload.startedAt = requireIngredientValue('thaw_started_at', '解凍を開始した日時');
+            } else {
+              payload.completedAt = requireIngredientValue('thaw_completed_at', '解凍が完了した日時');
+            }
+            return payload;
+          }
+        });
+      }
+
+      // 明細の詳細（記録されている内容の確認と、使用期限の設定）
+
+      function openIngredientDetailModal(lotId) {
+        if (!openIngredientModal('ingredient_detail_overlay', 'detail')) {
+          return;
+        }
+        ingredientTargetLot = findIngredientLotById(lotId);
+        const lot = ingredientTargetLot;
+
+        const rows = [
+          ['食材名', lot.name],
+          ['区分', lot.category],
+          ['残量の目安', lot.quantityText],
+          ['保存状態', lot.storageState],
+          ['いま管理している期限', lot.expiry.label],
+          ['ラベルの期限', lot.labelExpiryDate === '' ? '未登録' : (lot.labelExpiryKind + ' ' + lot.labelExpiryDate)],
+          ['店舗で決めた使用期限', lot.useByDate === '' ? '未設定（要確認）' : lot.useByDate],
+          ['入荷日', lot.receivedDate],
+          ['仕込み日時', lot.preparedAtText],
+          ['冷凍した日時', lot.frozenText],
+          ['解凍開始日時', lot.thawStartedAt],
+          ['解凍完了日時', lot.thawCompletedAt],
+          ['分割元の在庫ID', lot.sourceLotId],
+          ['最終確認', lot.checkedAt + (lot.checkedBy === '' ? '' : '（' + lot.checkedBy + '）')],
+          ['備考', lot.note],
+          ['確認事項', lot.issues.length === 0 ? '特になし' : lot.issues.join(' / ')]
+        ];
+
+        const list = document.getElementById('detail_list');
+        list.innerHTML = '';
+        for (let i = 0; i < rows.length; i++) {
+          const term = document.createElement('dt');
+          term.textContent = rows[i][0];
+          list.appendChild(term);
+          const description = document.createElement('dd');
+          description.textContent = (rows[i][1] === '' || rows[i][1] === undefined) ? '-' : rows[i][1];
+          list.appendChild(description);
+        }
+
+        document.getElementById('detail_use_by').value = lot.useByDate === '' ? '' : lot.useByDate.replace(/\//g, '-');
+        document.getElementById('detail_note').value = lot.note;
+        document.getElementById('detail_error').textContent = '';
+      }
+
+      function submitIngredientUseBy() {
+        runIngredientSave({
+          'overlayId': 'ingredient_detail_overlay',
+          'errorId': 'detail_error',
+          'submitBtnId': 'detail_submit_btn',
+          'keyName': 'detail',
+          'method': 'saveIngredientUseBy',
+          'buildPayload': function () {
+            return {
+              'lotId': ingredientTargetLot.id,
+              'version': ingredientTargetLot.version,
+              'useByDate': document.getElementById('detail_use_by').value,
+              'note': document.getElementById('detail_note').value
+            };
+          }
+        });
+      }
+
+      // 発注の記録
+
+      function openIngredientOrderModal() {
+        if (!openIngredientModal('ingredient_order_overlay', 'order')) {
+          return;
+        }
+        const supplierOptions = [];
+        for (let i = 0; i < ingredientBoard.suppliers.length; i++) {
+          supplierOptions.push({ 'value': ingredientBoard.suppliers[i].id, 'label': ingredientBoard.suppliers[i].name });
+        }
+        fillIngredientSelect('order_ingredient', getIngredientMasterOptions(''), '', '食材を選んでください');
+        fillIngredientSelect('order_supplier', supplierOptions, '', '業者を選んでください');
+        fillIngredientSelect('order_unit', toIngredientOptions(ingredientBoard.units), '', '');
+        document.getElementById('order_quantity').value = '';
+        document.getElementById('order_ordered_at').value = formatIngredientInputDateTime(new Date());
+        document.getElementById('order_expected_date').value = '';
+        document.getElementById('order_note').value = '';
+        document.getElementById('order_error').textContent = '';
+        showIngredientOrderPlan();
+      }
+
+      /**
+       * 発注する食材に合わせて、単位と業者の初期値を入れる
+       */
+      function applyIngredientOrderDefaults() {
+        const master = findIngredientMasterById(document.getElementById('order_ingredient').value);
+        if (!master) {
+          return;
+        }
+        if (master.defaultUnit !== '') {
+          document.getElementById('order_unit').value = master.defaultUnit;
+        }
+        if (master.supplierId !== '') {
+          document.getElementById('order_supplier').value = master.supplierId;
+        }
+        showIngredientOrderPlan();
+      }
+
+      /**
+       * 選んだ業者の「次に納品できる日」と「発注締切」を表示する
+       */
+      function showIngredientOrderPlan() {
+        const supplier = findIngredientSupplierById(document.getElementById('order_supplier').value);
+        const planEl = document.getElementById('order_plan_text');
+        if (!supplier) {
+          planEl.textContent = '業者を選ぶと、次に納品できる日と発注締切を表示します';
+          return;
+        }
+        planEl.textContent = supplier.plan.text;
+      }
+
+      function submitIngredientOrder() {
+        runIngredientSave({
+          'overlayId': 'ingredient_order_overlay',
+          'errorId': 'order_error',
+          'submitBtnId': 'order_submit_btn',
+          'keyName': 'order',
+          'method': 'saveIngredientOrder',
+          'buildPayload': function () {
+            return {
+              'ingredientId': requireIngredientValue('order_ingredient', '食材'),
+              'supplierId': document.getElementById('order_supplier').value,
+              'quantity': requireIngredientValue('order_quantity', '発注数量'),
+              'unit': document.getElementById('order_unit').value,
+              'orderedAt': requireIngredientValue('order_ordered_at', '発注した日時'),
+              'expectedDate': document.getElementById('order_expected_date').value,
+              'note': document.getElementById('order_note').value
+            };
+          }
+        });
+      }
+
+      // 業者・発注条件と食材の設定
+
+      function openIngredientSettingModal() {
+        if (!openIngredientModal('ingredient_setting_overlay', 'supplier')) {
+          return;
+        }
+        // 業者と食材は別々の保存なので、操作キーもそれぞれ用意する
+        ingredientOperationKeys['master'] = createIngredientOperationKey();
+        buildIngredientWeekdayCheckboxes('supplier_order_days');
+        buildIngredientWeekdayCheckboxes('supplier_ship_days');
+        buildIngredientWeekdayCheckboxes('supplier_delivery_days');
+        buildIngredientWeekdayCheckboxes('supplier_pickup_days');
+        fillIngredientSelect('supplier_lead_count', toIngredientOptions(ingredientBoard.leadTimeCounts), '営業日', '');
+        fillIngredientSelect('master_category', toIngredientOptions(ingredientBoard.categories), '原材料', '');
+        fillIngredientSelect('master_unit', toIngredientOptions(ingredientBoard.units), '', '');
+        fillIngredientSelect('master_min_unit', toIngredientOptions(ingredientBoard.units), '', '');
+        refreshIngredientSettingSelects();
+        document.getElementById('supplier_error').textContent = '';
+        document.getElementById('master_error').textContent = '';
+      }
+
+      /**
+       * 設定モーダルの「編集する業者」「編集する食材」の選択肢を作り直す
+       */
+      function refreshIngredientSettingSelects() {
+        const supplierOptions = [];
+        for (let i = 0; i < ingredientBoard.suppliers.length; i++) {
+          supplierOptions.push({ 'value': ingredientBoard.suppliers[i].id, 'label': ingredientBoard.suppliers[i].name });
+        }
+        const currentSupplierId = document.getElementById('supplier_select').value;
+        fillIngredientSelect('supplier_select', supplierOptions, currentSupplierId, '新しい業者を追加');
+        fillIngredientSelect('master_supplier', supplierOptions, '', '業者を設定しない');
+
+        const masterOptions = [];
+        for (let i = 0; i < ingredientBoard.masters.length; i++) {
+          masterOptions.push({
+            'value': ingredientBoard.masters[i].id,
+            'label': ingredientBoard.masters[i].name + '（' + ingredientBoard.masters[i].category + '）'
+          });
+        }
+        const currentMasterId = document.getElementById('master_select').value;
+        fillIngredientSelect('master_select', masterOptions, currentMasterId, '新しい食材を追加');
+
+        applyIngredientSupplierToForm();
+        applyIngredientMasterToForm();
+      }
+
+      /**
+       * 曜日のチェックボックスを作る
+       */
+      function buildIngredientWeekdayCheckboxes(containerId) {
+        const container = document.getElementById(containerId);
+        container.innerHTML = '';
+        for (let i = 0; i < ingredientBoard.weekdayLabels.length; i++) {
+          const label = document.createElement('label');
+          label.className = 'ingredient-weekday';
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.value = ingredientBoard.weekdayLabels[i];
+          label.appendChild(checkbox);
+          const text = document.createElement('span');
+          text.textContent = ingredientBoard.weekdayLabels[i];
+          label.appendChild(text);
+          container.appendChild(label);
+        }
+      }
+
+      /**
+       * 曜日のチェックボックスに保存済みの設定を反映する
+       */
+      function setIngredientWeekdayCheckboxes(containerId, weekdayText) {
+        const selected = (weekdayText === '' || weekdayText === undefined) ? [] : weekdayText.split('・');
+        const checkboxes = document.getElementById(containerId).querySelectorAll('input');
+        for (let i = 0; i < checkboxes.length; i++) {
+          checkboxes[i].checked = (selected.indexOf(checkboxes[i].value) !== -1);
+        }
+      }
+
+      /**
+       * チェックされた曜日を配列で取り出す
+       */
+      function collectIngredientWeekdays(containerId) {
+        const days = [];
+        const checkboxes = document.getElementById(containerId).querySelectorAll('input');
+        for (let i = 0; i < checkboxes.length; i++) {
+          if (checkboxes[i].checked) {
+            days.push(checkboxes[i].value);
+          }
+        }
+        return days;
+      }
+
+      /**
+       * 選んだ業者の設定を入力欄に反映する
+       */
+      function applyIngredientSupplierToForm() {
+        const supplier = findIngredientSupplierById(document.getElementById('supplier_select').value);
+        document.getElementById('supplier_name').value = supplier ? supplier.name : '';
+        document.getElementById('supplier_deadline').value = supplier ? supplier.deadlineTime : '';
+        document.getElementById('supplier_lead_time').value = (supplier && supplier.leadTimeDays !== null) ? supplier.leadTimeDays : '';
+        document.getElementById('supplier_lead_count').value = (supplier && supplier.leadTimeCount !== '') ? supplier.leadTimeCount : '営業日';
+        document.getElementById('supplier_closed_dates').value = supplier ? supplier.closedDatesText : '';
+        document.getElementById('supplier_note').value = supplier ? supplier.note : '';
+        setIngredientWeekdayCheckboxes('supplier_order_days', supplier ? supplier.orderDaysText : '');
+        setIngredientWeekdayCheckboxes('supplier_ship_days', supplier ? supplier.shipDaysText : '');
+        setIngredientWeekdayCheckboxes('supplier_delivery_days', supplier ? supplier.deliveryDaysText : '');
+        setIngredientWeekdayCheckboxes('supplier_pickup_days', supplier ? supplier.pickupDaysText : '');
+        document.getElementById('supplier_plan_text').textContent = supplier
+          ? supplier.plan.text : '業者を保存すると、次に納品できる日と発注締切を表示します';
+      }
+
+      function submitIngredientSupplier() {
+        runIngredientSave({
+          'overlayId': 'ingredient_setting_overlay',
+          'errorId': 'supplier_error',
+          'submitBtnId': 'supplier_submit_btn',
+          'keyName': 'supplier',
+          'method': 'saveIngredientSupplier',
+          'keepOpen': true,
+          'onSuccess': refreshIngredientSettingSelects,
+          'buildPayload': function () {
+            return {
+              'supplierId': document.getElementById('supplier_select').value,
+              'name': requireIngredientValue('supplier_name', '業者名'),
+              'deadlineTime': document.getElementById('supplier_deadline').value,
+              'orderDays': collectIngredientWeekdays('supplier_order_days'),
+              'shipDays': collectIngredientWeekdays('supplier_ship_days'),
+              'deliveryDays': collectIngredientWeekdays('supplier_delivery_days'),
+              'pickupDays': collectIngredientWeekdays('supplier_pickup_days'),
+              'leadTimeDays': document.getElementById('supplier_lead_time').value,
+              'leadTimeCount': document.getElementById('supplier_lead_count').value,
+              'closedDates': document.getElementById('supplier_closed_dates').value,
+              'note': document.getElementById('supplier_note').value
+            };
+          }
+        });
+      }
+
+      /**
+       * 選んだ食材の設定を入力欄に反映する
+       */
+      function applyIngredientMasterToForm() {
+        const master = findIngredientMasterById(document.getElementById('master_select').value);
+        document.getElementById('master_name').value = master ? master.name : '';
+        document.getElementById('master_category').value = master ? master.category : '原材料';
+        document.getElementById('master_unit').value = master ? master.defaultUnit : '';
+        document.getElementById('master_supplier').value = master ? master.supplierId : '';
+        document.getElementById('master_min_quantity').value = (master && master.minQuantity !== null) ? master.minQuantity : '';
+        document.getElementById('master_min_unit').value = master ? master.minUnit : '';
+        document.getElementById('master_notify_expiry').checked = master ? master.notifyExpirySoon : false;
+        document.getElementById('master_active').checked = master ? master.active : true;
+      }
+
+      function submitIngredientMaster() {
+        runIngredientSave({
+          'overlayId': 'ingredient_setting_overlay',
+          'errorId': 'master_error',
+          'submitBtnId': 'master_submit_btn',
+          'keyName': 'master',
+          'method': 'saveIngredientMaster',
+          'keepOpen': true,
+          'onSuccess': refreshIngredientSettingSelects,
+          'buildPayload': function () {
+            const minQuantity = document.getElementById('master_min_quantity').value;
+            if (minQuantity !== '' && document.getElementById('master_min_unit').value === '') {
+              throw new Error('最低残量の単位を選んでください');
+            }
+            return {
+              'ingredientId': document.getElementById('master_select').value,
+              'name': requireIngredientValue('master_name', '食材名'),
+              'category': document.getElementById('master_category').value,
+              'defaultUnit': document.getElementById('master_unit').value,
+              'supplierId': document.getElementById('master_supplier').value,
+              'minQuantity': minQuantity,
+              'minUnit': document.getElementById('master_min_unit').value,
+              'notifyExpirySoon': document.getElementById('master_notify_expiry').checked,
+              'active': document.getElementById('master_active').checked
+            };
+          }
+        });
+      }
+
+      // 食材管理のタブ・絞り込みのクリックを受け取る
+      window.addEventListener('load', function () {
+        const tabs = document.querySelectorAll('.ingredient-tab');
+        for (let i = 0; i < tabs.length; i++) {
+          tabs[i].addEventListener('click', function () {
+            selectIngredientCategory(this);
+          });
+        }
+        const filters = document.querySelectorAll('.ingredient-filter');
+        for (let j = 0; j < filters.length; j++) {
+          filters[j].addEventListener('click', function () {
+            selectIngredientStorage(this);
+          });
+        }
+      });
     </script>

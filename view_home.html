@@ -6,13 +6,31 @@
     <?!= HtmlService.createTemplateFromFile('script').evaluate().getContent(); ?>
   </head>
   <body>
-    <div class="app-header">
-      <h1 class="app-title">店舗運営支援アプリ</h1>
-      <button type="button" id="to_manager_btn" class="header-btn" onclick="showScreen('manager')">店長画面</button>
-      <button type="button" id="to_employee_btn" class="header-btn" onclick="showScreen('employee')" style="display:none;">従業員画面に戻る</button>
+    <div id="idle_notice" class="idle-notice" role="status" aria-live="polite">
+      <div class="idle-notice-head">
+        <span class="idle-notice-icon">🕒</span>
+        <span class="idle-notice-app">店舗運営支援アプリ</span>
+      </div>
+      <div class="idle-notice-title">あと1分でログアウトします</div>
+      <div class="idle-notice-text">マウスを動かすと、利用を続けられます。</div>
     </div>
 
-    <div id="employee_screen">
+    <div class="app-header">
+      <h1 class="app-title">店舗運営支援アプリ</h1>
+      <button type="button" id="logout_btn" class="header-btn logout-btn" onclick="openLogoutModal()" style="display:none;">ログアウト</button>
+    </div>
+
+    <div id="login_screen" class="login-screen">
+      <div class="login-box">
+        <h2 class="login-heading">パスコードを入力</h2>
+        <input type="password" id="login_passcode" class="login-input" inputmode="numeric" autocomplete="off" maxlength="8">
+        <div id="login_error" class="login-error"></div>
+        <button type="button" id="login_btn" class="login-btn" onclick="submitLogin()">ログイン</button>
+        <div class="login-hint">4桁の数字を入力してください</div>
+      </div>
+    </div>
+
+    <div id="employee_screen" style="display:none;">
       <div class="main-layout">
         <div class="employee-list">
           <div class="employee-list-header">
@@ -197,10 +215,63 @@
             </div>
           </div>
 
+          <div id="section_ingredient" class="manager-section" style="display:none;">
+            <div class="manager-section-header">
+              <h2 class="manager-heading">食材管理</h2>
+              <button type="button" id="ingredient_reload_btn" class="attendance-reload-btn" onclick="loadIngredientBoard()">更新</button>
+            </div>
+            <div class="attendance-message" id="ingredient_message"></div>
+
+            <div id="ingredient_body" style="display:none;">
+              <div class="ingredient-alerts" id="ingredient_alerts"></div>
+
+              <div class="ingredient-actions">
+                <button type="button" class="ingredient-action-btn" onclick="openIngredientReceiveModal()">入荷を記録</button>
+                <button type="button" class="ingredient-action-btn" onclick="openIngredientPrepModal()">仕込みを記録</button>
+                <button type="button" class="ingredient-action-btn" onclick="openIngredientOrderModal()">発注を記録</button>
+                <button type="button" class="ingredient-action-btn ingredient-action-sub" onclick="openIngredientSettingModal()">業者・発注条件</button>
+              </div>
+
+              <div class="ingredient-tabs" id="ingredient_tabs">
+                <button type="button" class="ingredient-tab selected" data-category="原材料">原材料</button>
+                <button type="button" class="ingredient-tab" data-category="仕込み済み">仕込み済み</button>
+              </div>
+
+              <div class="ingredient-filters" id="ingredient_filters">
+                <span class="ingredient-filter-label">保存状態で絞り込み：</span>
+                <button type="button" class="ingredient-filter selected" data-storage="">すべて</button>
+                <button type="button" class="ingredient-filter" data-storage="冷蔵">冷蔵</button>
+                <button type="button" class="ingredient-filter" data-storage="冷凍">冷凍</button>
+                <button type="button" class="ingredient-filter" data-storage="解凍中">解凍中</button>
+              </div>
+
+              <div class="attendance-message" id="ingredient_list_message"></div>
+              <table class="attendance-table ingredient-table" id="ingredient_table" style="display:none;">
+                <thead id="ingredient_thead"></thead>
+                <tbody id="ingredient_tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
           <div id="section_preparing" class="manager-section" style="display:none;">
             <h2 class="manager-heading" id="preparing_heading"></h2>
             <div class="attendance-message">この機能は準備中です</div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="logout_overlay" class="modal-overlay" onclick="handleLogoutOverlayClick(event)">
+      <div class="modal-box">
+        <div class="modal-header">
+          <span class="modal-title">ログアウト</span>
+          <span class="modal-close" onclick="closeLogoutModal()">×</span>
+        </div>
+        <div class="logout-text">パスコード入力画面に戻りますか？</div>
+        <div class="logout-note">ログアウトしても退勤にはなりません。</div>
+        <div class="modal-footer">
+          <button type="button" class="modal-cancel-btn" onclick="closeLogoutModal()">キャンセル</button>
+          <button type="button" class="modal-submit-btn" onclick="confirmLogout()">ログアウト</button>
         </div>
       </div>
     </div>
@@ -219,6 +290,415 @@
         <div class="modal-footer">
           <button type="button" class="modal-cancel-btn" onclick="closeAddEmployeeModal()">キャンセル</button>
           <button type="button" id="add_employee_submit_btn" class="modal-submit-btn" onclick="submitAddEmployee()">登録</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="ingredient_receive_overlay" class="modal-overlay" onclick="handleIngredientOverlayClick(event)">
+      <div class="modal-box modal-box-wide">
+        <div class="modal-header">
+          <span class="modal-title">入荷を記録</span>
+          <span class="modal-close" onclick="closeIngredientModal('ingredient_receive_overlay')">×</span>
+        </div>
+        <label class="modal-label" for="receive_order">発注済みから選ぶ（任意）</label>
+        <select id="receive_order" class="modal-input" onchange="applyIngredientOrderToReceiveForm()"></select>
+        <label class="modal-label" for="receive_ingredient">食材</label>
+        <select id="receive_ingredient" class="modal-input" onchange="applyIngredientDefaultUnit('receive_ingredient', 'receive_unit')"></select>
+        <div class="modal-row">
+          <div class="modal-col">
+            <label class="modal-label" for="receive_quantity">数量（目視の概数で可）</label>
+            <input type="number" id="receive_quantity" class="modal-input" step="0.01" min="0">
+          </div>
+          <div class="modal-col">
+            <label class="modal-label" for="receive_unit">単位</label>
+            <select id="receive_unit" class="modal-input"></select>
+          </div>
+        </div>
+        <div class="modal-row">
+          <div class="modal-col">
+            <label class="modal-label" for="receive_date">入荷日</label>
+            <input type="date" id="receive_date" class="modal-input">
+          </div>
+          <div class="modal-col">
+            <label class="modal-label" for="receive_storage">保存状態</label>
+            <select id="receive_storage" class="modal-input">
+              <option value="冷蔵">冷蔵</option>
+              <option value="冷凍">冷凍（納品時から冷凍）</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-row">
+          <div class="modal-col">
+            <label class="modal-label" for="receive_expiry_kind">ラベルの期限の種類</label>
+            <select id="receive_expiry_kind" class="modal-input" onchange="toggleIngredientExpiryDateInput()"></select>
+          </div>
+          <div class="modal-col">
+            <label class="modal-label" for="receive_expiry_date">ラベルの期限</label>
+            <input type="date" id="receive_expiry_date" class="modal-input">
+          </div>
+        </div>
+        <label class="modal-label" for="receive_note">備考（任意）</label>
+        <input type="text" id="receive_note" class="modal-input" maxlength="200">
+        <p class="modal-note">期限の種類が「不明」のときは期限日を入力せず、要確認として記録します。</p>
+        <div id="receive_error" class="modal-error"></div>
+        <div class="modal-footer">
+          <button type="button" class="modal-cancel-btn" onclick="closeIngredientModal('ingredient_receive_overlay')">キャンセル</button>
+          <button type="button" id="receive_submit_btn" class="modal-submit-btn" onclick="submitIngredientReceive()">記録する</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="ingredient_prep_overlay" class="modal-overlay" onclick="handleIngredientOverlayClick(event)">
+      <div class="modal-box modal-box-wide">
+        <div class="modal-header">
+          <span class="modal-title">仕込みを記録</span>
+          <span class="modal-close" onclick="closeIngredientModal('ingredient_prep_overlay')">×</span>
+        </div>
+        <label class="modal-label" for="prep_ingredient">仕込み品</label>
+        <select id="prep_ingredient" class="modal-input" onchange="applyIngredientDefaultUnit('prep_ingredient', 'prep_unit')"></select>
+        <div class="modal-row">
+          <div class="modal-col">
+            <label class="modal-label" for="prep_quantity">仕込んだ数量</label>
+            <input type="number" id="prep_quantity" class="modal-input" step="0.01" min="0">
+          </div>
+          <div class="modal-col">
+            <label class="modal-label" for="prep_unit">単位</label>
+            <select id="prep_unit" class="modal-input"></select>
+          </div>
+        </div>
+        <label class="modal-label" for="prep_prepared_at">実際に仕込んだ日時</label>
+        <div class="modal-inline">
+          <input type="datetime-local" id="prep_prepared_at" class="modal-input">
+          <button type="button" class="modal-mini-btn" onclick="setIngredientNow('prep_prepared_at')">いま</button>
+        </div>
+        <label class="modal-check">
+          <input type="checkbox" id="prep_prepared_unknown" onchange="toggleIngredientPreparedUnknown()">
+          仕込んだ日時が分からない（「不明」として要確認で記録する）
+        </label>
+        <div class="modal-row">
+          <div class="modal-col">
+            <label class="modal-label" for="prep_use_by">使用期限（店舗の管理ルールで決めた期限）</label>
+            <input type="date" id="prep_use_by" class="modal-input">
+          </div>
+          <div class="modal-col">
+            <label class="modal-label" for="prep_storage">保存状態</label>
+            <select id="prep_storage" class="modal-input">
+              <option value="冷蔵">冷蔵</option>
+              <option value="冷凍">冷凍（店内で冷凍）</option>
+            </select>
+          </div>
+        </div>
+
+        <h4 class="modal-subheading">使った原材料の残量（任意）</h4>
+        <p class="modal-note">仕込みで減った分は、実物を見て「仕込み後の残量」を入力してください。原材料から仕込み品への換算は行いません。</p>
+        <table class="attendance-table ingredient-consume-table">
+          <thead>
+            <tr>
+              <th>原材料の明細</th>
+              <th>仕込み後の残量</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="prep_consume_tbody"></tbody>
+        </table>
+        <button type="button" class="shift-add-btn" onclick="addIngredientConsumeRow()">原材料を追加</button>
+
+        <label class="modal-label" for="prep_note">備考（任意）</label>
+        <input type="text" id="prep_note" class="modal-input" maxlength="200">
+        <div id="prep_error" class="modal-error"></div>
+        <div class="modal-footer">
+          <button type="button" class="modal-cancel-btn" onclick="closeIngredientModal('ingredient_prep_overlay')">キャンセル</button>
+          <button type="button" id="prep_submit_btn" class="modal-submit-btn" onclick="submitIngredientPrep()">記録する</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="ingredient_amount_overlay" class="modal-overlay" onclick="handleIngredientOverlayClick(event)">
+      <div class="modal-box">
+        <div class="modal-header">
+          <span class="modal-title">残量を更新</span>
+          <span class="modal-close" onclick="closeIngredientModal('ingredient_amount_overlay')">×</span>
+        </div>
+        <div class="modal-target" id="amount_target"></div>
+        <label class="modal-label" for="amount_quantity">現在のおおよその残量</label>
+        <div class="modal-inline">
+          <input type="number" id="amount_quantity" class="modal-input" step="0.01" min="0">
+          <span class="modal-unit" id="amount_unit"></span>
+        </div>
+        <label class="modal-check">
+          <input type="checkbox" id="amount_finish">
+          使い切った（残量0のときだけ、一覧から外します）
+        </label>
+        <p class="modal-note">この操作では仕込み日時と期限は変更しません。時間の経過だけで残量を自動で減らすこともしません。</p>
+        <div id="amount_error" class="modal-error"></div>
+        <div class="modal-footer">
+          <button type="button" class="modal-cancel-btn" onclick="closeIngredientModal('ingredient_amount_overlay')">キャンセル</button>
+          <button type="button" id="amount_submit_btn" class="modal-submit-btn" onclick="submitIngredientAmount()">更新する</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="ingredient_freeze_overlay" class="modal-overlay" onclick="handleIngredientOverlayClick(event)">
+      <div class="modal-box">
+        <div class="modal-header">
+          <span class="modal-title">冷凍に移す</span>
+          <span class="modal-close" onclick="closeIngredientModal('ingredient_freeze_overlay')">×</span>
+        </div>
+        <div class="modal-target" id="freeze_target"></div>
+        <label class="modal-label">記録する内容</label>
+        <div class="modal-inline">
+          <label class="modal-check">
+            <input type="radio" name="freeze_mode" value="lot" checked onchange="toggleIngredientFreezeMode()">
+            この食材を冷凍する
+          </label>
+          <label class="modal-check">
+            <input type="radio" name="freeze_mode" value="fat" onchange="toggleIngredientFreezeMode()">
+            脂を取り分けて冷凍する
+          </label>
+        </div>
+
+        <div id="freeze_lot_fields">
+          <label class="modal-label" for="freeze_quantity">冷凍する量（一部でも全量でも可）</label>
+          <div class="modal-inline">
+            <input type="number" id="freeze_quantity" class="modal-input" step="0.01" min="0">
+            <span class="modal-unit" id="freeze_unit"></span>
+            <button type="button" class="modal-mini-btn" onclick="setIngredientFreezeAll()">全量</button>
+          </div>
+        </div>
+
+        <div id="freeze_fat_fields" style="display:none;">
+          <div class="modal-row">
+            <div class="modal-col">
+              <label class="modal-label" for="freeze_fat_quantity">脂の量</label>
+              <input type="number" id="freeze_fat_quantity" class="modal-input" step="0.01" min="0">
+            </div>
+            <div class="modal-col">
+              <label class="modal-label" for="freeze_fat_unit">脂の単位</label>
+              <select id="freeze_fat_unit" class="modal-input"></select>
+            </div>
+          </div>
+          <label class="modal-label" for="freeze_source_remaining">取り分けたあとの元の食材の残量</label>
+          <div class="modal-inline">
+            <input type="number" id="freeze_source_remaining" class="modal-input" step="0.01" min="0">
+            <span class="modal-unit" id="freeze_source_unit"></span>
+          </div>
+          <p class="modal-note">脂は「脂（○○由来）」として別在庫に登録します。二重に数えないよう、元の食材の残量も実物を見て入力してください。用途や重量への換算は行いません。</p>
+        </div>
+
+        <label class="modal-label" for="freeze_frozen_at">実際に冷凍した日時</label>
+        <div class="modal-inline">
+          <input type="datetime-local" id="freeze_frozen_at" class="modal-input">
+          <button type="button" class="modal-mini-btn" onclick="setIngredientNow('freeze_frozen_at')">いま</button>
+        </div>
+        <label class="modal-label" for="freeze_use_by">冷凍後の使用期限（店舗の管理ルールで決めた期限）</label>
+        <input type="date" id="freeze_use_by" class="modal-input">
+        <p class="modal-note">期限は入力した内容だけを登録します。冷凍しても自動では延長しません。未入力のときは「要確認」として残ります。</p>
+        <div id="freeze_error" class="modal-error"></div>
+        <div class="modal-footer">
+          <button type="button" class="modal-cancel-btn" onclick="closeIngredientModal('ingredient_freeze_overlay')">キャンセル</button>
+          <button type="button" id="freeze_submit_btn" class="modal-submit-btn" onclick="submitIngredientFreeze()">記録する</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="ingredient_thaw_overlay" class="modal-overlay" onclick="handleIngredientOverlayClick(event)">
+      <div class="modal-box">
+        <div class="modal-header">
+          <span class="modal-title">解凍を記録</span>
+          <span class="modal-close" onclick="closeIngredientModal('ingredient_thaw_overlay')">×</span>
+        </div>
+        <div class="modal-target" id="thaw_target"></div>
+        <div class="modal-inline" id="thaw_mode_row">
+          <label class="modal-check">
+            <input type="radio" name="thaw_mode" id="thaw_mode_start" value="start" onchange="toggleIngredientThawMode()">
+            解凍を開始する
+          </label>
+          <label class="modal-check">
+            <input type="radio" name="thaw_mode" id="thaw_mode_complete" value="complete" onchange="toggleIngredientThawMode()">
+            解凍の完了を記録する
+          </label>
+        </div>
+
+        <div id="thaw_start_fields">
+          <label class="modal-label" for="thaw_quantity">解凍する量（一部でも全量でも可）</label>
+          <div class="modal-inline">
+            <input type="number" id="thaw_quantity" class="modal-input" step="0.01" min="0">
+            <span class="modal-unit" id="thaw_unit"></span>
+            <button type="button" class="modal-mini-btn" onclick="setIngredientThawAll()">全量</button>
+          </div>
+          <label class="modal-label" for="thaw_started_at">解凍を開始した日時</label>
+          <div class="modal-inline">
+            <input type="datetime-local" id="thaw_started_at" class="modal-input">
+            <button type="button" class="modal-mini-btn" onclick="setIngredientNow('thaw_started_at')">いま</button>
+          </div>
+        </div>
+
+        <div id="thaw_complete_fields" style="display:none;">
+          <label class="modal-label" for="thaw_completed_at">解凍が完了した日時</label>
+          <div class="modal-inline">
+            <input type="datetime-local" id="thaw_completed_at" class="modal-input">
+            <button type="button" class="modal-mini-btn" onclick="setIngredientNow('thaw_completed_at')">いま</button>
+          </div>
+        </div>
+
+        <label class="modal-label" for="thaw_use_by">解凍後の使用期限</label>
+        <input type="date" id="thaw_use_by" class="modal-input">
+        <p class="modal-note">冷凍日時などの履歴は残したまま記録します。期限は入力した内容だけを登録し、自動では延長しません。</p>
+        <div id="thaw_error" class="modal-error"></div>
+        <div class="modal-footer">
+          <button type="button" class="modal-cancel-btn" onclick="closeIngredientModal('ingredient_thaw_overlay')">キャンセル</button>
+          <button type="button" id="thaw_submit_btn" class="modal-submit-btn" onclick="submitIngredientThaw()">記録する</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="ingredient_detail_overlay" class="modal-overlay" onclick="handleIngredientOverlayClick(event)">
+      <div class="modal-box modal-box-wide">
+        <div class="modal-header">
+          <span class="modal-title">在庫明細の詳細</span>
+          <span class="modal-close" onclick="closeIngredientModal('ingredient_detail_overlay')">×</span>
+        </div>
+        <dl class="ingredient-detail-list" id="detail_list"></dl>
+        <label class="modal-label" for="detail_use_by">使用期限を設定・変更する（空にすると要確認に戻ります）</label>
+        <input type="date" id="detail_use_by" class="modal-input">
+        <label class="modal-label" for="detail_note">備考</label>
+        <input type="text" id="detail_note" class="modal-input" maxlength="200">
+        <div id="detail_error" class="modal-error"></div>
+        <div class="modal-footer">
+          <button type="button" class="modal-cancel-btn" onclick="closeIngredientModal('ingredient_detail_overlay')">閉じる</button>
+          <button type="button" id="detail_submit_btn" class="modal-submit-btn" onclick="submitIngredientUseBy()">使用期限を保存</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="ingredient_order_overlay" class="modal-overlay" onclick="handleIngredientOverlayClick(event)">
+      <div class="modal-box">
+        <div class="modal-header">
+          <span class="modal-title">発注を記録</span>
+          <span class="modal-close" onclick="closeIngredientModal('ingredient_order_overlay')">×</span>
+        </div>
+        <label class="modal-label" for="order_ingredient">食材</label>
+        <select id="order_ingredient" class="modal-input" onchange="applyIngredientOrderDefaults()"></select>
+        <label class="modal-label" for="order_supplier">業者</label>
+        <select id="order_supplier" class="modal-input" onchange="showIngredientOrderPlan()"></select>
+        <div class="ingredient-plan-text" id="order_plan_text"></div>
+        <div class="modal-row">
+          <div class="modal-col">
+            <label class="modal-label" for="order_quantity">発注数量</label>
+            <input type="number" id="order_quantity" class="modal-input" step="0.01" min="0">
+          </div>
+          <div class="modal-col">
+            <label class="modal-label" for="order_unit">単位</label>
+            <select id="order_unit" class="modal-input"></select>
+          </div>
+        </div>
+        <label class="modal-label" for="order_ordered_at">発注した日時</label>
+        <div class="modal-inline">
+          <input type="datetime-local" id="order_ordered_at" class="modal-input">
+          <button type="button" class="modal-mini-btn" onclick="setIngredientNow('order_ordered_at')">いま</button>
+        </div>
+        <label class="modal-label" for="order_expected_date">入荷予定日</label>
+        <input type="date" id="order_expected_date" class="modal-input">
+        <label class="modal-label" for="order_note">備考（任意）</label>
+        <input type="text" id="order_note" class="modal-input" maxlength="200">
+        <p class="modal-note">この画面では業者への注文送信は行いません。発注済みの段階では在庫は増えず、入荷を記録した時点で反映します。</p>
+        <div id="order_error" class="modal-error"></div>
+        <div class="modal-footer">
+          <button type="button" class="modal-cancel-btn" onclick="closeIngredientModal('ingredient_order_overlay')">キャンセル</button>
+          <button type="button" id="order_submit_btn" class="modal-submit-btn" onclick="submitIngredientOrder()">記録する</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="ingredient_setting_overlay" class="modal-overlay" onclick="handleIngredientOverlayClick(event)">
+      <div class="modal-box modal-box-wide">
+        <div class="modal-header">
+          <span class="modal-title">業者・発注条件の設定</span>
+          <span class="modal-close" onclick="closeIngredientModal('ingredient_setting_overlay')">×</span>
+        </div>
+
+        <h4 class="modal-subheading">業者と発注条件</h4>
+        <label class="modal-label" for="supplier_select">編集する業者</label>
+        <select id="supplier_select" class="modal-input" onchange="applyIngredientSupplierToForm()"></select>
+        <label class="modal-label" for="supplier_name">業者名</label>
+        <input type="text" id="supplier_name" class="modal-input" maxlength="60">
+        <div class="modal-row">
+          <div class="modal-col">
+            <label class="modal-label" for="supplier_deadline">受注締切時刻</label>
+            <input type="time" id="supplier_deadline" class="modal-input">
+          </div>
+          <div class="modal-col">
+            <label class="modal-label" for="supplier_lead_time">納品までの日数</label>
+            <div class="modal-inline">
+              <input type="number" id="supplier_lead_time" class="modal-input" min="0" step="1">
+              <select id="supplier_lead_count" class="modal-input"></select>
+            </div>
+          </div>
+        </div>
+        <label class="modal-label">受注できる営業日</label>
+        <div class="ingredient-weekday-row" id="supplier_order_days"></div>
+        <label class="modal-label">出荷できる営業日</label>
+        <div class="ingredient-weekday-row" id="supplier_ship_days"></div>
+        <label class="modal-label">納品できる営業日</label>
+        <div class="ingredient-weekday-row" id="supplier_delivery_days"></div>
+        <label class="modal-label">店舗が受け取れる曜日</label>
+        <div class="ingredient-weekday-row" id="supplier_pickup_days"></div>
+        <label class="modal-label" for="supplier_closed_dates">臨時休業日（yyyy/mm/dd を改行かカンマ区切りで）</label>
+        <textarea id="supplier_closed_dates" class="modal-input today-work-notices-input" rows="2"></textarea>
+        <label class="modal-label" for="supplier_note">備考（任意）</label>
+        <input type="text" id="supplier_note" class="modal-input" maxlength="200">
+        <div class="ingredient-plan-text" id="supplier_plan_text"></div>
+        <p class="modal-note">未設定の条件は推測しません。設定がそろうまで、納品日と締切は「設定が必要です」と表示します。</p>
+        <div id="supplier_error" class="modal-error"></div>
+        <div class="modal-footer">
+          <button type="button" id="supplier_submit_btn" class="modal-submit-btn" onclick="submitIngredientSupplier()">業者の設定を保存</button>
+        </div>
+
+        <h4 class="modal-subheading">食材と発注の設定</h4>
+        <label class="modal-label" for="master_select">編集する食材</label>
+        <select id="master_select" class="modal-input" onchange="applyIngredientMasterToForm()"></select>
+        <div class="modal-row">
+          <div class="modal-col">
+            <label class="modal-label" for="master_name">食材名</label>
+            <input type="text" id="master_name" class="modal-input" maxlength="60">
+          </div>
+          <div class="modal-col">
+            <label class="modal-label" for="master_category">区分</label>
+            <select id="master_category" class="modal-input"></select>
+          </div>
+        </div>
+        <div class="modal-row">
+          <div class="modal-col">
+            <label class="modal-label" for="master_unit">既定の単位</label>
+            <select id="master_unit" class="modal-input"></select>
+          </div>
+          <div class="modal-col">
+            <label class="modal-label" for="master_supplier">発注先の業者</label>
+            <select id="master_supplier" class="modal-input"></select>
+          </div>
+        </div>
+        <div class="modal-row">
+          <div class="modal-col">
+            <label class="modal-label" for="master_min_quantity">最低残量（未入力なら通知しません）</label>
+            <input type="number" id="master_min_quantity" class="modal-input" step="0.01" min="0">
+          </div>
+          <div class="modal-col">
+            <label class="modal-label" for="master_min_unit">最低残量の単位</label>
+            <select id="master_min_unit" class="modal-input"></select>
+          </div>
+        </div>
+        <label class="modal-check">
+          <input type="checkbox" id="master_notify_expiry">
+          期限が近いときは、最低残量以上あっても知らせる
+        </label>
+        <label class="modal-check">
+          <input type="checkbox" id="master_active" checked>
+          この食材を使う（外すと選択肢に出しません）
+        </label>
+        <div id="master_error" class="modal-error"></div>
+        <div class="modal-footer">
+          <button type="button" class="modal-cancel-btn" onclick="closeIngredientModal('ingredient_setting_overlay')">閉じる</button>
+          <button type="button" id="master_submit_btn" class="modal-submit-btn" onclick="submitIngredientMaster()">食材の設定を保存</button>
         </div>
       </div>
     </div>

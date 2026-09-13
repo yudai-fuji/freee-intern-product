@@ -404,7 +404,9 @@ function decideShiftStatus(assignments, requirements, warnings) {
  * 指定した年月の、日付ごとの状態と確認事項を返す（カレンダー表示用）
  * year・month を渡さない場合は今日を含む月を対象にする
  */
-function getShiftMonth(year, month) {
+function getShiftMonth(year, month, authToken) {
+  requireManagerRole_(authToken);
+
   let targetYear = Number(year);
   let targetMonth = Number(month);
   if (!targetYear || !targetMonth) {
@@ -449,7 +451,9 @@ function getShiftMonth(year, month) {
 /**
  * 指定日のシフト割当・必要人数条件・従業員一覧・確認事項を返す（日付ごとの編集欄用）
  */
-function getShiftDay(dateKey) {
+function getShiftDay(dateKey, authToken) {
+  requireManagerRole_(authToken);
+
   const normalizedDateKey = toShiftDateKey(dateKey);
   if (parseShiftDateKey(normalizedDateKey) === null) {
     throw new Error('日付の形式が不正です: ' + dateKey);
@@ -633,7 +637,9 @@ function appendShiftRows(sheet, rows, firstTimeColumn) {
  * 指定日のシフト割当と必要人数条件をまとめて保存する
  * 対象日の行だけを入れ替えるので、別の日付のデータは変更しない
  */
-function saveShiftDay(dateKey, assignments, requirements) {
+function saveShiftDay(dateKey, assignments, requirements, authToken) {
+  requireManagerRole_(authToken);
+
   const validated = validateShiftInput(dateKey, assignments, requirements);
   const shiftSheet = ensureShiftSheet();
   const requirementSheet = ensureShiftRequirementSheet();

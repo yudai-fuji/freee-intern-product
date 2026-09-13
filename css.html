@@ -786,4 +786,452 @@
       width: 210px;
     }
   }
+  /* 店長画面：食材管理 */
+  .ingredient-alerts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-top: 8px;
+    margin-bottom: 24px;
+  }
+  .ingredient-alert-card {
+    flex: 1 1 320px;
+    max-width: 560px;
+    border: 1px solid #ccc;
+    border-left-width: 6px;
+    border-radius: 8px;
+    padding: 14px 18px;
+    background-color: #fff;
+  }
+  /* 状態は枠の色だけでなく、見出しと本文の言葉でも分かるようにする */
+  .ingredient-alert-warning {
+    border-color: #e53935;
+    background-color: #fdf3f2;
+  }
+  .ingredient-alert-check {
+    border-color: #f57c00;
+    background-color: #fdf7ef;
+  }
+  .ingredient-alert-info {
+    border-color: #3f6fd1;
+    background-color: #f0f4fa;
+  }
+  .ingredient-alert-none {
+    border-left-width: 1px;
+    color: #555;
+    font-size: 16px;
+  }
+  .ingredient-alert-heading {
+    font-size: 17px;
+    font-weight: bold;
+    margin-bottom: 8px;
+  }
+  .ingredient-alert-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .ingredient-alert-list li {
+    margin-bottom: 10px;
+    font-size: 15px;
+    line-height: 1.6;
+  }
+  .ingredient-alert-list li:last-child {
+    margin-bottom: 0;
+  }
+  .ingredient-alert-title {
+    display: block;
+    font-weight: bold;
+  }
+  .ingredient-alert-detail {
+    display: block;
+    color: #444;
+  }
+  .ingredient-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .ingredient-action-btn {
+    padding: 10px 20px;
+    font-size: 16px;
+    background-color: #3f6fd1;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .ingredient-action-btn:hover {
+    background-color: #35609c;
+  }
+  .ingredient-action-sub {
+    background-color: #fff;
+    color: #3f6fd1;
+    border: 1px solid #3f6fd1;
+  }
+  .ingredient-action-sub:hover {
+    background-color: #f0f4fa;
+  }
+  .ingredient-tabs {
+    display: flex;
+    gap: 8px;
+    border-bottom: 2px solid #3f6fd1;
+    margin-bottom: 14px;
+  }
+  .ingredient-tab {
+    padding: 10px 28px;
+    font-size: 17px;
+    color: #35609c;
+    background-color: #fff;
+    border: 1px solid #ccc;
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+    cursor: pointer;
+  }
+  .ingredient-tab:hover {
+    background-color: #f0f4fa;
+  }
+  .ingredient-tab.selected {
+    background-color: #3f6fd1;
+    color: #fff;
+    border-color: #3f6fd1;
+  }
+  .ingredient-filters {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .ingredient-filter-label {
+    font-size: 15px;
+    color: #555;
+  }
+  .ingredient-filter {
+    padding: 6px 16px;
+    font-size: 15px;
+    color: #333;
+    background-color: #fff;
+    border: 1px solid #ccc;
+    border-radius: 16px;
+    cursor: pointer;
+  }
+  .ingredient-filter:hover {
+    background-color: #f0f4fa;
+  }
+  .ingredient-filter.selected {
+    background-color: #3f6fd1;
+    color: #fff;
+    border-color: #3f6fd1;
+  }
+  .ingredient-table {
+    max-width: 1180px;
+  }
+  .ingredient-table th,
+  .ingredient-table td {
+    font-size: 16px;
+    padding: 10px 12px;
+    vertical-align: top;
+  }
+  .ingredient-name {
+    font-weight: bold;
+  }
+  .ingredient-row-issue {
+    margin-top: 4px;
+    font-size: 13px;
+    color: #b8261f;
+  }
+  .ingredient-expiry {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 15px;
+  }
+  .ingredient-expiry-expired {
+    background-color: #fdf3f2;
+    color: #b8261f;
+    font-weight: bold;
+  }
+  .ingredient-expiry-soon {
+    background-color: #fdf7ef;
+    color: #a35200;
+    font-weight: bold;
+  }
+  .ingredient-expiry-unknown {
+    background-color: #f3f3f3;
+    color: #444;
+    font-weight: bold;
+  }
+  .ingredient-expiry-ok {
+    color: #333;
+  }
+  .ingredient-action-cell {
+    white-space: nowrap;
+  }
+  .ingredient-row-btn {
+    margin: 2px 4px 2px 0;
+    padding: 6px 12px;
+    font-size: 14px;
+    color: #35609c;
+    background-color: #fff;
+    border: 1px solid #3f6fd1;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .ingredient-row-btn:hover {
+    background-color: #f0f4fa;
+  }
+  .ingredient-plan-text {
+    margin: 6px 0 12px;
+    padding: 10px 14px;
+    background-color: #f0f4fa;
+    border-radius: 8px;
+    font-size: 15px;
+    line-height: 1.6;
+    color: #333;
+  }
+  .ingredient-detail-list {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    gap: 6px 16px;
+    margin: 0 0 20px;
+    font-size: 15px;
+  }
+  .ingredient-detail-list dt {
+    color: #555;
+  }
+  .ingredient-detail-list dd {
+    margin: 0;
+    word-break: break-all;
+  }
+  .ingredient-weekday-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+  .ingredient-weekday {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 16px;
+    cursor: pointer;
+  }
+  .ingredient-consume-table {
+    max-width: 100%;
+    margin-bottom: 10px;
+  }
+  .ingredient-consume-table th,
+  .ingredient-consume-table td {
+    font-size: 15px;
+    padding: 8px 10px;
+  }
+  .ingredient-consume-table select,
+  .ingredient-consume-table input {
+    font-size: 15px;
+    padding: 6px 8px;
+  }
+  .ingredient-consume-remain {
+    width: 110px;
+  }
+  /* 食材管理のモーダルは入力項目が多いので、横幅と高さを広めに取る */
+  .modal-box-wide {
+    width: 640px;
+    max-width: 92vw;
+    max-height: 88vh;
+    overflow-y: auto;
+  }
+  .modal-row {
+    display: flex;
+    gap: 16px;
+  }
+  .modal-col {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .modal-inline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 18px;
+  }
+  .modal-inline .modal-input {
+    margin-bottom: 0;
+  }
+  .modal-unit {
+    font-size: 16px;
+    color: #555;
+    white-space: nowrap;
+  }
+  .modal-mini-btn {
+    padding: 8px 14px;
+    font-size: 15px;
+    color: #35609c;
+    background-color: #fff;
+    border: 1px solid #3f6fd1;
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .modal-mini-btn:hover {
+    background-color: #f0f4fa;
+  }
+  .modal-check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 14px;
+    font-size: 15px;
+    cursor: pointer;
+  }
+  .modal-note {
+    margin: 0 0 16px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: #555;
+  }
+  .modal-target {
+    margin-bottom: 16px;
+    padding: 10px 14px;
+    background-color: #f0f4fa;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: bold;
+  }
+  .modal-subheading {
+    margin: 24px 0 12px;
+    padding-bottom: 6px;
+    font-size: 18px;
+    border-bottom: 1px solid #ccc;
+  }
+  .modal-input:disabled {
+    background-color: #f3f3f3;
+    color: #777;
+  }
+  /* ログイン画面 */
+  .login-screen {
+    display: flex;
+    justify-content: center;
+    margin-top: 60px;
+  }
+  .login-box {
+    width: 360px;
+    padding: 40px 30px;
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    text-align: center;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  }
+  .login-heading {
+    font-size: 26px;
+    margin: 0 0 24px;
+  }
+  .login-input {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 14px;
+    font-size: 28px;
+    text-align: center;
+    letter-spacing: 8px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+  }
+  .login-error {
+    min-height: 22px;
+    margin: 10px 0 4px;
+    font-size: 15px;
+    color: #e53935;
+  }
+  .login-btn {
+    width: 100%;
+    padding: 14px;
+    font-size: 20px;
+    background-color: #3f6fd1;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .login-btn:hover {
+    background-color: #35609c;
+  }
+  .login-btn:disabled {
+    background-color: #9db3dc;
+    cursor: not-allowed;
+  }
+  .login-hint {
+    margin-top: 16px;
+    font-size: 14px;
+    color: #777;
+  }
+  /* ヘッダーのログアウトボタン（従業員画面・店長画面で同じ位置に出す） */
+  .logout-btn {
+    padding: 8px 18px;
+    font-size: 15px;
+    background-color: #f0f0f0;
+    color: #444;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .logout-btn:hover {
+    background-color: #e0e0e0;
+  }
+  /* ログアウト確認ダイアログの本文 */
+  .logout-text {
+    font-size: 17px;
+    margin-bottom: 8px;
+  }
+  .logout-note {
+    font-size: 14px;
+    color: #777;
+    margin-bottom: 24px;
+  }
+  /* 無操作のログアウト予告通知（画面上端から降りてくる横長バナー） */
+  .idle-notice {
+    position: fixed;
+    top: 0;
+    left: 50%;
+    z-index: 300;
+    box-sizing: border-box;
+    width: 340px;
+    padding: 10px 16px;
+    background-color: #fbfbfc;
+    border: 1px solid #e2e2e6;
+    border-radius: 14px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+    text-align: left;
+    opacity: 0;
+    transform: translate(-50%, -140%);
+    transition: transform 0.35s ease, opacity 0.35s ease;
+    /* 操作を遮らず、入力フォーカスも奪わないようにする */
+    pointer-events: none;
+  }
+  .idle-notice.show {
+    opacity: 1;
+    transform: translate(-50%, 12px);
+  }
+  .idle-notice-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+  .idle-notice-icon {
+    font-size: 13px;
+  }
+  .idle-notice-app {
+    font-size: 12px;
+    color: #888;
+  }
+  .idle-notice-title {
+    font-size: 15px;
+    font-weight: bold;
+    margin-bottom: 2px;
+  }
+  .idle-notice-text {
+    font-size: 13px;
+    color: #666;
+  }
 </style>

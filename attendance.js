@@ -41,7 +41,9 @@ function resetClockRecords() {
 
 
 
-function getTodayAttendances() {
+function getTodayAttendances(authToken) {
+  requireManagerRole_(authToken);
+
   const now = new Date();
   
   //プログラム内部用の日付

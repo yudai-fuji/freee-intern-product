@@ -84,7 +84,9 @@ function splitNoticesText(noticesText) {
   return notices;
 }
 
-function getTodayWorkSettings() {
+function getTodayWorkSettings(authToken) {
+  requireManagerRole_(authToken);
+
   const now = new Date();
   const weekdayLabels = ['日', '月', '火', '水', '木', '金', '土'];
   const dateLabel = Utilities.formatDate(now, TIME_ZONE, 'yyyy年M月d日') +
@@ -111,7 +113,9 @@ function getTodayWorkSettings() {
   };
 }
 
-function saveTodayWork(empId, position, noticesText) {
+function saveTodayWork(empId, position, noticesText, authToken) {
+  requireManagerRole_(authToken);
+
   const nameByEmpId = getEmployeeNameMap();
   const empName = nameByEmpId[String(empId)];
   if (!empName) {
