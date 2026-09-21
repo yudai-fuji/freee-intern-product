@@ -1194,7 +1194,7 @@
       width: 210px;
     }
   }
-  /* 店長画面：発注管理で使うボタン・曜日の選択・発注条件の表示 */
+  /* 店長画面：発注管理で使うボタン */
   .ingredient-action-btn {
     padding: 10px 20px;
     font-size: 16px;
@@ -1215,51 +1215,12 @@
   .ingredient-action-sub:hover {
     background-color: #f0f4fa;
   }
-  .ingredient-plan-text {
-    margin: 6px 0 12px;
-    padding: 10px 14px;
-    background-color: #f0f4fa;
-    border-radius: 8px;
-    font-size: 15px;
-    line-height: 1.6;
-    color: #333;
-  }
-  .ingredient-weekday-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-bottom: 18px;
-  }
-  .ingredient-weekday {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 16px;
-    cursor: pointer;
-  }
-  /* 発注管理のダイアログは入力項目が多いので、横幅と高さを広めに取る */
+  /* 食材を選ぶダイアログの横幅と高さ */
   .modal-box-wide {
     width: 640px;
     max-width: 92vw;
     max-height: 88vh;
     overflow-y: auto;
-  }
-  .modal-row {
-    display: flex;
-    gap: 16px;
-  }
-  .modal-col {
-    flex: 1 1 0;
-    min-width: 0;
-  }
-  .modal-inline {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 18px;
-  }
-  .modal-inline .modal-input {
-    margin-bottom: 0;
   }
   .modal-check {
     display: flex;
@@ -1268,18 +1229,6 @@
     margin-bottom: 14px;
     font-size: 15px;
     cursor: pointer;
-  }
-  .modal-note {
-    margin: 0 0 16px;
-    font-size: 14px;
-    line-height: 1.6;
-    color: #555;
-  }
-  .modal-subheading {
-    margin: 24px 0 12px;
-    padding-bottom: 6px;
-    font-size: 18px;
-    border-bottom: 1px solid #ccc;
   }
   .modal-input:disabled {
     background-color: #f3f3f3;
@@ -1290,28 +1239,36 @@
     font-size: 17px;
     margin-bottom: 24px;
   }
-  /* 店長画面：発注管理 */
-  /* 表示項目のドロップダウン。4つの画面のうち1つだけを下の広い領域に出す */
-  .order-view-picker {
+
+  .order-view-tabs {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 10px;
     margin-top: 24px;
+    margin-bottom: 24px;
   }
-  .order-view-label {
-    font-size: 18px;
-    font-weight: bold;
-  }
-  .order-view-select {
-    padding: 12px 16px;
-    font-size: 20px;
-    min-width: 280px;
+
+  .order-view-tab {
+    padding: 12px 24px;
+    font-size: 16px;
+    font-family: inherit;
     color: #333;
     background-color: #fff;
-    border: 1px solid #3f6fd1;
+    border: 1px solid #ccc;
     border-radius: 8px;
     cursor: pointer;
   }
+
+  .order-view-tab:hover {
+    background-color: #f0f4fa;
+  }
+
+  .order-view-tab.selected {
+    color: #fff;
+    background-color: #3f6fd1;
+    border-color: #3f6fd1;
+  }
+
   .order-view {
     max-width: 960px;
   }
@@ -1328,23 +1285,6 @@
   }
   .order-view-header .order-view-heading {
     margin: 0;
-  }
-  .order-subheading {
-    font-size: 18px;
-    margin: 28px 0 12px;
-    padding-bottom: 6px;
-    border-bottom: 1px solid #ccc;
-  }
-  .order-filter-note {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 12px;
-    margin-bottom: 16px;
-    padding: 10px 16px;
-    font-size: 15px;
-    background-color: #f0f4fa;
-    border-radius: 8px;
   }
   .order-empty {
     padding: 24px;
@@ -1471,12 +1411,6 @@
     font-weight: bold;
     margin-bottom: 12px;
   }
-  .order-vendor-meta {
-    font-size: 15px;
-    color: #555;
-    line-height: 1.8;
-    margin-bottom: 12px;
-  }
   .order-line-list {
     list-style: none;
     margin: 0 0 12px;
@@ -1585,42 +1519,38 @@
     color: #555;
     line-height: 1.7;
   }
-  /* 業者詳細 */
+  /* 業者詳細：スキル管理の配置・選択色を共有する */
+  .order-vendor-layout {
+    grid-template-columns: 280px minmax(0, 1fr);
+    max-width: 1120px;
+  }
   .order-vendor-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
+    max-height: 520px;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
   }
   .order-vendor-tile {
-    flex: 1 1 280px;
-    max-width: 440px;
-    padding: 20px;
+    display: block;
+    width: 100%;
     text-align: left;
-    background-color: #fff;
-    border: 1px solid #ccc;
-    border-radius: 8px;
-    cursor: pointer;
+    font-size: 18px;
     font-family: inherit;
+    background-color: #fff;
+    color: #333;
+    overflow-wrap: anywhere;
   }
-  .order-vendor-tile:hover {
-    background-color: #f0f4fa;
-    border-color: #3f6fd1;
+  .order-vendor-detail .order-detail-value {
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
-  .order-vendor-tile-name {
-    font-size: 19px;
-    font-weight: bold;
-    margin-bottom: 8px;
-  }
-  .order-vendor-tile-meta {
-    font-size: 14px;
-    color: #555;
-    line-height: 1.8;
-  }
-  .order-detail-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    margin-bottom: 24px;
+  @media (max-width: 900px) {
+    .order-vendor-layout {
+      grid-template-columns: minmax(110px, 1fr) minmax(0, 2fr);
+      gap: 16px;
+    }
+    .order-vendor-detail .order-detail-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
   .order-detail-grid {
     display: grid;
@@ -1679,9 +1609,9 @@
     background-color: #f0f4fa;
     border-color: #3f6fd1;
   }
-  .order-item-btn.added {
-    color: #35609c;
-    background-color: #f0f4fa;
+  .order-item-btn.selected {
+    color: #fff;
+    background-color: #3f6fd1;
     border-color: #3f6fd1;
   }
   .order-item-btn:disabled {

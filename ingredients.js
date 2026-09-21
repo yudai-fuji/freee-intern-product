@@ -1,7 +1,7 @@
 // 発注管理が使う食材・業者・発注記録のマスタ（スプレッドシートの読み書きと、共通の書式変換）を扱う
 //
 // 扱い方の前提
-// ・食材マスタは「食材名・発注単位・商品コード・紐づく業者」を持つ。発注画面の選択肢はここから作る
+// ・食材マスタは「食材名・発注単位・紐づく業者」を持つ。発注画面の選択肢はここから作る
 // ・業者マスタは連絡先と発注条件（受注締切・営業日・リードタイム・臨時休業日）を持つ
 // ・未設定の条件は推測で埋めない。設定がそろうまで「設定が必要です」と表示する
 // ・単位の異なる数量は合算・換算しない
@@ -71,7 +71,7 @@ function ensureIngredientMasterSheet() {
     rows.push([
       newIngredientId('ING'), master.name, master.category, master.unit,
       '', '', '', '', '○', updatedAt,
-      '', '' // 発注単位・商品コードは発注管理で設定する
+      '' // 発注単位は食材マスタで管理する
     ]);
   }
   appendIngredientRows(sheet, rows, INGREDIENT_MASTER_SHEET_HEADER.length);
@@ -290,7 +290,7 @@ function formatIngredientDateWithWeekday(date) {
 
 /**
  * 食材マスタを読み込む
- * @return {Array<Object>} 食材の設定（名前・発注単位・商品コード・業者など）の配列
+ * @return {Array<Object>} 食材の設定（名前・発注単位・業者など）の配列
  */
 function getIngredientMasters() {
   const sheet = ensureIngredientMasterSheet();
@@ -310,16 +310,27 @@ function getIngredientMasters() {
       'active': values['有効'] !== '',
       // 発注単位が空欄なら既定単位をそのまま使う（発注単位を設定する前の行でも発注できるようにする）
       'orderUnit': values['発注単位'] !== '' ? values['発注単位'] : values['既定単位'],
-      'productCode': values['商品コード'],
       'rowNumber': rows[i].rowNumber
     });
   }
   return masters;
 }
 
-/**
- * 業者と発注条件を読み込む
- */
+/** 旧マスタの廃止済み指示を表示・本文追記へ持ち込まない。シートは書き換えない。 */
+function normalizeIngredientSupplierNote_(value) {
+  const retiredInstruction = /商品コード|product\s*code|item\s*code/i;
+  return normalizeIngredientText(value).split(/\r\n|\r|\n/).map(function (line) {
+    if (!retiredInstruction.test(line)) {
+      return line; // 本文追記などの有効な注意事項は、句読点を含めてそのまま保つ。
+    }
+    const parts = line.match(/[^。；;、,]+[。；;、,]?/g) || [];
+    return parts.filter(function (part) {
+      return !retiredInstruction.test(part);
+    }).join('').replace(/[；;、,]+\s*$/, '').trim();
+  }).filter(function (line) { return line.trim() !== ''; }).join('\n');
+}
+
+/** 業者と発注条件を読み込む。 */
 function getIngredientSuppliers() {
   const sheet = ensureIngredientSupplierSheet();
   const rows = readIngredientRows(sheet, INGREDIENT_SUPPLIER_SHEET_HEADER);
@@ -341,14 +352,14 @@ function getIngredientSuppliers() {
       'leadTimeCount': values['リードタイムの数え方'],
       'closedDates': parseIngredientDateList(values['臨時休業日']),
       'pickupDays': parseIngredientWeekdayList(values['店舗受取可能日']),
-      'note': values['備考'],
+      'note': normalizeIngredientSupplierNote_(values['備考']),
       'address': values['住所'],
       'phone': values['電話番号'],
       'email': values['メールアドレス'],
       'businessHours': values['営業時間'],
       'closedDays': values['定休日'],
       'mainItems': values['主な取扱商品'],
-      'orderNote': values['発注時の注意事項'],
+      'orderNote': normalizeIngredientSupplierNote_(values['発注時の注意事項']),
       'rowNumber': rows[i].rowNumber
     });
   }

@@ -30,9 +30,6 @@
       // 役割名（config.js の定数をそのまま埋め込み、二重管理しない）
       const ROLE_MANAGER = <?!= JSON.stringify(ROLE_MANAGER) ?>;
 
-      // 発注で使う単位の候補（config.js の ORDER_UNITS をそのまま埋め込む）
-      const ORDER_UNITS = <?!= JSON.stringify(ORDER_UNITS) ?>;
-
       window.addEventListener('load', function () {
         const navItems = document.querySelectorAll('.manager-nav-item');
 
@@ -306,14 +303,13 @@
 
         orderBoard = null;
         orderCart = [];
+        closeIngredientModal('order_item_overlay');
+        document.getElementById('order_view_picker').style.display = 'flex';
         orderDrafts = [];
-        orderVendorFilterId = '';
         orderSelectedVendorId = '';
-        orderVendorItemsOpen = false;
         orderSending = false;
         orderSendKey = '';
         orderView = 'cart';
-        document.getElementById('order_view_select').value = 'cart';
         document.getElementById('order_body').style.display = 'none';
         document.getElementById('order_delivery_date').value = '';
         document.getElementById('order_extra_note').value = '';
@@ -2809,16 +2805,19 @@
       }
 
       // 店長画面：発注管理で使う共通のダイアログ操作
-      // 「食材を追加」と「業者・発注条件の設定」の2つのダイアログから呼ぶ
+      // 食材選択の確定前に閉じた場合は、一時選択を破棄する
 
       function closeIngredientModal(overlayId) {
         document.getElementById(overlayId).style.display = 'none';
+        if (overlayId === 'order_item_overlay') {
+          orderItemSelection = null;
+        }
       }
 
       function handleIngredientOverlayClick(event) {
         // 暗い背景そのものをクリックしたときだけ閉じる（モーダル本体のクリックは無視）
         if (event.target === event.currentTarget) {
-          event.currentTarget.style.display = 'none';
+          closeIngredientModal(event.currentTarget.id);
         }
       }
 
@@ -2830,49 +2829,21 @@
         return 'op-' + Date.now() + '-' + Math.random().toString(36).substring(2, 10);
       }
 
-      /**
-       * select の選択肢を作り直す
-       * @param {string} selectId 対象のselectのid
-       * @param {Array<Object>} options { value, label } の配列
-       * @param {string} selectedValue 選んでおく値
-       * @param {string} placeholder 先頭に出す未選択の文言（不要なら空文字）
-       */
-      function fillIngredientSelect(selectId, options, selectedValue, placeholder) {
-        const select = document.getElementById(selectId);
-        select.innerHTML = '';
-        if (placeholder !== '') {
-          const emptyOption = document.createElement('option');
-          emptyOption.value = '';
-          emptyOption.textContent = placeholder;
-          select.appendChild(emptyOption);
-        }
-        for (let i = 0; i < options.length; i++) {
-          const option = document.createElement('option');
-          option.value = options[i].value;
-          option.textContent = options[i].label;
-          select.appendChild(option);
-        }
-        select.value = (selectedValue === undefined || selectedValue === null) ? '' : selectedValue;
-      }
-
       // 店長画面：発注管理
       // サーバーから受け取った最新の発注管理情報（業者・食材・発注履歴）。送信のたびに丸ごと入れ替える
       let orderBoard = null;
 
-      // ドロップダウンで選んでいる表示項目。'cart' / 'confirm' / 'history' / 'vendor' のどれか1つだけを表示する
+      // 表示中の画面。confirm は発注一覧の確認ボタンからのみ開く
       let orderView = 'cart';
 
       // これから発注する食材（[{ ingredientId, quantity }]）。送信できるまで画面の中だけで持つ
       let orderCart = [];
 
-      // 「この業者へ発注」で絞り込んでいる業者ID（空文字ならすべての業者から選べる）
-      let orderVendorFilterId = '';
+      // ダイアログ内だけの選択。追加を押すまで発注一覧には反映しない。
+      let orderItemSelection = null;
 
-      // 業者詳細で開いている業者ID（空文字なら業者の一覧を出す）
+      // 業者詳細で選択中の業者ID（未選択なら取得順の先頭を表示）
       let orderSelectedVendorId = '';
-
-      // 業者詳細で「取扱食材を見る」を開いているか
-      let orderVendorItemsOpen = false;
 
       // 確認画面で組み立てた、業者ごとの発注メール
       let orderDrafts = [];
@@ -2888,7 +2859,6 @@
        * @return {void} 戻り値なし
        */
       function loadOrderBoard() {
-        document.getElementById('order_reload_btn').disabled = true;
         showOrderMessage('読み込み中...', false);
 
         const sessionId = loginSessionId;
@@ -2897,7 +2867,6 @@
             if (!isSameLoginSession(sessionId)) {
               return;
             }
-            document.getElementById('order_reload_btn').disabled = false;
             showOrderMessage('', false);
             applyOrderBoard(board);
           })
@@ -2905,7 +2874,6 @@
             if (!isSameLoginSession(sessionId)) {
               return;
             }
-            document.getElementById('order_reload_btn').disabled = false;
             document.getElementById('order_body').style.display = 'none';
             showOrderMessage('エラー: ' + error.message, true);
           })
@@ -2954,23 +2922,31 @@
        */
       function changeOrderView(viewName) {
         orderView = viewName;
-        document.getElementById('order_view_select').value = viewName;
         renderOrderView();
       }
 
-      /**
-       * いま選ばれている表示項目だけを描き直す
-       * @return {void} 戻り値なし
-       */
       function renderOrderView() {
+        document.getElementById('order_view_picker').style.display = orderView === 'confirm' ? 'none' : 'flex';
         const views = ['cart', 'confirm', 'history', 'vendor'];
-        for (let i = 0; i < views.length; i++) {
+        for(let i = 0; i < views.length; i++) {
           document.getElementById('order_view_' + views[i]).style.display = (views[i] === orderView) ? 'block' : 'none';
         }
-        if (!orderBoard) {
+
+        const tabViews = ['cart', 'history', 'vendor'];
+
+        for(let i = 0; i < tabViews.length; i++) {
+          const button = document.getElementById('order_view_btn_' + tabViews[i]);
+
+          if(button) {
+            button.classList.toggle('selected', tabViews[i] === orderView);
+          }
+        }
+
+        if(!orderBoard) {
           return;
         }
-        if (orderView === 'cart') {
+
+        if(orderView === 'cart') {
           renderOrderCart();
         } else if (orderView === 'confirm') {
           refreshOrderConfirm();
@@ -3044,7 +3020,6 @@
        * @return {void} 戻り値なし
        */
       function renderOrderCart() {
-        renderOrderCartFilter();
 
         const list = document.getElementById('order_cart_list');
         list.innerHTML = '';
@@ -3120,46 +3095,6 @@
       }
 
       /**
-       * 「この業者へ発注」で絞り込んでいるときの案内を出す
-       */
-      function renderOrderCartFilter() {
-        const box = document.getElementById('order_cart_filter');
-        box.innerHTML = '';
-        const vendor = orderVendorFilterId === '' ? null : findOrderVendorById(orderVendorFilterId);
-        if (!vendor) {
-          box.style.display = 'none';
-          return;
-        }
-        box.appendChild(createOrderElement('span', '', vendor.name + ' の取扱食材から追加できます'));
-        box.appendChild(createOrderLinkButton('絞り込みを解除', function () {
-          orderVendorFilterId = '';
-          renderOrderCart();
-        }));
-        box.style.display = 'flex';
-      }
-
-      /**
-       * 発注する食材を1件追加する（すでにあるときは数量を1つ増やす）
-       * @param {string} ingredientId 食材ID
-       * @return {void} 戻り値なし
-       */
-      function addOrderCartItem(ingredientId) {
-        const item = findOrderItemById(ingredientId);
-        if (!item) {
-          return;
-        }
-        const cartItem = findOrderCartItem(ingredientId);
-        if (cartItem) {
-          changeOrderQuantity(ingredientId, 1);
-        } else {
-          orderCart.push({ 'ingredientId': ingredientId, 'quantity': 1 });
-        }
-        if (orderView === 'cart') {
-          renderOrderCart();
-        }
-      }
-
-      /**
        * ＋ / − ボタンで数量を変える
        * 0以下にはしない（やめるときは削除ボタンを使う）
        */
@@ -3209,25 +3144,32 @@
 
       // 食材を追加するダイアログ
 
-      /**
-       * 食材を選ぶダイアログを開く
-       * @param {string} vendorId 先に絞り込んでおく業者ID（空文字ならすべての業者）
-       * @return {void} 戻り値なし
-       */
-      function openOrderItemModal(vendorId) {
+      /** 現在の食材構成を一時選択へコピーして開く。 */
+      function openOrderItemModal() {
         if (!orderBoard) {
-          showOrderMessage('発注の情報を読み込めていません。「更新」を押してください', true);
+          showOrderMessage('発注の情報を読み込めていません。発注管理を開き直してください', true);
           return;
         }
-        const options = [];
-        for (let i = 0; i < orderBoard.vendors.length; i++) {
-          options.push({ 'value': orderBoard.vendors[i].id, 'label': orderBoard.vendors[i].name });
-        }
-        const selectedVendorId = (vendorId !== undefined && vendorId !== '') ? vendorId : orderVendorFilterId;
-        fillIngredientSelect('order_item_vendor', options, selectedVendorId, 'すべての業者');
-        document.getElementById('order_item_error').textContent = '';
+        orderItemSelection = new Set(orderCart.map(function (item) { return item.ingredientId; }));
         renderOrderItemChoices();
         document.getElementById('order_item_overlay').style.display = 'flex';
+      }
+
+      /** 既存数量を保ったまま、選択された食材構成をまとめて反映する。 */
+      function applyOrderItemSelection() {
+        if (!orderBoard || orderItemSelection === null) { return; }
+        const nextCart = orderCart.filter(function (item) {
+          return orderItemSelection.has(item.ingredientId) && findOrderItemById(item.ingredientId);
+        });
+        orderItemSelection.forEach(function (id) {
+          const item = findOrderItemById(id);
+          if (item && item.vendorId !== '' && !findOrderCartItem(id)) {
+            nextCart.push({ 'ingredientId': id, 'quantity': 1 });
+          }
+        });
+        orderCart = nextCart;
+        closeIngredientModal('order_item_overlay');
+        renderOrderCart();
       }
 
       /**
@@ -3237,16 +3179,13 @@
       function renderOrderItemChoices() {
         const container = document.getElementById('order_item_choices');
         container.innerHTML = '';
-        const vendorId = document.getElementById('order_item_vendor').value;
+        if (orderItemSelection === null) { return; }
 
         let currentGroupName = null;
         let buttonsBox = null;
         let shownCount = 0;
         for (let i = 0; i < orderBoard.items.length; i++) {
           const item = orderBoard.items[i];
-          if (vendorId !== '' && item.vendorId !== vendorId) {
-            continue;
-          }
           const groupName = item.vendorId === '' ? '業者が未設定の食材（発注できません）' : item.vendorName;
           if (groupName !== currentGroupName) {
             container.appendChild(createOrderElement('div', 'order-item-group-name', groupName));
@@ -3255,16 +3194,22 @@
             currentGroupName = groupName;
           }
 
-          const inCart = findOrderCartItem(item.id);
-          const button = createOrderElement('button', 'order-item-btn' + (inCart ? ' added' : ''),
-            item.name + (inCart ? '（追加済み ' + inCart.quantity + item.unit + '）' : '　' + item.unit));
+          const selected = orderItemSelection.has(item.id);
+          const button = createOrderElement('button', 'order-item-btn' + (selected ? ' selected' : ''), item.name);
+          button.setAttribute('aria-pressed', String(selected));
           button.type = 'button';
           if (item.vendorId === '') {
             button.disabled = true; // 業者が決まっていない食材は、どこへ発注するか判断できないので選べない
           } else {
             button.addEventListener('click', function () {
-              addOrderCartItem(item.id);
-              renderOrderItemChoices();
+              if (orderItemSelection.has(item.id)) {
+                orderItemSelection.delete(item.id);
+              } else {
+                orderItemSelection.add(item.id);
+              }
+              const selected = orderItemSelection.has(item.id);
+              button.classList.toggle('selected', selected);
+              button.setAttribute('aria-pressed', String(selected));
             });
           }
           buttonsBox.appendChild(button);
@@ -3361,13 +3306,6 @@
           openOrderVendorDetail(draft.vendorId);
         }));
         card.appendChild(title);
-
-        const meta = createOrderElement('div', 'order-vendor-meta');
-        meta.appendChild(createOrderElement('div', '', '送信先：' + (draft.to === '' ? '未登録' : draft.to)));
-        if (draft.orderNote !== '') {
-          meta.appendChild(createOrderElement('div', '', '発注時の注意事項：' + draft.orderNote));
-        }
-        card.appendChild(meta);
 
         const lines = createOrderElement('ul', 'order-line-list');
         for (let i = 0; i < draft.lines.length; i++) {
@@ -3560,51 +3498,34 @@
 
       // 業者詳細
 
-      /**
-       * 業者一覧か、選んだ業者の詳細のどちらかを出す
-       * @return {void} 戻り値なし
-       */
+      /** 一覧と詳細を同時表示し、初回は取得順の先頭業者を選ぶ。 */
       function renderOrderVendor() {
-        const listEl = document.getElementById('order_vendor_list');
-        const detailEl = document.getElementById('order_vendor_detail');
-        const vendor = orderSelectedVendorId === '' ? null : findOrderVendorById(orderSelectedVendorId);
-
-        if (vendor) {
-          listEl.style.display = 'none';
-          detailEl.style.display = 'block';
-          document.getElementById('order_vendor_heading').textContent = '業者詳細';
-          document.getElementById('order_vendor_message').textContent = '';
-          renderOrderVendorDetail(vendor);
-          return;
-        }
-
-        detailEl.style.display = 'none';
-        listEl.style.display = 'flex';
-        document.getElementById('order_vendor_heading').textContent = '業者詳細';
-        document.getElementById('order_vendor_message').textContent = '業者を選ぶと、連絡先と発注の条件を表示します';
+        const vendor = findOrderVendorById(orderSelectedVendorId) || orderBoard.vendors[0];
+        orderSelectedVendorId = vendor ? vendor.id : '';
+        document.getElementById('order_vendor_message').textContent = vendor ? '' : '業者が登録されていません。';
         renderOrderVendorList();
+        const detailEl = document.getElementById('order_vendor_detail');
+        detailEl.innerHTML = '';
+        if (vendor) { renderOrderVendorDetail(vendor); }
       }
 
       function renderOrderVendorList() {
         const listEl = document.getElementById('order_vendor_list');
+        const scrollTop = listEl.scrollTop;
         listEl.innerHTML = '';
-        if (orderBoard.vendors.length === 0) {
-          listEl.appendChild(createOrderElement('div', 'order-empty',
-            '業者が登録されていません。「業者・発注条件」から登録してください。'));
-          return;
-        }
         for (let i = 0; i < orderBoard.vendors.length; i++) {
           const vendor = orderBoard.vendors[i];
-          const tile = createOrderElement('button', 'order-vendor-tile');
+          const selected = vendor.id === orderSelectedVendorId;
+          const tile = createOrderElement('button', 'skill-employee-item order-vendor-tile' + (selected ? ' selected' : ''), vendor.name);
           tile.type = 'button';
-          tile.appendChild(createOrderElement('div', 'order-vendor-tile-name', vendor.name));
-          const meta = createOrderElement('div', 'order-vendor-tile-meta');
-          meta.appendChild(createOrderElement('div', '', '電話：' + (vendor.phone === '' ? '未登録' : vendor.phone)));
-          meta.appendChild(createOrderElement('div', '', '主な取扱商品：' + (vendor.mainItems === '' ? '未登録' : vendor.mainItems)));
-          tile.appendChild(meta);
-          tile.addEventListener('click', function () { openOrderVendorDetail(vendor.id); });
+          tile.setAttribute('aria-pressed', String(selected));
+          tile.addEventListener('click', function () {
+            openOrderVendorDetail(vendor.id);
+            listEl.children[i].focus({ preventScroll: true });
+          });
           listEl.appendChild(tile);
         }
+        listEl.scrollTop = scrollTop;
       }
 
       /**
@@ -3614,53 +3535,15 @@
        */
       function openOrderVendorDetail(vendorId) {
         orderSelectedVendorId = vendorId;
-        orderVendorItemsOpen = false;
         changeOrderView('vendor');
       }
 
-      /**
-       * 選んだ業者の詳細・取扱食材・直近の発注を描く
-       * @param {Object} vendor 業者
-       * @return {void} 戻り値なし
-       */
+      /** 選んだ業者の連絡先と発注条件を表示する。 */
       function renderOrderVendorDetail(vendor) {
         const container = document.getElementById('order_vendor_detail');
         container.innerHTML = '';
         container.appendChild(createOrderElement('h4', 'order-view-heading', vendor.name));
-
-        const actions = createOrderElement('div', 'order-detail-actions');
-        const backBtn = createOrderElement('button', 'ingredient-action-btn ingredient-action-sub', '業者一覧へ戻る');
-        backBtn.type = 'button';
-        backBtn.addEventListener('click', function () {
-          orderSelectedVendorId = '';
-          renderOrderVendor();
-        });
-        actions.appendChild(backBtn);
-
-        const orderBtn = createOrderElement('button', 'ingredient-action-btn', 'この業者へ発注');
-        orderBtn.type = 'button';
-        orderBtn.addEventListener('click', function () { startOrderForVendor(vendor.id); });
-        actions.appendChild(orderBtn);
-
-        const itemsBtn = createOrderElement('button', 'ingredient-action-btn ingredient-action-sub',
-          orderVendorItemsOpen ? '取扱食材を閉じる' : '取扱食材を見る');
-        itemsBtn.type = 'button';
-        itemsBtn.addEventListener('click', function () {
-          orderVendorItemsOpen = !orderVendorItemsOpen;
-          renderOrderVendorDetail(vendor);
-        });
-        actions.appendChild(itemsBtn);
-        container.appendChild(actions);
-
         container.appendChild(createOrderVendorDetailGrid(vendor));
-
-        if (orderVendorItemsOpen) {
-          container.appendChild(createOrderElement('h4', 'order-subheading', '取扱食材'));
-          container.appendChild(createOrderVendorItemList(vendor));
-        }
-
-        container.appendChild(createOrderElement('h4', 'order-subheading', '直近の発注'));
-        container.appendChild(createOrderVendorRecentHistory(vendor));
       }
 
       /**
@@ -3692,363 +3575,4 @@
         return grid;
       }
 
-      /**
-       * その業者に紐付いている食材の一覧を作る
-       */
-      function createOrderVendorItemList(vendor) {
-        const box = createOrderElement('div', 'order-item-buttons');
-        let count = 0;
-        for (let i = 0; i < orderBoard.items.length; i++) {
-          const item = orderBoard.items[i];
-          if (item.vendorId !== vendor.id) {
-            continue;
-          }
-          const inCart = findOrderCartItem(item.id);
-          const button = createOrderElement('button', 'order-item-btn' + (inCart ? ' added' : ''),
-            item.name + '　' + item.unit + (item.productCode === '' ? '' : '（' + item.productCode + '）'));
-          button.type = 'button';
-          button.addEventListener('click', function () {
-            addOrderCartItem(item.id);
-            renderOrderVendorDetail(vendor);
-          });
-          box.appendChild(button);
-          count++;
-        }
-        if (count === 0) {
-          return createOrderElement('div', 'order-empty',
-            'この業者に紐付いた食材がありません。「業者・発注条件」で食材に業者を設定してください。');
-        }
-        return box;
-      }
-
-      /**
-       * その業者への直近の発注を作る
-       */
-      function createOrderVendorRecentHistory(vendor) {
-        const box = createOrderElement('div', 'order-history-list');
-        let count = 0;
-        for (let i = 0; i < orderBoard.history.length; i++) {
-          const history = orderBoard.history[i];
-          if (history.vendorId !== vendor.id || count >= orderBoard.recentHistoryCount) {
-            continue;
-          }
-          box.appendChild(createOrderHistoryCard(history));
-          count++;
-        }
-        if (count === 0) {
-          return createOrderElement('div', 'order-empty', 'この業者への発注の記録はまだありません。');
-        }
-        return box;
-      }
-
-      /**
-       * 業者詳細から発注へ移る
-       * その業者の食材だけを選べる状態にして、食材を追加するダイアログを開く
-       * @param {string} vendorId 業者ID
-       * @return {void} 戻り値なし
-       */
-      function startOrderForVendor(vendorId) {
-        orderVendorFilterId = vendorId;
-        changeOrderView('cart');
-        openOrderItemModal(vendorId);
-      }
-
-      // 業者・発注条件の設定
-      // 発注に必要なマスタ（業者の連絡先・発注条件と、食材の業者・発注単位・商品コード）だけを編集する
-
-      // 業者と食材は別々の保存なので、操作キーもそれぞれ用意する
-      const orderSettingKeys = {};
-
-      /**
-       * 「業者・発注条件の設定」ダイアログを開く
-       * 開くたびに新しい操作キーを作り、保存が成功するまでは同じキーを使い続ける
-       * @return {void} 戻り値なし
-       */
-      function openOrderSettingModal() {
-        if (!orderBoard) {
-          showOrderMessage('発注の情報を読み込めていません。「更新」を押してください', true);
-          return;
-        }
-        orderSettingKeys.supplier = createIngredientOperationKey();
-        orderSettingKeys.master = createIngredientOperationKey();
-
-        const settings = orderBoard.settings;
-        buildOrderWeekdayCheckboxes('supplier_order_days');
-        buildOrderWeekdayCheckboxes('supplier_ship_days');
-        buildOrderWeekdayCheckboxes('supplier_delivery_days');
-        buildOrderWeekdayCheckboxes('supplier_pickup_days');
-        fillIngredientSelect('supplier_lead_count', toOrderOptions(settings.leadTimeCounts), '営業日', '');
-        fillIngredientSelect('master_order_unit', toOrderOptions(settings.orderUnits), '', '発注単位を設定しない');
-        refreshOrderSettingSelects();
-        document.getElementById('supplier_error').textContent = '';
-        document.getElementById('master_error').textContent = '';
-        document.getElementById('order_setting_overlay').style.display = 'flex';
-      }
-
-      /**
-       * 値と表示が同じ選択肢の配列を作る
-       */
-      function toOrderOptions(values) {
-        const options = [];
-        for (let i = 0; i < values.length; i++) {
-          options.push({ 'value': values[i], 'label': values[i] });
-        }
-        return options;
-      }
-
-      /**
-       * 未入力なら保存せずにエラーにする
-       */
-      function requireOrderValue(inputId, label) {
-        const value = document.getElementById(inputId).value;
-        if (value === '' || value === null) {
-          throw new Error(label + 'を入力してください');
-        }
-        return value;
-      }
-
-      /**
-       * 設定ダイアログの「編集する業者」「編集する食材」の選択肢を作り直す
-       * @return {void} 戻り値なし
-       */
-      function refreshOrderSettingSelects() {
-        const settings = orderBoard.settings;
-
-        const supplierOptions = [];
-        for (let i = 0; i < settings.suppliers.length; i++) {
-          supplierOptions.push({ 'value': settings.suppliers[i].id, 'label': settings.suppliers[i].name });
-        }
-        const currentSupplierId = document.getElementById('supplier_select').value;
-        fillIngredientSelect('supplier_select', supplierOptions, currentSupplierId, '新しい業者を追加');
-        fillIngredientSelect('master_supplier', supplierOptions, '', '業者を設定しない');
-
-        const masterOptions = [];
-        for (let i = 0; i < settings.masters.length; i++) {
-          const master = settings.masters[i];
-          masterOptions.push({
-            'value': master.id,
-            'label': master.name + (master.active ? '' : '（発注しない）')
-          });
-        }
-        const currentMasterId = document.getElementById('master_select').value;
-        fillIngredientSelect('master_select', masterOptions, currentMasterId, '新しい食材を追加');
-
-        applyOrderSupplierToForm();
-        applyOrderMasterToForm();
-      }
-
-      /**
-       * 曜日のチェックボックスを作る
-       */
-      function buildOrderWeekdayCheckboxes(containerId) {
-        const container = document.getElementById(containerId);
-        container.innerHTML = '';
-        const labels = orderBoard.settings.weekdayLabels;
-        for (let i = 0; i < labels.length; i++) {
-          const label = document.createElement('label');
-          label.className = 'ingredient-weekday';
-          const checkbox = document.createElement('input');
-          checkbox.type = 'checkbox';
-          checkbox.value = labels[i];
-          label.appendChild(checkbox);
-          const text = document.createElement('span');
-          text.textContent = labels[i];
-          label.appendChild(text);
-          container.appendChild(label);
-        }
-      }
-
-      /**
-       * 曜日のチェックボックスに保存済みの設定を反映する
-       */
-      function setOrderWeekdayCheckboxes(containerId, weekdayText) {
-        const selected = (weekdayText === '' || weekdayText === undefined) ? [] : weekdayText.split('・');
-        const checkboxes = document.getElementById(containerId).querySelectorAll('input');
-        for (let i = 0; i < checkboxes.length; i++) {
-          checkboxes[i].checked = (selected.indexOf(checkboxes[i].value) !== -1);
-        }
-      }
-
-      /**
-       * チェックされた曜日を配列で取り出す
-       */
-      function collectOrderWeekdays(containerId) {
-        const days = [];
-        const checkboxes = document.getElementById(containerId).querySelectorAll('input');
-        for (let i = 0; i < checkboxes.length; i++) {
-          if (checkboxes[i].checked) {
-            days.push(checkboxes[i].value);
-          }
-        }
-        return days;
-      }
-
-      /**
-       * 設定ダイアログの中から業者1件を探す
-       */
-      function findOrderSettingSupplierById(supplierId) {
-        const suppliers = orderBoard.settings.suppliers;
-        for (let i = 0; i < suppliers.length; i++) {
-          if (suppliers[i].id === supplierId) {
-            return suppliers[i];
-          }
-        }
-        return null;
-      }
-
-      /**
-       * 設定ダイアログの中から食材1件を探す
-       */
-      function findOrderSettingMasterById(ingredientId) {
-        const masters = orderBoard.settings.masters;
-        for (let i = 0; i < masters.length; i++) {
-          if (masters[i].id === ingredientId) {
-            return masters[i];
-          }
-        }
-        return null;
-      }
-
-      /**
-       * 選んだ業者の設定を入力欄に反映する
-       */
-      function applyOrderSupplierToForm() {
-        const supplier = findOrderSettingSupplierById(document.getElementById('supplier_select').value);
-        document.getElementById('supplier_name').value = supplier ? supplier.name : '';
-        document.getElementById('supplier_deadline').value = supplier ? supplier.deadlineTime : '';
-        document.getElementById('supplier_lead_time').value = (supplier && supplier.leadTimeDays !== null) ? supplier.leadTimeDays : '';
-        document.getElementById('supplier_lead_count').value = (supplier && supplier.leadTimeCount !== '') ? supplier.leadTimeCount : '営業日';
-        document.getElementById('supplier_closed_dates').value = supplier ? supplier.closedDatesText : '';
-        document.getElementById('supplier_note').value = supplier ? supplier.note : '';
-        document.getElementById('supplier_address').value = supplier ? supplier.address : '';
-        document.getElementById('supplier_phone').value = supplier ? supplier.phone : '';
-        document.getElementById('supplier_email').value = supplier ? supplier.email : '';
-        document.getElementById('supplier_business_hours').value = supplier ? supplier.businessHours : '';
-        document.getElementById('supplier_closed_days').value = supplier ? supplier.closedDays : '';
-        document.getElementById('supplier_main_items').value = supplier ? supplier.mainItems : '';
-        document.getElementById('supplier_order_note').value = supplier ? supplier.orderNote : '';
-        setOrderWeekdayCheckboxes('supplier_order_days', supplier ? supplier.orderDaysText : '');
-        setOrderWeekdayCheckboxes('supplier_ship_days', supplier ? supplier.shipDaysText : '');
-        setOrderWeekdayCheckboxes('supplier_delivery_days', supplier ? supplier.deliveryDaysText : '');
-        setOrderWeekdayCheckboxes('supplier_pickup_days', supplier ? supplier.pickupDaysText : '');
-        document.getElementById('supplier_plan_text').textContent = supplier
-          ? supplier.planText : '業者を保存すると、次に納品できる日と発注締切を表示します';
-      }
-
-      /**
-       * 選んだ食材の設定を入力欄に反映する
-       */
-      function applyOrderMasterToForm() {
-        const master = findOrderSettingMasterById(document.getElementById('master_select').value);
-        document.getElementById('master_name').value = master ? master.name : '';
-        document.getElementById('master_supplier').value = master ? master.supplierId : '';
-        document.getElementById('master_order_unit').value = master ? master.orderUnit : '';
-        document.getElementById('master_product_code').value = master ? master.productCode : '';
-        document.getElementById('master_active').checked = master ? master.active : true;
-      }
-
-      function submitOrderSupplier() {
-        runOrderSettingSave({
-          'errorId': 'supplier_error',
-          'submitBtnId': 'supplier_submit_btn',
-          'keyName': 'supplier',
-          'method': 'saveIngredientSupplier',
-          'buildPayload': function () {
-            return {
-              'supplierId': document.getElementById('supplier_select').value,
-              'name': requireOrderValue('supplier_name', '業者名'),
-              'deadlineTime': document.getElementById('supplier_deadline').value,
-              'orderDays': collectOrderWeekdays('supplier_order_days'),
-              'shipDays': collectOrderWeekdays('supplier_ship_days'),
-              'deliveryDays': collectOrderWeekdays('supplier_delivery_days'),
-              'pickupDays': collectOrderWeekdays('supplier_pickup_days'),
-              'leadTimeDays': document.getElementById('supplier_lead_time').value,
-              'leadTimeCount': document.getElementById('supplier_lead_count').value,
-              'closedDates': document.getElementById('supplier_closed_dates').value,
-              'note': document.getElementById('supplier_note').value,
-              'address': document.getElementById('supplier_address').value,
-              'phone': document.getElementById('supplier_phone').value,
-              'email': document.getElementById('supplier_email').value,
-              'businessHours': document.getElementById('supplier_business_hours').value,
-              'closedDays': document.getElementById('supplier_closed_days').value,
-              'mainItems': document.getElementById('supplier_main_items').value,
-              'orderNote': document.getElementById('supplier_order_note').value
-            };
-          }
-        });
-      }
-
-      function submitOrderMaster() {
-        runOrderSettingSave({
-          'errorId': 'master_error',
-          'submitBtnId': 'master_submit_btn',
-          'keyName': 'master',
-          'method': 'saveIngredientMaster',
-          'buildPayload': function () {
-            return {
-              'ingredientId': document.getElementById('master_select').value,
-              'name': requireOrderValue('master_name', '食材名'),
-              'supplierId': document.getElementById('master_supplier').value,
-              'orderUnit': document.getElementById('master_order_unit').value,
-              'productCode': document.getElementById('master_product_code').value,
-              'active': document.getElementById('master_active').checked
-            };
-          }
-        });
-      }
-
-      /**
-       * 設定をサーバーへ保存し、成功したら最新の発注管理情報で画面を作り直す
-       * 保存中はボタンを押せなくし、失敗したときは入力を残したままエラーだけを出す
-       * ダイアログは続けて編集できるよう開いたままにする
-       * @param {Object} config 保存するボタン・入力内容・呼び出すGAS関数
-       * @return {void} 戻り値なし
-       */
-      function runOrderSettingSave(config) {
-        const submitBtn = document.getElementById(config.submitBtnId);
-        const errorEl = document.getElementById(config.errorId);
-        if (submitBtn.disabled) {
-          return; // 保存中の連打は無視する
-        }
-        errorEl.textContent = '';
-
-        let payload;
-        try {
-          payload = config.buildPayload();
-        } catch (error) {
-          errorEl.textContent = error.message;
-          return;
-        }
-        payload.operationKey = orderSettingKeys[config.keyName];
-        // 店長専用の保存なので、サーバー側で権限を確認できるようトークンを添える
-        payload.authToken = authToken;
-
-        const originalLabel = submitBtn.textContent;
-        submitBtn.disabled = true;
-        submitBtn.textContent = '保存中...';
-
-        const sessionId = loginSessionId;
-        const runner = google.script.run
-          .withSuccessHandler(function (result) {
-            if (!isSameLoginSession(sessionId)) {
-              return;
-            }
-            submitBtn.disabled = false;
-            submitBtn.textContent = originalLabel;
-            orderSettingKeys[config.keyName] = createIngredientOperationKey();
-            applyOrderBoard(result.board);
-            refreshOrderSettingSelects();
-            showOrderMessage(result.message, false);
-          })
-          .withFailureHandler(function (error) {
-            if (!isSameLoginSession(sessionId)) {
-              return;
-            }
-            submitBtn.disabled = false;
-            submitBtn.textContent = originalLabel;
-            // 保存できていないので成功の表示はせず、入力内容はそのまま残す
-            errorEl.textContent = 'エラー: ' + error.message;
-          });
-        runner[config.method](payload);
-      }
     </script>

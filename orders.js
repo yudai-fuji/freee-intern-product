@@ -1,16 +1,10 @@
 // 発注管理（電話・FAXでやっていた食材の発注を、アプリの中でまとめて行う）を扱う
 //
 // 扱い方の前提
-// ・業者と食材のマスタは「食材業者・食材マスタ」シートで持ち、「業者・発注条件の設定」から編集する
+// ・業者と食材のマスタは「食材業者・食材マスタ」シートで管理する
 // ・「どの食材をどの業者へ発注するか」は食材マスタの業者IDで決まるので、利用者が業者を選ぶ必要はない
 // ・1通のメールにまとめた食材は同じ発注番号を持つ。発注履歴はこの発注番号で業者ごとにまとめて表示する
 // ・メール本文は業者マスタの内容から組み立てる。画面から受け取った文章をそのまま送ることはしない
-
-// メールアドレスの形式（業者マスタの保存時に使う）
-const ORDER_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-// 業者詳細に出す「直近の発注」の件数
-const ORDER_RECENT_HISTORY_COUNT = 5;
 
 // 発注履歴の一覧に出す最大件数（古い記録はシートに残る）
 const ORDER_HISTORY_LIMIT = 100;
@@ -59,7 +53,6 @@ function buildOrderBoard_() {
       'id': master.id,
       'name': master.name,
       'unit': master.orderUnit,
-      'productCode': master.productCode,
       'vendorId': master.supplierId,
       'vendorName': supplier ? supplier.name : ''
     });
@@ -78,71 +71,9 @@ function buildOrderBoard_() {
     'storeName': ORDER_STORE_NAME,
     'testRecipient': ORDER_TEST_RECIPIENT_EMAIL,
     'maxQuantity': ORDER_MAX_QUANTITY,
-    'recentHistoryCount': ORDER_RECENT_HISTORY_COUNT,
     'vendors': vendors,
     'items': items,
-    'history': buildOrderHistory_(orders, supplierById),
-    'settings': buildOrderSettingsView_(suppliers, masters, now)
-  };
-}
-
-/**
- * 「業者・発注条件の設定」ダイアログに渡す、編集前の値と選択肢をまとめる
- * 画面に出す表示用の文字列ではなく、入力欄へそのまま戻せる形で渡す
- * @param {Array<Object>} suppliers 業者マスタ
- * @param {Array<Object>} masters 食材マスタ
- * @param {Date} now いまの日時
- * @return {Object} 選択肢・業者・食材
- */
-function buildOrderSettingsView_(suppliers, masters, now) {
-  const supplierViews = [];
-  for (let i = 0; i < suppliers.length; i++) {
-    const supplier = suppliers[i];
-    supplierViews.push({
-      'id': supplier.id,
-      'name': supplier.name,
-      'deadlineTime': supplier.deadlineTime,
-      'orderDaysText': formatIngredientWeekdayList(supplier.orderDays),
-      'shipDaysText': formatIngredientWeekdayList(supplier.shipDays),
-      'deliveryDaysText': formatIngredientWeekdayList(supplier.deliveryDays),
-      'pickupDaysText': formatIngredientWeekdayList(supplier.pickupDays),
-      'leadTimeDays': supplier.leadTimeDays,
-      'leadTimeCount': supplier.leadTimeCount,
-      'closedDatesText': supplier.closedDates.join('、'),
-      'note': supplier.note,
-      'address': supplier.address,
-      'phone': supplier.phone,
-      'email': supplier.email,
-      'businessHours': supplier.businessHours,
-      'closedDays': supplier.closedDays,
-      'mainItems': supplier.mainItems,
-      'orderNote': supplier.orderNote,
-      'planText': buildIngredientSupplierPlan(supplier, now).text
-    });
-  }
-
-  const masterViews = [];
-  for (let i = 0; i < masters.length; i++) {
-    const master = masters[i];
-    if (master.category !== ORDER_DEFAULT_ITEM_CATEGORY) {
-      continue; // 発注できるのは原材料だけなので、設定できる食材も原材料にそろえる
-    }
-    masterViews.push({
-      'id': master.id,
-      'name': master.name,
-      'supplierId': master.supplierId,
-      'orderUnit': master.orderUnit,
-      'productCode': master.productCode,
-      'active': master.active
-    });
-  }
-
-  return {
-    'orderUnits': ORDER_UNITS,
-    'leadTimeCounts': INGREDIENT_LEAD_TIME_COUNTS,
-    'weekdayLabels': INGREDIENT_WEEKDAY_LABELS,
-    'suppliers': supplierViews,
-    'masters': masterViews
+    'history': buildOrderHistory_(orders, supplierById)
   };
 }
 
@@ -160,7 +91,7 @@ function buildOrderVendorView_(supplier, now) {
     'email': supplier.email,
     'businessHours': supplier.businessHours,
     'closedDays': supplier.closedDays,
-    // 発注締切は「業者・発注条件の設定」で登録した「受注締切時刻」と「受注営業日」をそのまま使う
+    // 発注締切は業者マスタに登録した「受注締切時刻」と「受注営業日」をそのまま使う
     'deadlineText': buildOrderDeadlineText_(supplier),
     'leadTimeText': buildOrderLeadTimeText_(supplier),
     'deliveryDaysText': formatIngredientWeekdayList(supplier.deliveryDays),
@@ -283,11 +214,10 @@ function formatOrderHistoryLabel_(orderedAt) {
  * 業者の「発注時の注意事項」から、メールの作り方の決まりを読み取る
  * 決まった言葉が書かれていればその形に合わせ、書かれていなければ何もしない（勝手な書式は足さない）
  * @param {string} orderNote 発注時の注意事項
- * @return {Object} { includeProductCode, includeDeliveryDate, storeNameInSubject, extraTexts, appliedRuleTexts }
+ * @return {Object} { includeDeliveryDate, storeNameInSubject, extraTexts, appliedRuleTexts }
  */
 function buildOrderMailRules_(orderNote) {
   const rules = {
-    'includeProductCode': false,
     'includeDeliveryDate': false,
     'storeNameInSubject': false,
     'extraTexts': [],
@@ -314,10 +244,6 @@ function buildOrderMailRules_(orderNote) {
       }
       continue;
     }
-    if (line.indexOf(ORDER_MAIL_RULE_KEYWORDS.PRODUCT_CODE) !== -1) {
-      rules.includeProductCode = true;
-      rules.appliedRuleTexts.push('商品名のうしろに商品コードを入れます');
-    }
     if (line.indexOf(ORDER_MAIL_RULE_KEYWORDS.DELIVERY_DATE) !== -1) {
       rules.includeDeliveryDate = true;
       rules.appliedRuleTexts.push('本文に納品希望日を入れます');
@@ -333,7 +259,7 @@ function buildOrderMailRules_(orderNote) {
 
 /**
  * 画面から届いた発注内容を確かめ、食材マスタの内容で組み立て直す
- * 食材名・業者・商品コード・単位はマスタの値を使い、画面から届いた値は信用しない
+ * 食材名・業者・単位はマスタの値を使い、画面から届いた値は信用しない
  * @param {Array<Object>} items [{ ingredientId, quantity }] の配列
  * @return {Array<Object>} { master, supplier, quantity, unit } の配列
  */
@@ -365,14 +291,14 @@ function normalizeOrderItems_(items) {
     }
     const supplier = supplierById[master.supplierId];
     if (!supplier) {
-      throw new Error(master.name + ' に業者が設定されていません。「業者・発注条件の設定」で業者を設定してください');
+      throw new Error(master.name + ' に業者が設定されていません。食材マスタの業者IDを確認してください');
     }
     const quantity = parseIngredientQuantity(list[i].quantity, master.name + 'の数量', false);
     if (quantity > ORDER_MAX_QUANTITY) {
       throw new Error(master.name + 'の数量が大きすぎます（' + ORDER_MAX_QUANTITY + 'まで）');
     }
     if (master.orderUnit === '') {
-      throw new Error(master.name + ' の発注単位が設定されていません。「業者・発注条件の設定」で設定してください');
+      throw new Error(master.name + ' の発注単位が設定されていません。食材マスタの発注単位を確認してください');
     }
     normalized.push({
       'master': master,
@@ -419,7 +345,6 @@ function buildOrderDrafts_(items, deliveryDate, note, now) {
     draftByVendorId[vendorId].lines.push({
       'ingredientId': line.master.id,
       'name': line.master.name,
-      'productCode': line.master.productCode,
       'quantity': line.quantity,
       'unit': line.unit,
       'quantityText': formatIngredientQuantity(line.quantity) + line.unit
@@ -467,10 +392,7 @@ function buildOrderMailBody_(draft, deliveryDate, noteText) {
 
   for (let i = 0; i < draft.lines.length; i++) {
     const line = draft.lines[i];
-    const nameText = (draft.rules.includeProductCode && line.productCode !== '')
-      ? line.name + '（商品コード：' + line.productCode + '）'
-      : line.name;
-    parts.push(nameText + '　' + line.quantityText);
+    parts.push(line.name + ' ' + line.quantityText);
   }
   parts.push('');
 
@@ -747,7 +669,7 @@ function ensureOrderMasterData_() {
       if (!row) {
         newMasterRows.push([
           newIngredientId('ING'), item.name, ORDER_DEFAULT_ITEM_CATEGORY, item.unit,
-          '', '', '', vendorId, '○', updatedAt, item.unit, item.productCode
+          '', '', '', vendorId, '○', updatedAt, item.unit
         ]);
         continue;
       }
@@ -760,10 +682,6 @@ function ensureOrderMasterData_() {
       }
       if (values['発注単位'] === '') {
         values['発注単位'] = item.unit;
-        changed = true;
-      }
-      if (values['商品コード'] === '') {
-        values['商品コード'] = item.productCode;
         changed = true;
       }
       if (changed) {
@@ -816,222 +734,4 @@ function writeOrderSheetRow_(sheet, rowNumber, header, values) {
   const range = sheet.getRange(rowNumber, 1, 1, header.length);
   range.setNumberFormat('@');
   range.setValues([row]);
-}
-
-// ここから下は「業者・発注条件の設定」ダイアログからの保存
-// 発注に必要なマスタ（業者の連絡先・発注条件と、食材の業者・発注単位・商品コード）だけを扱う
-
-/**
- * 業者と発注条件（連絡先・受注締切・営業日・リードタイム・臨時休業日・受取可能日）を登録・更新する
- * 未入力の条件はそのまま未設定として保存し、推測で埋めない
- * @param {Object} input 画面から届いた保存内容
- * @return {Object} { message, detail, board }
- */
-function saveIngredientSupplier(input) {
-  const payload = input || {};
-  requireManagerRole_(payload.authToken);
-  return runOrderOperation_(payload.operationKey, '業者設定', function () {
-    const sheet = ensureIngredientSupplierSheet();
-    const rows = readIngredientRows(sheet, INGREDIENT_SUPPLIER_SHEET_HEADER);
-    const supplierId = normalizeIngredientText(payload.supplierId);
-    const name = normalizeIngredientText(payload.name);
-    if (name === '') {
-      throw new Error('業者名を入力してください');
-    }
-
-    const deadlineTime = normalizeIngredientText(payload.deadlineTime);
-    if (deadlineTime !== '' && !INGREDIENT_TIME_PATTERN.test(deadlineTime)) {
-      throw new Error('受注締切時刻は HH:mm の形式で入力してください: ' + deadlineTime);
-    }
-    const leadTimeText = normalizeIngredientText(payload.leadTimeDays);
-    if (leadTimeText !== '' && !/^\d+$/.test(leadTimeText)) {
-      throw new Error('納品までの日数は0以上の整数で入力してください: ' + leadTimeText);
-    }
-    const leadTimeCount = normalizeIngredientText(payload.leadTimeCount);
-    if (leadTimeCount !== '' && INGREDIENT_LEAD_TIME_COUNTS.indexOf(leadTimeCount) === -1) {
-      throw new Error('不正な日数の数え方です: ' + leadTimeCount);
-    }
-
-    const closedDates = [];
-    const closedList = normalizeIngredientText(payload.closedDates) === '' ? [] : String(payload.closedDates).split(/[,、\s\r\n]+/);
-    for (let i = 0; i < closedList.length; i++) {
-      if (normalizeIngredientText(closedList[i]) === '') {
-        continue;
-      }
-      closedDates.push(normalizeIngredientDateInput(closedList[i], '臨時休業日'));
-    }
-
-    let targetRow = -1;
-    for (let i = 0; i < rows.length; i++) {
-      if (rows[i].values['業者名'] === name && rows[i].values['業者ID'] !== supplierId) {
-        throw new Error('同じ名前の業者がすでに登録されています: ' + name);
-      }
-      if (supplierId !== '' && rows[i].values['業者ID'] === supplierId) {
-        targetRow = rows[i].rowNumber;
-      }
-    }
-    if (supplierId !== '' && targetRow === -1) {
-      throw new Error('対象の業者が見つかりません: ' + supplierId);
-    }
-
-    const email = normalizeIngredientText(payload.email);
-    if (email !== '' && !ORDER_EMAIL_PATTERN.test(email)) {
-      throw new Error('メールアドレスの形式が正しくありません: ' + email);
-    }
-
-    const values = [
-      (supplierId === '' ? newIngredientId('SUP') : supplierId), name, deadlineTime,
-      normalizeIngredientWeekdayInput(payload.orderDays, '受注営業日'),
-      normalizeIngredientWeekdayInput(payload.shipDays, '出荷営業日'),
-      normalizeIngredientWeekdayInput(payload.deliveryDays, '納品営業日'),
-      leadTimeText, leadTimeCount, closedDates.join(','),
-      normalizeIngredientWeekdayInput(payload.pickupDays, '店舗受取可能日'),
-      normalizeIngredientText(payload.note), formatIngredientDateTime(new Date()),
-      normalizeIngredientText(payload.address),
-      normalizeIngredientText(payload.phone),
-      email,
-      normalizeIngredientText(payload.businessHours),
-      normalizeIngredientText(payload.closedDays),
-      normalizeIngredientText(payload.mainItems),
-      normalizeIngredientText(payload.orderNote)
-    ];
-    if (targetRow === -1) {
-      appendIngredientRows(sheet, [values], INGREDIENT_SUPPLIER_SHEET_HEADER.length);
-    } else {
-      const range = sheet.getRange(targetRow, 1, 1, INGREDIENT_SUPPLIER_SHEET_HEADER.length);
-      range.setNumberFormat('@');
-      range.setValues([values]);
-    }
-    return {
-      'message': name + ' の発注条件を保存しました',
-      'actor': resolveOrderActor_()
-    };
-  });
-}
-
-/**
- * 発注に使う食材マスタ（食材名・発注先の業者・発注単位・商品コード）を登録・更新する
- * 発注できる食材はここから増やせる
- * @param {Object} input 画面から届いた保存内容
- * @return {Object} { message, detail, board }
- */
-function saveIngredientMaster(input) {
-  const payload = input || {};
-  requireManagerRole_(payload.authToken);
-  return runOrderOperation_(payload.operationKey, '食材設定', function () {
-    const sheet = ensureIngredientMasterSheet();
-    const rows = readIngredientRows(sheet, INGREDIENT_MASTER_SHEET_HEADER);
-    const ingredientId = normalizeIngredientText(payload.ingredientId);
-    const name = normalizeIngredientText(payload.name);
-    if (name === '') {
-      throw new Error('食材名を入力してください');
-    }
-
-    const supplierId = normalizeIngredientText(payload.supplierId);
-    if (supplierId !== '' && !findIngredientSupplierRow(readIngredientRows(ensureIngredientSupplierSheet(), INGREDIENT_SUPPLIER_SHEET_HEADER), supplierId)) {
-      throw new Error('登録されていない業者です: ' + supplierId);
-    }
-
-    const orderUnit = normalizeIngredientText(payload.orderUnit);
-    if (orderUnit !== '' && ORDER_UNITS.indexOf(orderUnit) === -1) {
-      throw new Error('不正な発注単位です: ' + orderUnit);
-    }
-
-    let targetRow = -1;
-    let currentRow = null;
-    for (let i = 0; i < rows.length; i++) {
-      if (rows[i].values['食材名'] === name && rows[i].values['食材ID'] !== ingredientId) {
-        throw new Error('同じ名前の食材がすでに登録されています: ' + name);
-      }
-      if (ingredientId !== '' && rows[i].values['食材ID'] === ingredientId) {
-        targetRow = rows[i].rowNumber;
-        currentRow = rows[i];
-      }
-    }
-    if (ingredientId !== '' && targetRow === -1) {
-      throw new Error('対象の食材が見つかりません: ' + ingredientId);
-    }
-
-    // 区分・既定単位・最低残量・期限接近通知はこの画面から編集しない列なので、シートの値をそのまま残す
-    const category = keepOrderMasterValue_(currentRow, '区分');
-    // 既定単位が空欄のままだと発注単位を消したときに発注できなくなるので、新規登録では発注単位をそのまま入れる
-    const defaultUnit = currentRow ? currentRow.values['既定単位'] : orderUnit;
-
-    const values = [
-      (ingredientId === '' ? newIngredientId('ING') : ingredientId), name,
-      (category === '' ? ORDER_DEFAULT_ITEM_CATEGORY : category), defaultUnit,
-      keepOrderMasterValue_(currentRow, '最低残量'),
-      keepOrderMasterValue_(currentRow, '最低残量単位'),
-      keepOrderMasterValue_(currentRow, '期限接近通知'),
-      supplierId,
-      (payload.active === false || payload.active === 'false') ? '' : '○',
-      formatIngredientDateTime(new Date()),
-      orderUnit, normalizeIngredientText(payload.productCode)
-    ];
-    if (targetRow === -1) {
-      appendIngredientRows(sheet, [values], INGREDIENT_MASTER_SHEET_HEADER.length);
-    } else {
-      const range = sheet.getRange(targetRow, 1, 1, INGREDIENT_MASTER_SHEET_HEADER.length);
-      range.setNumberFormat('@');
-      range.setValues([values]);
-    }
-    return {
-      'message': name + ' の設定を保存しました',
-      'ingredientId': values[0],
-      'actor': resolveOrderActor_()
-    };
-  });
-}
-
-/**
- * この画面から編集しない列に、いまシートに入っている値をそのまま使う
- * 設定画面に入力欄が無い列を、保存のたびに空欄で上書きしないために使う
- * @param {Object} currentRow 更新対象の行（新規登録なら null）
- * @param {string} headerName シートの見出し名
- * @return {string} 保存する値
- */
-function keepOrderMasterValue_(currentRow, headerName) {
-  return currentRow ? currentRow.values[headerName] : '';
-}
-
-/**
- * 業者IDから業者の行を探す
- * @param {Array<Object>} rows 業者マスタの行
- * @param {string} supplierId 業者ID
- * @return {Object} 見つかった行（無ければ null）
- */
-function findIngredientSupplierRow(rows, supplierId) {
-  for (let i = 0; i < rows.length; i++) {
-    if (rows[i].values['業者ID'] === supplierId) {
-      return rows[i];
-    }
-  }
-  return null;
-}
-
-/**
- * 曜日の一覧（画面から来た配列）を検証して「月,火」の形式の保存用文字列にする
- * @param {Array<string>|string} value 画面から届いた曜日
- * @param {string} label エラー文言に使う項目名
- * @return {string} 保存する文字列
- */
-function normalizeIngredientWeekdayInput(value, label) {
-  if (!value) {
-    return '';
-  }
-  const list = Array.isArray(value) ? value : String(value).split(/[,、\s]+/);
-  const labels = [];
-  for (let i = 0; i < list.length; i++) {
-    const day = normalizeIngredientText(list[i]);
-    if (day === '') {
-      continue;
-    }
-    if (INGREDIENT_WEEKDAY_LABELS.indexOf(day) === -1) {
-      throw new Error('不正な' + label + 'です: ' + day);
-    }
-    if (labels.indexOf(day) === -1) {
-      labels.push(day);
-    }
-  }
-  return labels.join(',');
 }

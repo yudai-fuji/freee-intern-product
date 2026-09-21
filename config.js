@@ -100,7 +100,7 @@ const SHARED_NOTE_SHEET_HEADER = [
 ];
 
 // ここから下は発注管理で使う食材・業者のマスタ設定値
-// 食材の名前・発注単位・商品コード・紐づく業者は、これらのシートで管理する
+// 食材の名前・発注単位・紐づく業者は、これらのシートで管理する
 
 // 発注管理で使うシート名（SHEET_NAMES に後から足すことで既存の定義を書き換えない）
 SHEET_NAMES.INGREDIENT_MASTERS = '食材マスタ';
@@ -121,7 +121,7 @@ const INGREDIENT_MASTER_SHEET_HEADER = [
   '食材ID', '食材名', '区分', '既定単位',
   '最低残量', '最低残量単位', '期限接近通知', '業者ID', '有効', '更新日時',
   // ここから右は発注管理で足した列。既存の列は並びを変えていないので、これまでの記録はそのまま読める
-  '発注単位', '商品コード'
+  '発注単位'
 ];
 
 const INGREDIENT_EVENT_SHEET_HEADER = [
@@ -195,16 +195,11 @@ const ORDER_TEST_RECIPIENT_EMAIL = 'yu150516@icloud.com';
 const ORDER_STORE_NAME = 'freee食堂';
 const ORDER_STORE_PHONE = '03-0000-0000';
 
-// 発注で使う単位の候補（食材マスタの既定単位とは分けて持つ。例：玉ねぎは「ケース」で発注する）
-const ORDER_UNITS = ['袋', 'ケース', '箱', 'kg', 'g', '本', '個', '枚', 'パック', '束', '缶', '杯', '人前'];
-
 // 1回の発注で受け付ける数量の上限（入力ミスで極端な値が入るのを防ぐ）
 const ORDER_MAX_QUANTITY = 999;
 
 // 業者の「発注時の注意事項」に書かれていたら、メールの作り方を変える合図にする言葉
-// 例：「商品コードを記載」と書いてあれば、食材名のうしろに商品コードを入れる
 const ORDER_MAIL_RULE_KEYWORDS = {
-  'PRODUCT_CODE': '商品コード',
   'DELIVERY_DATE': '納品希望日',
   'SUBJECT_STORE_NAME': '件名',
   'STORE_NAME': '店舗名'
@@ -232,7 +227,7 @@ const ORDER_DEFAULT_VENDORS = [
     'deliveryDays': ['月', '火', '水', '木', '金', '土'],
     'pickupDays': ['月', '火', '水', '木', '金', '土'],
     'mainItems': '牛肉・豚肉・鶏肉',
-    'orderNote': '商品コードを記載',
+    'orderNote': '',
     'note': '急ぎの場合は電話'
   },
   {
@@ -276,18 +271,18 @@ const ORDER_DEFAULT_VENDORS = [
 // 食材と業者の結び付け（食材マスタの業者IDが空欄のときだけ入れる初期値）
 // 発注単位は食材マスタの既定単位と別に持つので、ここで指定した単位を発注画面で使う
 const ORDER_DEFAULT_ITEMS = [
-  { 'name': '牛タン', 'vendorName': 'freee精肉店', 'unit': 'kg', 'productCode': 'M-001' },
-  { 'name': 'カルビ', 'vendorName': 'freee精肉店', 'unit': 'kg', 'productCode': 'M-002' },
-  { 'name': 'ロース', 'vendorName': 'freee精肉店', 'unit': 'kg', 'productCode': 'M-003' },
-  { 'name': 'シマチョウ', 'vendorName': 'freee精肉店', 'unit': 'kg', 'productCode': 'M-004' },
-  { 'name': '豚（ミンチ用）', 'vendorName': 'freee精肉店', 'unit': 'kg', 'productCode': 'M-005' },
-  { 'name': '豚ロース', 'vendorName': 'freee精肉店', 'unit': 'kg', 'productCode': 'M-006' },
-  { 'name': '小松菜', 'vendorName': '○○青果', 'unit': '袋', 'productCode': 'V-001' },
-  { 'name': '玉ねぎ', 'vendorName': '○○青果', 'unit': 'ケース', 'productCode': 'V-002' },
-  { 'name': 'ニンニク', 'vendorName': '○○青果', 'unit': '個', 'productCode': 'V-003' },
-  { 'name': 'キャベツ', 'vendorName': '○○青果', 'unit': 'ケース', 'productCode': 'V-004' },
-  { 'name': '鶏ガラ', 'vendorName': '△△食品', 'unit': '袋', 'productCode': 'F-001' },
-  { 'name': '卵', 'vendorName': '△△食品', 'unit': 'ケース', 'productCode': 'F-002' }
+  { 'name': '牛タン', 'vendorName': 'freee精肉店', 'unit': 'kg' },
+  { 'name': 'カルビ', 'vendorName': 'freee精肉店', 'unit': 'kg' },
+  { 'name': 'ロース', 'vendorName': 'freee精肉店', 'unit': 'kg' },
+  { 'name': 'シマチョウ', 'vendorName': 'freee精肉店', 'unit': 'kg' },
+  { 'name': '豚（ミンチ用）', 'vendorName': 'freee精肉店', 'unit': 'kg' },
+  { 'name': '豚ロース', 'vendorName': 'freee精肉店', 'unit': 'kg' },
+  { 'name': '小松菜', 'vendorName': '○○青果', 'unit': '袋' },
+  { 'name': '玉ねぎ', 'vendorName': '○○青果', 'unit': 'ケース' },
+  { 'name': 'ニンニク', 'vendorName': '○○青果', 'unit': '個' },
+  { 'name': 'キャベツ', 'vendorName': '○○青果', 'unit': 'ケース' },
+  { 'name': '鶏ガラ', 'vendorName': '△△食品', 'unit': '袋' },
+  { 'name': '卵', 'vendorName': '△△食品', 'unit': 'ケース' }
 ];
 
 // 初期データで足りない食材は食材マスタに追加する（区分は原材料・既定単位は発注単位と同じにする）
