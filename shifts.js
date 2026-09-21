@@ -211,13 +211,45 @@ function collectShiftDateKeys(assignmentsByDate, requirementsByDate) {
 }
 
 /**
- * 1日分の割当と必要人数条件から確認事項（保存はできるが店長に確認してほしい内容）を作る
+ * 確認事項と人数判定で共通して使う従業員の情報をまとめて用意する
+ * 氏名の対応表は削除済みの人も含める（過去のシフトでも氏名をそのまま表示するため）
+ * @return {Object} { nameByEmpId: 氏名の対応表, deletedIdSet: 削除済みの従業員番号, todayKey: 今日の日付キー }
  */
-function buildShiftWarnings(assignments, requirements, nameByEmpId) {
+function buildShiftEmployeeContext_() {
+  return {
+    'nameByEmpId': getEmployeeNameMap(),
+    'deletedIdSet': getDeletedEmployeeIdSet(),
+    'todayKey': getTodayDateKey()
+  };
+}
+
+/**
+ * その従業員が削除済みかどうかを返す
+ */
+function isDeletedShiftEmployee_(employeeId, context) {
+  return context.deletedIdSet[String(employeeId)] === true;
+}
+
+/**
+ * 1日分の割当と必要人数条件から確認事項（保存はできるが店長に確認してほしい内容）を作る
+ * 過去の日付については、削除を理由とする交代の注意も人数不足も新しく出さない（記録をそのまま残す）
+ * @param {string} dateKey 対象日の日付キー（'yyyy/MM/dd'）
+ * @param {Array} assignments その日のシフト割当
+ * @param {Array} requirements その日の必要人数条件
+ * @param {Object} context buildShiftEmployeeContext_() が返した従業員の情報
+ * @return {Array} 確認事項の一覧
+ */
+function buildShiftWarnings(dateKey, assignments, requirements, context) {
+  const isPastDate = (dateKey !== '' && dateKey < context.todayKey);
+  const nameByEmpId = context.nameByEmpId;
+
   const warnings = [];
-  addShortStaffWarnings(assignments, requirements, warnings);
+  addShortStaffWarnings(assignments, requirements, warnings, context, isPastDate);
   addOverlapWarnings(assignments, nameByEmpId, warnings);
   addBrokenRowWarnings(assignments, requirements, nameByEmpId, warnings);
+  if (!isPastDate) {
+    addReplacementWarnings(assignments, warnings, context);
+  }
 
   // 吹き出しの中で時間帯の早い順に読めるようにする
   warnings.sort(function (a, b) {
@@ -232,7 +264,7 @@ function buildShiftWarnings(assignments, requirements, nameByEmpId) {
 /**
  * 必要人数条件の時間帯を最初から最後まで担当でき、かつ同じポジションの従業員を数え、不足していれば確認事項にする
  */
-function addShortStaffWarnings(assignments, requirements, warnings) {
+function addShortStaffWarnings(assignments, requirements, warnings, context, isPastDate) {
   for (let r = 0; r < requirements.length; r++) {
     const requirement = requirements[r];
     const requiredStart = shiftTimeToMinutes(requirement.startTime);
@@ -250,6 +282,9 @@ function addShortStaffWarnings(assignments, requirements, warnings) {
       if (assignment.position !== requirement.position) {
         continue;
       }
+      if (!isPastDate && isDeletedShiftEmployee_(assignment.employeeId, context)) {
+        continue; // 削除済みの従業員の枠は交代待ちなので、確保できている人数には数えない
+      }
       const startMinutes = shiftTimeToMinutes(assignment.startTime);
       const endMinutes = shiftTimeToMinutes(assignment.endTime);
       if (startMinutes === null || endMinutes === null) {
@@ -265,7 +300,7 @@ function addShortStaffWarnings(assignments, requirements, warnings) {
       warnings.push({
         'time': formatShiftTimeRange(requiredStart, requiredEnd),
         'title': requirement.position + '：' + (requirement.requiredCount - assignedCount) + '人不足',
-        'reason': '必要' + requirement.requiredCount + '人／配置' + assignedCount + '人'
+        'reason': '確保' + assignedCount + '人／必要' + requirement.requiredCount + '人'
       });
     }
   }
@@ -302,6 +337,27 @@ function addOverlapWarnings(assignments, nameByEmpId, warnings) {
         'reason': first.startTime + '〜' + first.endTime + ' と ' + second.startTime + '〜' + second.endTime + ' が重なっています'
       });
     }
+  }
+}
+
+/**
+ * 削除済みの従業員に残っている本日以降の枠を「交代が必要」として確認事項にする
+ * 割当そのものは消さず、氏名・勤務時間・ポジション・備考を残したまま交代を促す
+ */
+function addReplacementWarnings(assignments, warnings, context) {
+  for (let i = 0; i < assignments.length; i++) {
+    const assignment = assignments[i];
+    if (!isDeletedShiftEmployee_(assignment.employeeId, context)) {
+      continue;
+    }
+    const startMinutes = shiftTimeToMinutes(assignment.startTime);
+    const endMinutes = shiftTimeToMinutes(assignment.endTime);
+    const isReadableTime = (startMinutes !== null && endMinutes !== null && startMinutes < endMinutes);
+    warnings.push({
+      'time': isReadableTime ? formatShiftTimeRange(startMinutes, endMinutes) : '要交代',
+      'title': getShiftEmployeeLabel(assignment.employeeId, context.nameByEmpId) + '：交代が必要',
+      'reason': '削除済みの従業員のため、交代する従業員を選んでください（' + assignment.position + '）'
+    });
   }
 }
 
@@ -420,7 +476,7 @@ function getShiftMonth(year, month, authToken) {
 
   const assignmentsByDate = readShiftAssignmentsByDate();
   const requirementsByDate = readShiftRequirementsByDate();
-  const nameByEmpId = getEmployeeNameMap();
+  const context = buildShiftEmployeeContext_();
 
   // 「2026/09/」で始まる日付キーだけを対象月のデータとして返す
   const monthPrefix = targetYear + '/' + ('0' + targetMonth).slice(-2) + '/';
@@ -433,7 +489,7 @@ function getShiftMonth(year, month, authToken) {
     }
     const assignments = assignmentsByDate[dateKey] || [];
     const requirements = requirementsByDate[dateKey] || [];
-    const warnings = buildShiftWarnings(assignments, requirements, nameByEmpId);
+    const warnings = buildShiftWarnings(dateKey, assignments, requirements, context);
     days[dateKey] = {
       'status': decideShiftStatus(assignments, requirements, warnings),
       'warnings': warnings
@@ -461,15 +517,88 @@ function getShiftDay(dateKey, authToken) {
 
   const assignments = readShiftAssignmentsByDate()[normalizedDateKey] || [];
   const requirements = readShiftRequirementsByDate()[normalizedDateKey] || [];
-  const nameByEmpId = getEmployeeNameMap();
+  return buildShiftDayPayload_(normalizedDateKey, assignments, requirements);
+}
+
+/**
+ * 画面へ返す1日分のシフト情報を組み立てる（取得時と保存後の両方で使う）
+ * 削除済みの従業員の枠には氏名と「交代が必要」の印を添えるので、画面でそのまま注意を出せる
+ * @param {string} dateKey 対象日の日付キー
+ * @param {Array} assignments その日のシフト割当
+ * @param {Array} requirements その日の必要人数条件
+ * @return {Object} 画面が表示に使う1日分の情報
+ */
+function buildShiftDayPayload_(dateKey, assignments, requirements) {
+  const context = buildShiftEmployeeContext_();
+  const isPastDate = (dateKey < context.todayKey);
+
+  const assignmentViews = [];
+  for (let i = 0; i < assignments.length; i++) {
+    const assignment = assignments[i];
+    const isDeletedEmployee = isDeletedShiftEmployee_(assignment.employeeId, context);
+    assignmentViews.push({
+      'employeeId': assignment.employeeId,
+      'employeeName': context.nameByEmpId[String(assignment.employeeId)] || '',
+      'startTime': assignment.startTime,
+      'endTime': assignment.endTime,
+      'position': assignment.position,
+      'note': assignment.note,
+      'isDeletedEmployee': isDeletedEmployee,
+      // 過去の日付は記録として残すだけなので、交代を促さない
+      'needsReplacement': isDeletedEmployee && !isPastDate
+    });
+  }
 
   return {
-    'date': normalizedDateKey,
-    'employees': getEmployees(),
-    'assignments': assignments,
+    'date': dateKey,
+    'employees': getEmployees(), // 交代先に選べるのは有効な従業員だけ
+    'assignments': assignmentViews,
     'requirements': requirements,
-    'warnings': buildShiftWarnings(assignments, requirements, nameByEmpId)
+    'warnings': buildShiftWarnings(dateKey, assignments, requirements, context)
   };
+}
+
+/**
+ * 指定した従業員の、本日以降のシフトを日付順に集める（従業員を削除する前の確認で使う）
+ * 今日の判定はブラウザの時計ではなく、Asia/Tokyo のサーバー側の日付に揃える
+ * @param {*} empId 対象の従業員番号
+ * @return {Array} [{ date, startTime, endTime, position, note }, ...]
+ */
+function getEmployeeUpcomingShifts_(empId) {
+  const todayKey = getTodayDateKey();
+  const assignmentsByDate = readShiftAssignmentsByDate();
+  const upcomingShifts = [];
+
+  for (const dateKey in assignmentsByDate) {
+    if (dateKey < todayKey) {
+      continue; // 'yyyy/MM/dd' は文字列のまま比べても日付の前後どおりに並ぶ
+    }
+    const assignments = assignmentsByDate[dateKey];
+    for (let i = 0; i < assignments.length; i++) {
+      if (String(assignments[i].employeeId) !== String(empId)) {
+        continue;
+      }
+      upcomingShifts.push({
+        'date': dateKey,
+        'startTime': assignments[i].startTime,
+        'endTime': assignments[i].endTime,
+        'position': assignments[i].position,
+        'note': assignments[i].note
+      });
+    }
+  }
+
+  // 日付順、同じ日なら出勤時刻の早い順に並べる
+  upcomingShifts.sort(function (a, b) {
+    if (a.date !== b.date) {
+      return a.date < b.date ? -1 : 1;
+    }
+    if (a.startTime === b.startTime) {
+      return 0;
+    }
+    return a.startTime < b.startTime ? -1 : 1;
+  });
+  return upcomingShifts;
 }
 
 /**
@@ -501,6 +630,20 @@ function validateShiftInput(dateKey, assignments, requirements) {
     rawEmpIdByKey[String(employees[i]['id'])] = employees[i]['id'];
   }
 
+  // 削除済みの従業員を新しい枠へ割り当てることはできないが、
+  // すでに保存されている枠は「交代が必要な枠」として、交代が決まるまで残せるようにする
+  const deletedIdSet = getDeletedEmployeeIdSet();
+  const rawIdByKeyIncludingDeleted = getEmployeeRawIdMap();
+  const allNameByEmpId = getEmployeeNameMap();
+  const keepableDeletedEmpIds = {};
+  const savedAssignments = readShiftAssignmentsByDate()[normalizedDateKey] || [];
+  for (let d = 0; d < savedAssignments.length; d++) {
+    const savedKey = String(savedAssignments[d].employeeId);
+    if (deletedIdSet[savedKey]) {
+      keepableDeletedEmpIds[savedKey] = true;
+    }
+  }
+
   const assignmentList = assignments || [];
   const normalizedAssignments = [];
   for (let i = 0; i < assignmentList.length; i++) {
@@ -511,7 +654,15 @@ function validateShiftInput(dateKey, assignments, requirements) {
     if (employeeKey === '') {
       throw new Error(label + '従業員を選択してください');
     }
-    if (!Object.prototype.hasOwnProperty.call(rawEmpIdByKey, employeeKey)) {
+    let rawEmployeeId = null;
+    if (Object.prototype.hasOwnProperty.call(rawEmpIdByKey, employeeKey)) {
+      rawEmployeeId = rawEmpIdByKey[employeeKey];
+    } else if (keepableDeletedEmpIds[employeeKey]) {
+      rawEmployeeId = rawIdByKeyIncludingDeleted[employeeKey]; // 交代が決まるまで残す枠
+    } else if (deletedIdSet[employeeKey]) {
+      throw new Error(label + '削除済みの従業員は新しく割り当てできません: ' +
+        (allNameByEmpId[employeeKey] || employeeKey));
+    } else {
       throw new Error(label + '従業員名簿に存在しない従業員番号です: ' + employeeKey);
     }
 
@@ -539,7 +690,7 @@ function validateShiftInput(dateKey, assignments, requirements) {
 
     normalizedAssignments.push({
       'employeeId': employeeKey,
-      'rawEmployeeId': rawEmpIdByKey[employeeKey],
+      'rawEmployeeId': rawEmployeeId,
       'startTime': startTime,
       'endTime': endTime,
       'position': position,
@@ -676,11 +827,9 @@ function saveShiftDay(dateKey, assignments, requirements, authToken) {
   deleteShiftRowsForDate(requirementSheet, SHIFT_REQ_COL_DATE, validated.dateKey);
   appendShiftRows(requirementSheet, requirementRows, SHIFT_REQ_COL_START_TIME);
 
-  const warnings = buildShiftWarnings(validated.assignments, validated.requirements, getEmployeeNameMap());
-  return {
-    'date': validated.dateKey,
-    'status': decideShiftStatus(validated.assignments, validated.requirements, warnings),
-    'warnings': warnings,
-    'message': validated.dateKey + ' のシフトを保存しました'
-  };
+  // 保存した内容をそのまま読み直した形で返す。交代が済んだ枠の注意書きも画面側で消える
+  const payload = buildShiftDayPayload_(validated.dateKey, validated.assignments, validated.requirements);
+  payload['status'] = decideShiftStatus(validated.assignments, validated.requirements, payload['warnings']);
+  payload['message'] = validated.dateKey + ' のシフトを保存しました';
+  return payload;
 }

@@ -116,10 +116,12 @@ function getTodayWorkSettings(authToken) {
 function saveTodayWork(empId, position, noticesText, authToken) {
   requireManagerRole_(authToken);
 
-  const nameByEmpId = getEmployeeNameMap();
+  // 有効な従業員だけを保存先にする（削除済みの人は本日の業務の設定対象から外す）
+  const nameByEmpId = getActiveEmployeeNameMap();
   const empName = nameByEmpId[String(empId)];
+  console.log(empName)
   if (!empName) {
-    throw new Error('従業員名簿に存在しない従業員番号です: ' + empId);
+    throw new Error('この従業員は選べません。画面を開き直してください（従業員番号 ' + empId + '）');
   }
 
   position = position ? String(position) : '';
@@ -148,7 +150,7 @@ function getTodayWorkInfo(empId) {
 
   const position = saved ? saved.position : '';
   const notices = splitNoticesText(saved ? saved.noticesText : '');
-  // 食材管理・引継ぎ連携（未実装）は、実装時にここで notices へ追加する
+  // 引継ぎ連携（未実装）は、実装時にここで notices へ追加する
 
   return {
     'position': position,

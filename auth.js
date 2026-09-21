@@ -15,8 +15,13 @@ function login(passcode) {
   return { 'success': true, 'role': role, 'token': issueAuthToken_(role) };
 }
 
+// 従業員用のトークンを発行
+function createEmployeeSession() {
+  return { 'success': true, 'role': ROLE_EMPLOYEE, 'token': issueAuthToken_(ROLE_EMPLOYEE)};
+}
+
 /**
- * ログイントークンを無効にする（手動ログアウト・自動ログアウトの両方から呼ぶ）
+ * ログイントークンを無効にする（店長画面から従業員画面へ戻るときに、使い終えた店長用トークンを破棄する）
  * @param {string} token 破棄するログイントークン
  * @return {boolean} 破棄を実行したら true、トークンが空なら false
  */
@@ -52,6 +57,18 @@ function getRoleByToken_(token) {
   }
   const role = CacheService.getScriptCache().get(cacheKey);
   return role ? role : '';
+}
+
+/**
+ * ログインしているかを確認し、そうでなければ処理を中断する
+ * 役割を問わず使ってよいデータ（従業員一覧など）の取得の先頭で呼ぶ
+ * @param {string} token 画面から渡されたログイントークン
+ * @return {void} 確認に通れば何も返さない（通らない場合は例外を投げる）
+ */
+function requireLoggedIn_(token) {
+  if (getRoleByToken_(token) === '') {
+    throw new Error('ログインし直してください');
+  }
 }
 
 /**

@@ -8,6 +8,12 @@ function recordClock(empId, type) {
     throw new Error('不正な打刻種別です');
   }
 
+  //古い画面が開いたままでも、削除済み・名簿にない従業員の打刻は受け付けない
+  const activeNameByEmpId = getActiveEmployeeNameMap();
+  if (!activeNameByEmpId[String(empId)]) {
+    throw new Error('この従業員は選べません。画面を再読み込みしてください');
+  }
+
   //"打刻履歴"シートを取得
   const timeClocksSheet = getSheet(SHEET_NAMES.TIME_CLOCKS);
 
@@ -136,7 +142,7 @@ function buildAttendances(targetDate) {
     const id = empIds[j];
     const summary = summaryByEmpId[String(id)];
     const actualMinutes = calcActualWorkingMinutes(summary.clockInAt, summary.clockOutAt, summary.breakMinutes);
-    const rate = rateByEmpId[String(id)] || { 'base': 0, 'holidayBonus': 0 };
+    const rate = rateByEmpId[String(id)] || { 'base': 0, 'holidayBonus': 0, 'skillAllowance': 0 };
 
     attendances.push({
       'name': nameByEmpId[String(id)] || ('従業員番号 ' + id),
@@ -205,6 +211,8 @@ function getEmployeeRateMap() {
   if (lastRow < 2) {
     return rateByEmpId;
   }
+  // スキル手当は名簿の右側に足した列にあるので、基本時給・休日加給とは別に読み取る
+  const skillAllowanceByEmpId = getEmployeeSkillAllowanceMap();
   const empValues = empSheet.getRange(2, 1, lastRow - 1, 5).getValues(); // A:従業員番号 ... D:基本時給 E:休日加給
   for (let i = 0; i < empValues.length; i++) {
     const empId = empValues[i][0];
@@ -213,7 +221,8 @@ function getEmployeeRateMap() {
     }
     rateByEmpId[String(empId)] = {
       'base': Number(empValues[i][3]) || 0,
-      'holidayBonus': Number(empValues[i][4]) || 0
+      'holidayBonus': Number(empValues[i][4]) || 0,
+      'skillAllowance': skillAllowanceByEmpId[String(empId)] || SKILL_ALLOWANCE_DEFAULT
     };
   }
   return rateByEmpId;
@@ -284,7 +293,9 @@ function formatEstimatedWage(actualMinutes, rate, isHolidayRate) {
   if (actualMinutes === null) {
     return NO_VALUE_LABEL;
   }
-  const hourlyRate = rate.base + (isHolidayRate ? rate.holidayBonus : 0);
+  // 曜日ごとの時給の決め方はこれまでどおりで、スキル手当だけを1時間あたりに上乗せする
+  // 平日は 基本時給＋スキル手当、土日祝は 基本時給＋休日加給＋スキル手当 になる
+  const hourlyRate = rate.base + (isHolidayRate ? rate.holidayBonus : 0) + (rate.skillAllowance || 0);
   const wage = Math.floor(actualMinutes / 60 * hourlyRate);
   return wage.toLocaleString('ja-JP') + '円';
 }

@@ -21,7 +21,7 @@
   }
   .main-layout {
   display: grid;
-  grid-template-columns: 280px 1fr 280px;
+  grid-template-columns: 280px 1fr 310px;
   gap: 40px;
   align-items: start;
   }
@@ -34,19 +34,52 @@
   }
   .employee-list-header {
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: space-between;
     margin-bottom: 10px;
   }
   .employee-list-header h3 {
-    margin-bottom: 0;
+    margin: -10px;
+    white-space: nowrap;
+    padding-bottom: 10px;
+  }
+  .employee-search-input {
+    flex: 1;
+    min-width: 0;
+    margin-left: 10px;
+    padding: 8px 10px;
+    font-size: 14px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    box-sizing: border-box;
+  }
+  .employee-list-message {
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 10px;
+    min-height: 20px;
+  }
+  /* 氏名はフルネーム、その下に「従業員番号 : 3」を出す */
+  .employee-name-text {
+    font-size: 22px;
+  }
+  .employee-number-text {
+    font-size: 14px;
+    color: #666;
+    margin-top: 4px;
+  }
+  .employee-item.selected .employee-number-text,
+  .employee-delete-item.selected .employee-number-text {
+    color: #e8eefc;
   }
   .employee-list ul {
     list-style: none;
     padding: 0;
     margin: 0;
     max-height: 590px;
-    overflow-y: auto;
+    overflow-y: scroll;
+    scrollbar-gutter: stable;
   }
   .employee-item {
     padding: 18px;
@@ -69,7 +102,8 @@
     border-color: #3f6fd1;
   }
   .clock-panel {
-  width: 400px;
+  width: 640px;
+  max-width: 100%;
   text-align: center;
   grid-column: 2;
   justify-self: center;
@@ -78,6 +112,13 @@
     font-size: 32px;
     font-weight: bold;
     margin-bottom: 10px;
+  }
+  .selected-emp-name .employee-name-text {
+    font-size: 32px;
+  }
+  .selected-emp-name .employee-number-text {
+    font-size: 16px;
+    font-weight: normal;
   }
   .current-time {
     font-size: 56px;
@@ -136,7 +177,6 @@
     font-size: 18px;
     min-height: 24px;
   }
-  .add-employee-btn,
   .attendance-reload-btn,
   .header-btn {
     padding: 6px 20px;
@@ -147,12 +187,10 @@
     border-radius: 8px;
     cursor: pointer;
   }
-  .add-employee-btn:hover,
   .attendance-reload-btn:hover,
   .header-btn:hover {
     background-color: #dcdcdc;
   }
-  .add-employee-btn:active,
   .attendance-reload-btn:active,
   .header-btn:active {
     background-color: #c8c8c8;
@@ -182,6 +220,158 @@
   .manager-heading {
     font-size: 28px;
     margin: 0;
+  }
+  /* 店長画面：従業員編集 */
+  .employee-edit-actions {
+    display: flex;
+    gap: 16px;
+    margin-top: 20px;
+  }
+  .employee-edit-mode-btn {
+    padding: 12px 24px;
+    font-size: 16px;
+    background-color: #fff;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .employee-edit-mode-btn:hover {
+    background-color: #f0f4fa;
+  }
+  .employee-edit-mode-btn.selected {
+    background-color: #3f6fd1;
+    color: #fff;
+    border-color: #3f6fd1;
+  }
+  .employee-edit-block {
+    max-width: 560px;
+    margin-top: 24px;
+  }
+  .employee-edit-subheading {
+    font-size: 20px;
+    margin: 0 0 12px;
+  }
+  .employee-edit-note {
+    font-size: 15px;
+    color: #666;
+  }
+  .employee-edit-label {
+    display: block;
+    font-size: 15px;
+    margin: 12px 0 4px;
+  }
+  .employee-edit-input {
+    width: 100%;
+    padding: 10px;
+    font-size: 16px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    box-sizing: border-box;
+  }
+  .employee-edit-buttons {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .employee-edit-submit-btn,
+  .employee-edit-cancel-btn,
+  .employee-edit-delete-btn {
+    padding: 10px 20px;
+    font-size: 16px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .employee-edit-submit-btn {
+    background-color: #3f6fd1;
+    color: #fff;
+  }
+  .employee-edit-submit-btn:hover {
+    background-color: #3560b8;
+  }
+  .employee-edit-cancel-btn {
+    background-color: #f5f5f5;
+    color: #333;
+    border: 1px solid #ccc;
+  }
+  .employee-edit-cancel-btn:hover {
+    background-color: #e8e8e8;
+  }
+  .employee-edit-delete-btn {
+    background-color: #e53935;
+    color: #fff;
+  }
+  .employee-edit-delete-btn:hover {
+    background-color: #c62828;
+  }
+  .employee-edit-submit-btn:disabled,
+  .employee-edit-delete-btn:disabled {
+    background-color: #b0b0b0;
+    cursor: not-allowed;
+  }
+  .employee-edit-status {
+    font-size: 15px;
+    color: #666;
+  }
+  .employee-edit-status.error {
+    color: #e53935;
+  }
+  .employee-delete-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    max-height: 360px;
+    overflow-y: auto;
+  }
+  .employee-delete-item {
+    padding: 12px 16px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .employee-delete-item:hover {
+    background-color: #f0f4fa;
+  }
+  .employee-delete-item.selected {
+    background-color: #3f6fd1;
+    color: #fff;
+    border-color: #3f6fd1;
+  }
+  .employee-delete-item .employee-name-text {
+    font-size: 18px;
+  }
+  .employee-delete-confirm {
+    margin-top: 20px;
+    padding: 16px;
+    background-color: #fffbe6;
+    border: 1px solid #e0a800;
+    border-radius: 8px;
+  }
+  .employee-delete-target .employee-name-text {
+    font-size: 22px;
+    font-weight: bold;
+  }
+  .employee-delete-impact-line {
+    font-size: 15px;
+    color: #555;
+    margin-top: 6px;
+  }
+  .employee-delete-shift-summary {
+    font-weight: bold;
+    color: #b26a00;
+  }
+  .employee-delete-shift-list {
+    margin: 8px 0 0;
+    padding-left: 20px;
+    font-size: 15px;
+    color: #555;
+  }
+  .employee-delete-shift-list li {
+    margin-bottom: 4px;
   }
   .modal-overlay {
     display: none;
@@ -258,6 +448,10 @@
   .modal-cancel-btn:hover {
     background-color: #e0e0e0;
   }
+  .modal-cancel-btn:disabled {
+    color: #999;
+    cursor: not-allowed;
+  }
   .modal-submit-btn {
     padding: 10px 20px;
     font-size: 16px;
@@ -280,6 +474,12 @@
     align-items: center;
     justify-content: space-between;
     max-width: 960px;
+  }
+  /* 見出しの右にボタンが複数並ぶとき、ボタン同士を隣り合わせにする */
+  .manager-section-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
   }
   .attendance-reload-btn:disabled {
     color: #999;
@@ -323,27 +523,109 @@
     color: #e53935;
   }
   /* 店長画面：スキル管理 */
-  .skill-table select {
-    font-size: 16px;
-    padding: 4px 8px;
+  /* 左に従業員一覧、右に選んだ1人のスキル詳細を並べる */
+  .skill-layout {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 40px;
+    align-items: start;
+    margin-top: 8px;
+    max-width: 960px;
   }
-  /* 評価セルの中に評価（select）と更新日を縦に並べる。列を分けないことで横幅の増加を抑える */
-  .skill-table td.skill-cell {
-    text-align: center;
+  .skill-employee-list-heading {
+    font-size: 20px;
+    margin: 0 0 10px;
   }
-  .skill-table .skill-updated-at {
-    margin-top: 4px;
+  /* 従業員が増えても画面が伸び続けないよう、一覧だけを縦スクロールさせる */
+  .skill-employee-list ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    max-height: 520px;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
+  .skill-employee-item {
+    padding: 14px 16px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .skill-employee-item:hover {
+    background-color: #f0f4fa;
+  }
+  /* 選択中の従業員は、他の画面と同じ青系で塗って分かるようにする */
+  .skill-employee-item.selected {
+    background-color: #3f6fd1;
+    color: #fff;
+    border-color: #3f6fd1;
+  }
+  .skill-employee-item .employee-name-text {
+    font-size: 18px;
+  }
+  .skill-employee-item.selected .employee-number-text {
+    color: #e8eefc;
+  }
+  .skill-detail-panel {
+    min-width: 0;
+  }
+  .skill-detail-empty {
+    font-size: 18px;
+    color: #666;
+    padding-top: 40px;
+  }
+  .skill-detail-header {
+    padding-bottom: 16px;
+    border-bottom: 1px solid #ccc;
+  }
+  .skill-detail-header .employee-name-text {
+    font-size: 28px;
+    font-weight: bold;
+  }
+  .skill-detail-header .employee-number-text {
+    font-size: 15px;
+  }
+  /* スキル名・ドロップダウン・最終更新日を1行に並べ、余白を広めにとって見やすくする */
+  .skill-detail-item {
+    display: grid;
+    grid-template-columns: 1fr 160px 120px;
+    align-items: center;
+    gap: 16px;
+    padding: 18px 4px;
+    border-bottom: 1px solid #eee;
+  }
+  .skill-detail-item-name {
+    font-size: 20px;
+  }
+  .skill-detail-item select {
+    width: 100%;
+    font-size: 17px;
+    padding: 8px 10px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    box-sizing: border-box;
+  }
+  /* 更新日は評価より控えめにして、ドロップダウンの邪魔にならないようにする */
+  .skill-detail-item-updated-at {
     font-size: 12px;
-    color: #767676;
+    color: #999;
+    text-align: right;
     white-space: nowrap;
   }
+  .skill-detail-actions {
+    display: flex;
+    align-items: center;
+    margin-top: 24px;
+  }
   .skill-save-btn {
-    padding: 6px 16px;
-    font-size: 15px;
+    padding: 10px 28px;
+    font-size: 17px;
     background-color: #3f6fd1;
     color: #fff;
     border: none;
-    border-radius: 6px;
+    border-radius: 8px;
     cursor: pointer;
   }
   .skill-save-btn:hover {
@@ -353,12 +635,12 @@
     background-color: #9db3dc;
     cursor: not-allowed;
   }
-  .skill-row-status {
-    margin-left: 10px;
-    font-size: 14px;
+  .skill-save-status {
+    margin-left: 14px;
+    font-size: 15px;
     color: #43a047;
   }
-  .skill-row-status.error {
+  .skill-save-status.error {
     color: #e53935;
   }
   /* 店長画面：ダッシュボード（本日の業務設定） */
@@ -414,13 +696,25 @@
   .today-work-row-status.error {
     color: #e53935;
   }
+  /* 従業員画面：本日の業務カードと共有メモカードを、同じ幅・同じ上端で横に並べる
+     align-items: start により、内容が増えた側のカードだけが下方向に伸びる */
+  .employee-cards-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    align-items: start;
+    margin-top: 28px;
+  }
   /* 従業員画面：本日の業務カード */
   .today-work-card {
-    margin-top: 28px;
     padding: 20px;
     border: 1px solid #ccc;
     border-radius: 12px;
     text-align: left;
+    min-width: 0;
+  }
+  #today_work_card {
+    grid-column: 1;
   }
   .today-work-card-heading {
     font-size: 18px;
@@ -457,6 +751,110 @@
   .today-work-warning {
     font-size: 15px;
     color: #e53935;
+  }
+  /* 従業員画面：共有メモカード（本日の業務の右隣、employee-cards-row の2列目に表示する）
+     本日の業務が非表示のときも、共有メモは右側の列に出す */
+  .shared-note-card {
+    grid-column: 2;
+  }
+  .shared-note-item + .shared-note-item {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid #eee;
+  }
+  .shared-note-meta {
+    font-size: 13px;
+    color: #767676;
+    margin-bottom: 4px;
+  }
+  .shared-note-body {
+    font-size: 15px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  /* 共有メモダイアログ：共有したいスタッフのプルダウン */
+  .shared-note-select {
+    position: relative;
+    margin-bottom: 18px;
+  }
+  .shared-note-select-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    padding: 12px 14px;
+    font-family: inherit;
+    font-size: 16px;
+    color: #333;
+    text-align: left;
+    background-color: #fff;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    cursor: pointer;
+    box-sizing: border-box;
+  }
+  .shared-note-select-trigger:hover {
+    background-color: #f0f4fa;
+  }
+  /* 誰も選んでいない間の案内文は、選択済みの表示と区別できるよう淡い色にする */
+  .shared-note-select-placeholder {
+    color: #767676;
+  }
+  .shared-note-select-arrow {
+    display: inline-block;
+    font-size: 12px;
+    color: #767676;
+  }
+  .shared-note-select.open .shared-note-select-arrow {
+    transform: rotate(180deg);
+  }
+  /* 一覧は閉じているのが初期状態。開いたときもダイアログを縦に伸ばさないよう、重ねて出す */
+  .shared-note-recipient-list {
+    display: none;
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    z-index: 10;
+    max-height: 220px;
+    overflow-y: auto;
+    background-color: #fff;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    padding: 12px 14px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    box-sizing: border-box;
+  }
+  .shared-note-select.open .shared-note-recipient-list {
+    display: block;
+  }
+  .shared-note-recipient-item {
+    margin-bottom: 10px;
+  }
+  .shared-note-recipient-item:last-child {
+    margin-bottom: 0;
+  }
+  .shared-note-recipient-empty {
+    font-size: 15px;
+    color: #767676;
+  }
+  .shared-note-confirm-block {
+    padding: 10px 14px;
+    margin-bottom: 18px;
+    background-color: #f0f4fa;
+    border-radius: 8px;
+    font-size: 16px;
+  }
+  .shared-note-confirm-recipient {
+    margin-bottom: 4px;
+  }
+  .shared-note-confirm-recipient:last-child {
+    margin-bottom: 0;
+  }
+  .shared-note-confirm-body {
+    white-space: pre-wrap;
+    word-break: break-word;
   }
   /* 店長画面：シフト作成 */
   .shift-month-switch {
@@ -716,6 +1114,16 @@
   .shift-table-empty {
     color: #767676;
   }
+  /* 削除済み従業員の枠（交代が必要）であることが分かるようにする */
+  .shift-row-replacement td {
+    background-color: #fff8e1;
+  }
+  .shift-replacement-note {
+    margin-top: 6px;
+    font-size: 13px;
+    font-weight: bold;
+    color: #b26a00;
+  }
   .shift-delete-btn {
     padding: 5px 12px;
     font-size: 14px;
@@ -786,73 +1194,7 @@
       width: 210px;
     }
   }
-  /* 店長画面：食材管理 */
-  .ingredient-alerts {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-    margin-top: 8px;
-    margin-bottom: 24px;
-  }
-  .ingredient-alert-card {
-    flex: 1 1 320px;
-    max-width: 560px;
-    border: 1px solid #ccc;
-    border-left-width: 6px;
-    border-radius: 8px;
-    padding: 14px 18px;
-    background-color: #fff;
-  }
-  /* 状態は枠の色だけでなく、見出しと本文の言葉でも分かるようにする */
-  .ingredient-alert-warning {
-    border-color: #e53935;
-    background-color: #fdf3f2;
-  }
-  .ingredient-alert-check {
-    border-color: #f57c00;
-    background-color: #fdf7ef;
-  }
-  .ingredient-alert-info {
-    border-color: #3f6fd1;
-    background-color: #f0f4fa;
-  }
-  .ingredient-alert-none {
-    border-left-width: 1px;
-    color: #555;
-    font-size: 16px;
-  }
-  .ingredient-alert-heading {
-    font-size: 17px;
-    font-weight: bold;
-    margin-bottom: 8px;
-  }
-  .ingredient-alert-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-  .ingredient-alert-list li {
-    margin-bottom: 10px;
-    font-size: 15px;
-    line-height: 1.6;
-  }
-  .ingredient-alert-list li:last-child {
-    margin-bottom: 0;
-  }
-  .ingredient-alert-title {
-    display: block;
-    font-weight: bold;
-  }
-  .ingredient-alert-detail {
-    display: block;
-    color: #444;
-  }
-  .ingredient-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    margin-bottom: 20px;
-  }
+  /* 店長画面：発注管理で使うボタン・曜日の選択・発注条件の表示 */
   .ingredient-action-btn {
     padding: 10px 20px;
     font-size: 16px;
@@ -873,115 +1215,6 @@
   .ingredient-action-sub:hover {
     background-color: #f0f4fa;
   }
-  .ingredient-tabs {
-    display: flex;
-    gap: 8px;
-    border-bottom: 2px solid #3f6fd1;
-    margin-bottom: 14px;
-  }
-  .ingredient-tab {
-    padding: 10px 28px;
-    font-size: 17px;
-    color: #35609c;
-    background-color: #fff;
-    border: 1px solid #ccc;
-    border-bottom: none;
-    border-radius: 8px 8px 0 0;
-    cursor: pointer;
-  }
-  .ingredient-tab:hover {
-    background-color: #f0f4fa;
-  }
-  .ingredient-tab.selected {
-    background-color: #3f6fd1;
-    color: #fff;
-    border-color: #3f6fd1;
-  }
-  .ingredient-filters {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 8px;
-  }
-  .ingredient-filter-label {
-    font-size: 15px;
-    color: #555;
-  }
-  .ingredient-filter {
-    padding: 6px 16px;
-    font-size: 15px;
-    color: #333;
-    background-color: #fff;
-    border: 1px solid #ccc;
-    border-radius: 16px;
-    cursor: pointer;
-  }
-  .ingredient-filter:hover {
-    background-color: #f0f4fa;
-  }
-  .ingredient-filter.selected {
-    background-color: #3f6fd1;
-    color: #fff;
-    border-color: #3f6fd1;
-  }
-  .ingredient-table {
-    max-width: 1180px;
-  }
-  .ingredient-table th,
-  .ingredient-table td {
-    font-size: 16px;
-    padding: 10px 12px;
-    vertical-align: top;
-  }
-  .ingredient-name {
-    font-weight: bold;
-  }
-  .ingredient-row-issue {
-    margin-top: 4px;
-    font-size: 13px;
-    color: #b8261f;
-  }
-  .ingredient-expiry {
-    display: inline-block;
-    padding: 3px 8px;
-    border-radius: 6px;
-    font-size: 15px;
-  }
-  .ingredient-expiry-expired {
-    background-color: #fdf3f2;
-    color: #b8261f;
-    font-weight: bold;
-  }
-  .ingredient-expiry-soon {
-    background-color: #fdf7ef;
-    color: #a35200;
-    font-weight: bold;
-  }
-  .ingredient-expiry-unknown {
-    background-color: #f3f3f3;
-    color: #444;
-    font-weight: bold;
-  }
-  .ingredient-expiry-ok {
-    color: #333;
-  }
-  .ingredient-action-cell {
-    white-space: nowrap;
-  }
-  .ingredient-row-btn {
-    margin: 2px 4px 2px 0;
-    padding: 6px 12px;
-    font-size: 14px;
-    color: #35609c;
-    background-color: #fff;
-    border: 1px solid #3f6fd1;
-    border-radius: 6px;
-    cursor: pointer;
-  }
-  .ingredient-row-btn:hover {
-    background-color: #f0f4fa;
-  }
   .ingredient-plan-text {
     margin: 6px 0 12px;
     padding: 10px 14px;
@@ -990,20 +1223,6 @@
     font-size: 15px;
     line-height: 1.6;
     color: #333;
-  }
-  .ingredient-detail-list {
-    display: grid;
-    grid-template-columns: 180px 1fr;
-    gap: 6px 16px;
-    margin: 0 0 20px;
-    font-size: 15px;
-  }
-  .ingredient-detail-list dt {
-    color: #555;
-  }
-  .ingredient-detail-list dd {
-    margin: 0;
-    word-break: break-all;
   }
   .ingredient-weekday-row {
     display: flex;
@@ -1018,24 +1237,7 @@
     font-size: 16px;
     cursor: pointer;
   }
-  .ingredient-consume-table {
-    max-width: 100%;
-    margin-bottom: 10px;
-  }
-  .ingredient-consume-table th,
-  .ingredient-consume-table td {
-    font-size: 15px;
-    padding: 8px 10px;
-  }
-  .ingredient-consume-table select,
-  .ingredient-consume-table input {
-    font-size: 15px;
-    padding: 6px 8px;
-  }
-  .ingredient-consume-remain {
-    width: 110px;
-  }
-  /* 食材管理のモーダルは入力項目が多いので、横幅と高さを広めに取る */
+  /* 発注管理のダイアログは入力項目が多いので、横幅と高さを広めに取る */
   .modal-box-wide {
     width: 640px;
     max-width: 92vw;
@@ -1059,24 +1261,6 @@
   .modal-inline .modal-input {
     margin-bottom: 0;
   }
-  .modal-unit {
-    font-size: 16px;
-    color: #555;
-    white-space: nowrap;
-  }
-  .modal-mini-btn {
-    padding: 8px 14px;
-    font-size: 15px;
-    color: #35609c;
-    background-color: #fff;
-    border: 1px solid #3f6fd1;
-    border-radius: 6px;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-  .modal-mini-btn:hover {
-    background-color: #f0f4fa;
-  }
   .modal-check {
     display: flex;
     align-items: center;
@@ -1091,14 +1275,6 @@
     line-height: 1.6;
     color: #555;
   }
-  .modal-target {
-    margin-bottom: 16px;
-    padding: 10px 14px;
-    background-color: #f0f4fa;
-    border-radius: 8px;
-    font-size: 16px;
-    font-weight: bold;
-  }
   .modal-subheading {
     margin: 24px 0 12px;
     padding-bottom: 6px;
@@ -1109,129 +1285,408 @@
     background-color: #f3f3f3;
     color: #777;
   }
-  /* ログイン画面 */
-  .login-screen {
+  /* 画面切り替え確認ダイアログの本文 */
+  .confirm-modal-text {
+    font-size: 17px;
+    margin-bottom: 24px;
+  }
+  /* 店長画面：発注管理 */
+  /* 表示項目のドロップダウン。4つの画面のうち1つだけを下の広い領域に出す */
+  .order-view-picker {
     display: flex;
-    justify-content: center;
-    margin-top: 60px;
+    align-items: center;
+    gap: 16px;
+    margin-top: 24px;
   }
-  .login-box {
-    width: 360px;
-    padding: 40px 30px;
-    border: 1px solid #ddd;
-    border-radius: 12px;
-    text-align: center;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  .order-view-label {
+    font-size: 18px;
+    font-weight: bold;
   }
-  .login-heading {
-    font-size: 26px;
-    margin: 0 0 24px;
+  .order-view-select {
+    padding: 12px 16px;
+    font-size: 20px;
+    min-width: 280px;
+    color: #333;
+    background-color: #fff;
+    border: 1px solid #3f6fd1;
+    border-radius: 8px;
+    cursor: pointer;
   }
-  .login-input {
-    box-sizing: border-box;
-    width: 100%;
-    padding: 14px;
-    font-size: 28px;
-    text-align: center;
-    letter-spacing: 8px;
+  .order-view {
+    max-width: 960px;
+  }
+  .order-view-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .order-view-heading {
+    font-size: 22px;
+    margin: 0 0 16px;
+  }
+  .order-view-header .order-view-heading {
+    margin: 0;
+  }
+  .order-subheading {
+    font-size: 18px;
+    margin: 28px 0 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #ccc;
+  }
+  .order-filter-note {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding: 10px 16px;
+    font-size: 15px;
+    background-color: #f0f4fa;
+    border-radius: 8px;
+  }
+  .order-empty {
+    padding: 24px;
+    font-size: 16px;
+    color: #555;
+    border: 1px dashed #ccc;
+    border-radius: 8px;
+  }
+  /* 業者名など、押すと別の表示に移る文字 */
+  .order-link {
+    padding: 0;
+    font-size: inherit;
+    font-family: inherit;
+    color: #35609c;
+    background: none;
+    border: none;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .order-link:hover {
+    color: #23477a;
+  }
+  /* 発注する食材 */
+  .order-cart-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .order-cart-card {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding: 16px 20px;
+    background-color: #fff;
     border: 1px solid #ccc;
     border-radius: 8px;
   }
-  .login-error {
-    min-height: 22px;
-    margin: 10px 0 4px;
-    font-size: 15px;
-    color: #e53935;
+  .order-cart-name {
+    flex: 1 1 200px;
+    font-size: 18px;
+    font-weight: bold;
   }
-  .login-btn {
-    width: 100%;
-    padding: 14px;
+  .order-cart-vendor {
+    flex: 0 0 auto;
+    font-size: 15px;
+    color: #555;
+  }
+  .order-cart-quantity {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .order-step-btn {
+    width: 40px;
+    height: 40px;
     font-size: 20px;
-    background-color: #3f6fd1;
+    line-height: 1;
+    color: #35609c;
+    background-color: #fff;
+    border: 1px solid #3f6fd1;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .order-step-btn:hover {
+    background-color: #f0f4fa;
+  }
+  .order-quantity-input {
+    width: 84px;
+    padding: 8px;
+    font-size: 18px;
+    text-align: center;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    font-variant-numeric: tabular-nums;
+  }
+  .order-cart-unit {
+    font-size: 16px;
+    color: #555;
+    min-width: 48px;
+  }
+  .order-remove-btn {
+    padding: 8px 14px;
+    font-size: 15px;
+    color: #c62828;
+    background-color: #fff;
+    border: 1px solid #e0b4b2;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .order-remove-btn:hover {
+    background-color: #fdf3f2;
+  }
+  .order-cart-footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 24px;
+  }
+  /* 発注内容確認 */
+  .order-confirm-inputs {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+  }
+  .order-confirm-input {
+    flex: 1 1 260px;
+  }
+  .order-confirm-list {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .order-vendor-card {
+    padding: 20px 24px;
+    background-color: #fff;
+    border: 1px solid #ccc;
+    border-left: 6px solid #3f6fd1;
+    border-radius: 8px;
+  }
+  .order-vendor-card-title {
+    font-size: 20px;
+    font-weight: bold;
+    margin-bottom: 12px;
+  }
+  .order-vendor-meta {
+    font-size: 15px;
+    color: #555;
+    line-height: 1.8;
+    margin-bottom: 12px;
+  }
+  .order-line-list {
+    list-style: none;
+    margin: 0 0 12px;
+    padding: 0;
+  }
+  .order-line-list li {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    max-width: 480px;
+    padding: 8px 0;
+    font-size: 17px;
+    border-bottom: 1px solid #eee;
+  }
+  .order-line-quantity {
+    font-variant-numeric: tabular-nums;
+  }
+  .order-rule-list {
+    margin: 0 0 12px;
+    padding-left: 20px;
+    font-size: 14px;
+    color: #555;
+    line-height: 1.7;
+  }
+  .order-mail-preview {
+    margin: 0;
+    padding: 16px;
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.8;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background-color: #f7f8fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+  }
+  .order-mail-subject {
+    margin-bottom: 8px;
+    font-size: 15px;
+    font-weight: bold;
+  }
+  .order-send-footer {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-top: 28px;
+  }
+  .order-send-btn {
+    padding: 14px 32px;
+    font-size: 20px;
     color: #fff;
+    background-color: #3f6fd1;
     border: none;
     border-radius: 8px;
     cursor: pointer;
   }
-  .login-btn:hover {
+  .order-send-btn:hover {
     background-color: #35609c;
   }
-  .login-btn:disabled {
+  .order-send-btn:disabled {
     background-color: #9db3dc;
     cursor: not-allowed;
   }
-  .login-hint {
-    margin-top: 16px;
-    font-size: 14px;
-    color: #777;
+  .order-send-status {
+    font-size: 16px;
+    color: #555;
   }
-  /* ヘッダーのログアウトボタン（従業員画面・店長画面で同じ位置に出す） */
-  .logout-btn {
-    padding: 8px 18px;
+  .order-send-status.error {
+    color: #e53935;
+  }
+  /* 発注履歴 */
+  .order-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .order-history-card {
+    padding: 16px 20px;
+    background-color: #fff;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+  }
+  .order-history-head {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .order-history-date {
+    font-size: 18px;
+    font-weight: bold;
+    font-variant-numeric: tabular-nums;
+  }
+  .order-history-tag {
+    padding: 2px 10px;
+    font-size: 13px;
+    color: #35609c;
+    background-color: #f0f4fa;
+    border-radius: 999px;
+  }
+  .order-history-meta {
+    margin-top: 10px;
+    font-size: 14px;
+    color: #555;
+    line-height: 1.7;
+  }
+  /* 業者詳細 */
+  .order-vendor-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .order-vendor-tile {
+    flex: 1 1 280px;
+    max-width: 440px;
+    padding: 20px;
+    text-align: left;
+    background-color: #fff;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .order-vendor-tile:hover {
+    background-color: #f0f4fa;
+    border-color: #3f6fd1;
+  }
+  .order-vendor-tile-name {
+    font-size: 19px;
+    font-weight: bold;
+    margin-bottom: 8px;
+  }
+  .order-vendor-tile-meta {
+    font-size: 14px;
+    color: #555;
+    line-height: 1.8;
+  }
+  .order-detail-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .order-detail-grid {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .order-detail-label {
+    padding: 12px 16px;
     font-size: 15px;
-    background-color: #f0f0f0;
-    color: #444;
+    background-color: #f0f4fa;
+    border-bottom: 1px solid #e0e0e0;
+  }
+  .order-detail-value {
+    padding: 12px 16px;
+    font-size: 16px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    border-bottom: 1px solid #e0e0e0;
+  }
+  .order-detail-value.unset {
+    color: #888;
+  }
+  /* 食材を追加するダイアログ */
+  .order-item-choices {
+    max-height: 46vh;
+    overflow-y: auto;
+    margin-bottom: 16px;
+  }
+  .order-item-group-name {
+    margin: 16px 0 8px;
+    font-size: 15px;
+    font-weight: bold;
+    color: #35609c;
+  }
+  .order-item-group-name:first-child {
+    margin-top: 0;
+  }
+  .order-item-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .order-item-btn {
+    padding: 10px 16px;
+    font-size: 16px;
+    font-family: inherit;
+    color: #333;
+    background-color: #fff;
     border: 1px solid #ccc;
     border-radius: 8px;
     cursor: pointer;
   }
-  .logout-btn:hover {
-    background-color: #e0e0e0;
+  .order-item-btn:hover {
+    background-color: #f0f4fa;
+    border-color: #3f6fd1;
   }
-  /* ログアウト確認ダイアログの本文 */
-  .logout-text {
-    font-size: 17px;
-    margin-bottom: 8px;
+  .order-item-btn.added {
+    color: #35609c;
+    background-color: #f0f4fa;
+    border-color: #3f6fd1;
   }
-  .logout-note {
-    font-size: 14px;
-    color: #777;
-    margin-bottom: 24px;
-  }
-  /* 無操作のログアウト予告通知（画面上端から降りてくる横長バナー） */
-  .idle-notice {
-    position: fixed;
-    top: 0;
-    left: 50%;
-    z-index: 300;
-    box-sizing: border-box;
-    width: 340px;
-    padding: 10px 16px;
-    background-color: #fbfbfc;
-    border: 1px solid #e2e2e6;
-    border-radius: 14px;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
-    text-align: left;
-    opacity: 0;
-    transform: translate(-50%, -140%);
-    transition: transform 0.35s ease, opacity 0.35s ease;
-    /* 操作を遮らず、入力フォーカスも奪わないようにする */
-    pointer-events: none;
-  }
-  .idle-notice.show {
-    opacity: 1;
-    transform: translate(-50%, 12px);
-  }
-  .idle-notice-head {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-bottom: 4px;
-  }
-  .idle-notice-icon {
-    font-size: 13px;
-  }
-  .idle-notice-app {
-    font-size: 12px;
-    color: #888;
-  }
-  .idle-notice-title {
-    font-size: 15px;
-    font-weight: bold;
-    margin-bottom: 2px;
-  }
-  .idle-notice-text {
-    font-size: 13px;
-    color: #666;
+  .order-item-btn:disabled {
+    color: #999;
+    background-color: #f3f3f3;
+    cursor: not-allowed;
   }
 </style>

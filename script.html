@@ -2,26 +2,24 @@
       let selectedEmpId = null;
       let clockIntervalId = null;
 
-      // ログイン状態。トークンは GAS が発行したものをそのまま持ち、店長専用の通信に添えて渡す
+      // 従業員画面の一覧に出す、有効な従業員の一覧（{ id, name, number } の配列）
+      // 検索の絞り込みはこの配列だけを使うので、入力のたびにGASへ通信しない
+      let employeeListItems = [];
+
+      // 検索欄に入力されている文字列
+      let employeeSearchKeyword = '';
+
+      // 現在サーバーとの通信に使っているログイントークン（従業員用・店長用のどちらか一方）
       let authToken = '';
 
-      // ログインのたびに増やす通し番号。ログアウトをまたいで遅れて届いた通信結果を捨てるために使う
+      // 起動時にGASが自動発行した従業員用トークン。店長画面から従業員画面へ戻るときにこれへ戻す
+      let employeeAuthToken = '';
+
+      // 表示中の画面。'employee' か 'manager'
+      let currentScreen = 'employee';
+
+      // トークンを切り替えるたびに増やす通し番号。切り替え前に届いた通信結果を画面へ反映しないために使う
       let loginSessionId = 0;
-
-      // 無操作の判定に使う時間（ミリ秒）
-      const IDLE_NOTICE_MS = 14 * 60 * 1000;
-      const IDLE_LOGOUT_MS = 15 * 60 * 1000;
-
-      // 無操作時間を調べる間隔（ミリ秒）
-      const IDLE_CHECK_INTERVAL_MS = 1000;
-
-      // マウス移動で最終操作時刻を更新する間隔の下限（ミリ秒）
-      const ACTIVITY_UPDATE_INTERVAL_MS = 1000;
-
-      // 最後に操作した時刻（ブラウザ内だけで持ち、サーバーへは送らない）
-      let lastActivityAt = 0;
-      let idleTimerId = null;
-      let isIdleNoticeShown = false;
 
       // 打刻がまだ無いことを表す表示文字列（code.js の UNRECORDED_LABEL と揃える）
       const UNRECORDED_LABEL = '未打刻';
@@ -32,186 +30,230 @@
       // 役割名（config.js の定数をそのまま埋め込み、二重管理しない）
       const ROLE_MANAGER = <?!= JSON.stringify(ROLE_MANAGER) ?>;
 
-      window.addEventListener('load', function () {
-        const items = document.querySelectorAll('.employee-item');
-        for (let i = 0; i < items.length; i++) {
-          items[i].addEventListener('click', function () {
-            selectEmployee(this);
-          });
-        }
+      // 発注で使う単位の候補（config.js の ORDER_UNITS をそのまま埋め込む）
+      const ORDER_UNITS = <?!= JSON.stringify(ORDER_UNITS) ?>;
 
+      window.addEventListener('load', function () {
         const navItems = document.querySelectorAll('.manager-nav-item');
+
         for (let j = 0; j < navItems.length; j++) {
           navItems[j].addEventListener('click', function () {
-            showManagerSection(this);
-          });
-        }
+            showManagerSection(this);});
+            }
 
-        // 画面内の操作をここで一度だけ登録する。ログインのたびには登録しないので二重に動かない
-        document.addEventListener('mousemove', function () { handleUserActivity(true); });
-        document.addEventListener('click', function () { handleUserActivity(false); });
-        document.addEventListener('keydown', function () { handleUserActivity(false); });
-        // スクロールは要素ごとに起きて上まで伝わらないので、捕捉フェーズでまとめて受け取る
-        document.addEventListener('scroll', function () { handleUserActivity(false); }, true);
+        document.getElementById('manager_password_input').addEventListener(
+          'keydown', function (event) { if (event.key === 'Enter') {
+            submitManagerLogin();}});
 
-        // パスコード欄では Enter キーでもログインできるようにする
-        document.getElementById('login_passcode').addEventListener('keydown', function (event) {
-          if (event.key === 'Enter') {
-            submitLogin();
-          }
-        });
+        document.addEventListener('click', handleDocumentClickForSharedNoteDropdown);
 
-        showScreen('login');
+        initApp();
       });
 
       /**
-       * ログイン画面・従業員画面・店長画面を切り替える
+       * アプリ起動時の処理。GASに従業員用トークンを自動発行してもらい、従業員画面を開く
+       * パスワード入力は求めない
+       * @return {void} 戻り値なし
+       */
+      function initApp() {
+        google.script.run
+          .withSuccessHandler(function (result) {
+            if (!result || !result.success) {
+              showEmployeeListMessage('従業員情報の取得に失敗しました');
+              return;
+            }
+            employeeAuthToken = result.token;
+            authToken = employeeAuthToken;
+            loginSessionId++;
+
+            resetEmployeeScreen();
+            loadEmployeeList();
+            showScreen('employee');
+          })
+          .withFailureHandler(function (error) {
+            showEmployeeListMessage('従業員情報の取得に失敗しました: ' + error.message);
+          })
+          .createEmployeeSession();
+      }
+
+      /**
+       * 従業員画面・店長画面を切り替える
        * ページ遷移はせず表示/非表示を操作するだけなので、選択中の従業員などの状態は保持される
-       * @param {string} screenName 'login' / 'employee' / 'manager'
+       * @param {string} screenName 'employee' / 'manager'
        * @return {void} 戻り値なし
        */
       function showScreen(screenName) {
-        const isLogin = (screenName === 'login');
+        currentScreen = screenName;
         const isEmployee = (screenName === 'employee');
-        document.getElementById('login_screen').style.display = isLogin ? 'flex' : 'none';
         document.getElementById('employee_screen').style.display = isEmployee ? 'block' : 'none';
-        document.getElementById('manager_screen').style.display = (!isLogin && !isEmployee) ? 'block' : 'none';
-        // ログアウトボタンはログイン後だけ、両画面とも同じ位置に出す
-        document.getElementById('logout_btn').style.display = isLogin ? 'none' : 'inline-block';
+        document.getElementById('manager_screen').style.display = isEmployee ? 'none' : 'block';
 
-        if (isLogin) {
-          document.getElementById('login_passcode').focus();
-          return;
+        // 画面切り替えボタンは、いま出ていない方の画面名を表示する
+        document.getElementById('screen_switch_btn').textContent = isEmployee ? '店長画面へ' : '従業員画面へ';
+      }
+
+      /**
+       * ヘッダーの画面切り替えボタンが押されたときの処理
+       * 従業員画面からは店長認証モーダルを、店長画面からは切り替え確認モーダルを開く
+       * @return {void} 戻り値なし
+       */
+      function handleScreenSwitchButtonClick() {
+        if (currentScreen === 'employee') {
+          openManagerLoginModal();
+        } else {
+          openScreenSwitchModal();
         }
-
-        // 店長画面を表示したとき、ダッシュボードが表示中なら本日の業務設定を読み直す
-        if (!isEmployee && document.getElementById('section_dashboard').style.display !== 'none') {
-          loadTodayWork();
-        }
       }
 
       /**
-       * 入力されたパスコードでログインする
-       * 照合は GAS 側で行い、成功したときだけトークンと役割を受け取る
+       * 店長認証モーダルを開く
        * @return {void} 戻り値なし
        */
-      function submitLogin() {
-        const passcodeInput = document.getElementById('login_passcode');
-        // 先頭の 0 を保持するため、数値に変換せず文字列のまま渡す
-        const passcode = passcodeInput.value;
-        const loginBtn = document.getElementById('login_btn');
-
-        if (passcode === '') {
-          showLoginError('パスコードを入力してください');
-          return;
-        }
-
-        showLoginError('');
-        loginBtn.disabled = true;
-
-        google.script.run
-          .withSuccessHandler(function (result) {
-            loginBtn.disabled = false;
-            if (!result.success) {
-              showLoginError(result.message);
-              passcodeInput.value = '';
-              passcodeInput.focus();
-              return;
-            }
-            startLoginSession(result.token, result.role);
-          })
-          .withFailureHandler(function (error) {
-            loginBtn.disabled = false;
-            showLoginError('エラー: ' + error.message);
-          })
-          .login(passcode);
+      function openManagerLoginModal() {
+        document.getElementById('manager_password_input').value = '';
+        showManagerLoginError('');
+        document.getElementById('manager_login_overlay').style.display = 'flex';
+        document.getElementById('manager_password_input').focus();
       }
 
       /**
-       * ログイン成功後に、役割に応じた画面と無操作時間の監視を用意する
-       * @param {string} token GAS が発行したログイントークン
-       * @param {string} role サーバー側で判定された役割
+       * 店長認証モーダルを閉じる
        * @return {void} 戻り値なし
        */
-      function startLoginSession(token, role) {
-        authToken = token;
-        loginSessionId++;
-
-        document.getElementById('login_passcode').value = '';
-        showLoginError('');
-        showScreen(role === ROLE_MANAGER ? 'manager' : 'employee');
-        startIdleWatch(); // ログイン成功の時点から無操作時間を数え始める
+      function closeManagerLoginModal() {
+        document.getElementById('manager_login_overlay').style.display = 'none';
       }
 
       /**
-       * ログイン画面のエラー文言を出し分ける
-       * @param {string} message 表示する文言（空文字で消す）
-       * @return {void} 戻り値なし
-       */
-      function showLoginError(message) {
-        document.getElementById('login_error').textContent = message;
-      }
-
-      /**
-       * ログアウトの確認ダイアログを開く
-       * @return {void} 戻り値なし
-       */
-      function openLogoutModal() {
-        document.getElementById('logout_overlay').style.display = 'flex';
-      }
-
-      /**
-       * ログアウトの確認ダイアログを閉じる（キャンセルのときは現在の画面に留まる）
-       * @return {void} 戻り値なし
-       */
-      function closeLogoutModal() {
-        document.getElementById('logout_overlay').style.display = 'none';
-      }
-
-      /**
-       * ログアウトの確認ダイアログの背景クリックを受け取る
+       * 店長認証モーダルの背景クリックを受け取る
        * @param {Event} event クリックイベント
        * @return {void} 戻り値なし
        */
-      function handleLogoutOverlayClick(event) {
+      function handleManagerLoginOverlayClick(event) {
         // 暗い背景そのものをクリックしたときだけ閉じる（モーダル本体のクリックは無視）
         if (event.target === event.currentTarget) {
-          closeLogoutModal();
+          closeManagerLoginModal();
         }
       }
 
       /**
-       * 確認ダイアログでログアウトが確定されたときの処理
+       * 入力された店長用パスワードをGASへ照合しにいく
+       * 判定はGAS側（login()）で行い、成功したときだけ店長用トークンを受け取る
        * @return {void} 戻り値なし
        */
-      function confirmLogout() {
-        closeLogoutModal();
-        doLogout();
+      function submitManagerLogin() {
+        const passwordInput = document.getElementById('manager_password_input');
+        // 先頭の 0 を保持するため、数値に変換せず文字列のまま渡す
+        const password = passwordInput.value;
+        const submitBtn = document.getElementById('manager_login_submit_btn');
+
+        if (password === '') {
+          showManagerLoginError('パスワードを入力してください');
+          return;
+        }
+
+        showManagerLoginError('');
+        submitBtn.disabled = true;
+
+        google.script.run
+          .withSuccessHandler(function (result) {
+            submitBtn.disabled = false;
+            if (!result.success) {
+              showManagerLoginError(result.message);
+              passwordInput.value = '';
+              passwordInput.focus();
+              return;
+            }
+            closeManagerLoginModal();
+            startManagerSession(result.token);
+          })
+          .withFailureHandler(function (error) {
+            submitBtn.disabled = false;
+            showManagerLoginError('エラー: ' + error.message);
+          })
+          .login(password);
       }
 
       /**
-       * ログイン状態と画面をログイン前に戻す（手動ログアウト・自動ログアウトの両方から呼ぶ）
-       * 打刻の記録には一切触れないので、勤務中・休憩中の状態や保存済みデータは変わらない
+       * 店長認証モーダルのエラー文言を出し分ける
+       * @param {string} message 表示する文言（空文字で消す）
        * @return {void} 戻り値なし
        */
-      function doLogout() {
-        const usedToken = authToken;
-        authToken = '';
-        loginSessionId++; // これ以降に遅れて届いた通信結果は画面へ反映しない
+      function showManagerLoginError(message) {
+        document.getElementById('manager_login_error').textContent = message;
+      }
 
-        stopIdleWatch();
-        hideIdleNotice();
+      /**
+       * 店長認証成功後に、店長用トークンへ切り替えて店長画面を開く
+       * @param {string} token GASが発行した店長用ログイントークン
+       * @return {void} 戻り値なし
+       */
+      function startManagerSession(token) {
+        authToken = token;
+        loginSessionId++; // これ以降に遅れて届いた従業員画面側の通信結果は画面へ反映しない
+
         closeAllModals();
-        resetEmployeeScreen();
+        // 店長はどのメニューも選んでいない状態から始める（右側の内容表示領域は空欄）
         resetManagerScreen();
+        showScreen('manager');
+      }
 
-        document.getElementById('login_passcode').value = '';
-        showLoginError('');
-        showScreen('login');
+      /**
+       * 従業員画面への切り替え確認モーダルを開く
+       * @return {void} 戻り値なし
+       */
+      function openScreenSwitchModal() {
+        document.getElementById('screen_switch_overlay').style.display = 'flex';
+      }
 
-        // サーバー側のトークンも無効にする（結果は画面に影響しないので待たない）
-        if (usedToken !== '') {
-          google.script.run.logout(usedToken);
+      /**
+       * 従業員画面への切り替え確認モーダルを閉じる（キャンセルのときは店長画面に留まる）
+       * @return {void} 戻り値なし
+       */
+      function closeScreenSwitchModal() {
+        document.getElementById('screen_switch_overlay').style.display = 'none';
+      }
+
+      /**
+       * 従業員画面への切り替え確認モーダルの背景クリックを受け取る
+       * @param {Event} event クリックイベント
+       * @return {void} 戻り値なし
+       */
+      function handleScreenSwitchOverlayClick(event) {
+        if (event.target === event.currentTarget) {
+          closeScreenSwitchModal();
+        }
+      }
+
+      /**
+       * 確認モーダルで切り替えが確定されたときの処理
+       * @return {void} 戻り値なし
+       */
+      function confirmScreenSwitch() {
+        closeScreenSwitchModal();
+        switchToEmployeeScreen();
+      }
+
+      /**
+       * 店長画面から従業員画面へ切り替える（パスワードは不要）
+       * 起動時に発行済みの従業員用トークンへ戻し、使い終えた店長用トークンはサーバー側で無効化する
+       * @return {void} 戻り値なし
+       */
+      function switchToEmployeeScreen() {
+        const managerToken = authToken;
+        authToken = employeeAuthToken;
+        loginSessionId++; // これ以降に遅れて届いた店長画面側の通信結果は画面へ反映しない
+
+        closeAllModals();
+        // 店長画面での従業員の追加・削除が反映された一覧を取り直す
+        resetEmployeeScreen();
+        loadEmployeeList();
+        resetManagerScreen();
+        showScreen('employee');
+
+        // 店長用トークンは使い終わったら無効化する（結果は画面に影響しないので待たない）
+        if (managerToken !== '' && managerToken !== employeeAuthToken) {
+          google.script.run.logout(managerToken);
         }
       }
 
@@ -227,11 +269,270 @@
       }
 
       /**
-       * 従業員画面の一時的な表示（選択中の従業員・打刻メッセージ・本日の業務）を消す
+       * 従業員画面の一時的な表示（一覧・検索・選択中の従業員・打刻メッセージ・本日の業務）を消す
        * 打刻済みのデータには触れない
        * @return {void} 戻り値なし
        */
       function resetEmployeeScreen() {
+        clearEmployeeSelection();
+
+        employeeSearchKeyword = '';
+        document.getElementById('employee_search_input').value = '';
+        employeeListItems = [];
+        document.getElementById('employee_list').innerHTML = '';
+        showEmployeeListMessage('');
+      }
+
+      /**
+       * 店長画面を、どのメニューも選んでいない状態（右側の内容表示領域が空欄）に戻す
+       * 読み込み済みの内容も残さない
+       * @return {void} 戻り値なし
+       */
+      function resetManagerScreen() {
+        const navItems = document.querySelectorAll('.manager-nav-item');
+        for (let i = 0; i < navItems.length; i++) {
+          navItems[i].classList.remove('selected');
+        }
+
+        const sections = document.querySelectorAll('.manager-section');
+        for (let j = 0; j < sections.length; j++) {
+          sections[j].style.display = 'none';
+        }
+
+        resetEmployeeEditSection();
+        resetSkillSection();
+        hideShiftDetail();
+        shiftSelectedDate = null;
+
+        orderBoard = null;
+        orderCart = [];
+        orderDrafts = [];
+        orderVendorFilterId = '';
+        orderSelectedVendorId = '';
+        orderVendorItemsOpen = false;
+        orderSending = false;
+        orderSendKey = '';
+        orderView = 'cart';
+        document.getElementById('order_view_select').value = 'cart';
+        document.getElementById('order_body').style.display = 'none';
+        document.getElementById('order_delivery_date').value = '';
+        document.getElementById('order_extra_note').value = '';
+      }
+
+      /**
+       * 通信を始めたときのトークンがいまも使われているかを調べる
+       * 画面を切り替えたあとに遅れて届いた結果で、以前の画面を出し直さないために使う
+       * @param {number} sessionId 通信を始めた時点の loginSessionId
+       * @return {boolean} 同じトークンがまだ使われていれば true
+       */
+      function isSameLoginSession(sessionId) {
+        return authToken !== '' && sessionId === loginSessionId;
+      }
+
+      /**
+       * 有効な従業員の一覧をGASから取り直し、画面の一覧を描き直す
+       * ログインのたびに呼ぶので、ログインし直せば追加・削除が反映された一覧が表示される
+       * @param {Function} onFailed 取得に失敗したときに実行したい処理（省略できる）
+       * @return {void} 戻り値なし
+       */
+      function loadEmployeeList(onFailed) {
+        const sessionId = loginSessionId;
+        google.script.run
+          .withSuccessHandler(function (employees) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
+            applyEmployeeList(employees);
+          })
+          .withFailureHandler(function (error) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
+            showEmployeeListMessage('エラー: ' + error.message);
+            if (onFailed) {
+              onFailed(error);
+            }
+          })
+          .getActiveEmployeeList(authToken);
+      }
+
+      /**
+       * 受け取った従業員一覧を画面へ反映する
+       * 従業員画面の一覧と、店長画面の削除対象一覧の両方を同じ内容に揃える
+       * @param {Array} employees [{ id, name, number }, ...]
+       * @return {void} 戻り値なし
+       */
+      function applyEmployeeList(employees) {
+        employeeListItems = employees || [];
+        renderEmployeeList();
+        if (document.getElementById('employee_delete_block').style.display !== 'none') {
+          renderEmployeeDeleteList();
+        }
+      }
+
+      /**
+       * 検索に使う文字列を揃える
+       * 半角・全角の空白を取り除き、全角数字を半角に直すので、
+       * 氏名や入力に含まれる空白・入力方法の違いで検索結果が変わらない
+       * @param {string} text 元の文字列
+       * @return {string} 揃えたあとの文字列
+       */
+      function normalizeEmployeeSearchText(text) {
+        const base = (text === null || text === undefined) ? '' : String(text);
+        return base
+          .replace(/[０-９]/g, function (char) {
+            return String.fromCharCode(char.charCodeAt(0) - 0xFEE0);
+          })
+          .replace(/[\s\u3000]/g, '');
+      }
+
+      /**
+       * 検索欄に入力があるたびに、一覧を絞り込み直す（GASへは通信しない）
+       * @return {void} 戻り値なし
+       */
+      function handleEmployeeSearchInput() {
+        employeeSearchKeyword = document.getElementById('employee_search_input').value;
+        renderEmployeeList();
+      }
+
+      /**
+       * 検索文字列にあてはまる従業員だけを取り出す
+       * 数字だけの入力は従業員番号の完全一致、それ以外は氏名の部分一致で調べる
+       * @return {Array} 一覧に表示する従業員
+       */
+      function filterEmployeeItems() {
+        const keyword = normalizeEmployeeSearchText(employeeSearchKeyword);
+        if (keyword === '') {
+          return employeeListItems.slice(); // 入力が空のときは有効な従業員を全員表示する
+        }
+
+        const isNumberSearch = /^[0-9]+$/.test(keyword);
+        const matched = [];
+        for (let i = 0; i < employeeListItems.length; i++) {
+          const employee = employeeListItems[i];
+          if (isNumberSearch) {
+            // 「3」で13や30が出ないように、従業員番号は完全一致で調べる
+            if (normalizeEmployeeSearchText(employee.number) === keyword) {
+              matched.push(employee);
+            }
+          } else if (normalizeEmployeeSearchText(employee.name).indexOf(keyword) !== -1) {
+            // 姓だけ・名だけ・氏名の一部でも見つかるように、氏名は部分一致で調べる
+            matched.push(employee);
+          }
+        }
+        return matched;
+      }
+
+      /**
+       * 検索結果にあてはまる従業員だけを一覧に描く
+       * 先頭の人を自動選択はしない。描いたあとに選択中の従業員が一覧から消えていたら、
+       * 選択と打刻欄も解除して、見えていない従業員への誤打刻を防ぐ
+       * @return {void} 戻り値なし
+       */
+      function renderEmployeeList() {
+        const list = document.getElementById('employee_list');
+        list.innerHTML = '';
+
+        const employees = filterEmployeeItems();
+        let isSelectedEmployeeShown = false;
+        for (let i = 0; i < employees.length; i++) {
+          const item = createEmployeeListItem(employees[i]);
+          if (selectedEmpId !== null && String(employees[i].id) === selectedEmpId) {
+            item.classList.add('selected');
+            isSelectedEmployeeShown = true;
+          }
+          list.appendChild(item);
+        }
+
+        if (employeeListItems.length === 0) {
+          showEmployeeListMessage('従業員が登録されていません');
+        } else if (employees.length === 0) {
+          showEmployeeListMessage('該当する従業員がいません');
+        } else {
+          showEmployeeListMessage('');
+        }
+
+        if (selectedEmpId !== null && !isSelectedEmployeeShown) {
+          clearEmployeeSelection();
+        }
+      }
+
+      /**
+       * 一覧に並べる従業員1人分の項目を作る
+       * @param {Object} employee { id, name, number }
+       * @return {Element} 一覧の項目
+       */
+      function createEmployeeListItem(employee) {
+        const item = document.createElement('li');
+        item.className = 'employee-item';
+        item.dataset.empId = String(employee.id);
+        renderEmployeeNameBlock(item, employee);
+        item.addEventListener('click', function () {
+          selectEmployee(employee, item);
+        });
+        return item;
+      }
+
+      /**
+       * 氏名（フルネーム）と、その下の「従業員番号 : 3」を指定の場所に描く
+       * @param {Element} container 描き込む場所
+       * @param {Object} employee { id, name, number }
+       * @return {void} 戻り値なし
+       */
+      function renderEmployeeNameBlock(container, employee) {
+        container.innerHTML = '';
+
+        const nameEl = document.createElement('div');
+        nameEl.className = 'employee-name-text';
+        nameEl.textContent = employee.name;
+        container.appendChild(nameEl);
+
+        const numberEl = document.createElement('div');
+        numberEl.className = 'employee-number-text';
+        numberEl.textContent = '従業員番号 : ' + employee.number;
+        container.appendChild(numberEl);
+      }
+
+      /**
+       * 一覧の上に出す一行メッセージ（該当者なし・エラーなど）を切り替える
+       * @param {string} message 表示する文言（空文字で消す）
+       * @return {void} 戻り値なし
+       */
+      function showEmployeeListMessage(message) {
+        document.getElementById('employee_list_message').textContent = message;
+      }
+
+      /**
+       * 打刻する従業員を選び、打刻欄を表示する
+       * @param {Object} employee 選ばれた従業員 { id, name, number }
+       * @param {Element} item 一覧の項目
+       * @return {void} 戻り値なし
+       */
+      function selectEmployee(employee, item) {
+        selectedEmpId = String(employee.id);
+
+        const items = document.querySelectorAll('.employee-item');
+        for (let i = 0; i < items.length; i++) {
+          items[i].classList.remove('selected');
+        }
+        item.classList.add('selected');
+
+        // 打刻対象者にも氏名と従業員番号を出し、誰の打刻かを確認できるようにする
+        renderEmployeeNameBlock(document.getElementById('selected_emp_name'), employee);
+        document.getElementById('record_message').textContent = '';
+        hideTodayWorkCard(); // 前の従業員の本日の業務情報を新しい従業員の画面に残さない
+        hideSharedNoteCard(); // 前の従業員の共有メモを新しい従業員の画面に残さない
+        document.getElementById('right_panel').style.display = 'block';
+        startClock();
+        loadSharedNotesForSelection(selectedEmpId); // その日すでに表示済みの共有メモがあれば出す
+      }
+
+      /**
+       * 従業員の選択を解除し、打刻欄を隠す
+       * 検索で選択中の従業員が一覧から外れたときにも呼ぶ
+       * @return {void} 戻り値なし
+       */
+      function clearEmployeeSelection() {
         selectedEmpId = null;
 
         const items = document.querySelectorAll('.employee-item');
@@ -246,146 +547,9 @@
 
         document.getElementById('right_panel').style.display = 'none';
         document.getElementById('selected_emp_name').innerHTML = '';
-        document.getElementById('record_message').innerHTML = '';
+        document.getElementById('record_message').textContent = '';
         hideTodayWorkCard();
-      }
-
-      /**
-       * 店長画面の表示をダッシュボードに戻し、読み込み済みの内容を残さない
-       * @return {void} 戻り値なし
-       */
-      function resetManagerScreen() {
-        const navItems = document.querySelectorAll('.manager-nav-item');
-        for (let i = 0; i < navItems.length; i++) {
-          const isDashboard = (navItems[i].dataset.section === 'dashboard');
-          if (isDashboard) {
-            navItems[i].classList.add('selected');
-          } else {
-            navItems[i].classList.remove('selected');
-          }
-        }
-
-        const sections = document.querySelectorAll('.manager-section');
-        for (let j = 0; j < sections.length; j++) {
-          sections[j].style.display = (sections[j].id === 'section_dashboard') ? 'block' : 'none';
-        }
-
-        hideShiftDetail();
-        shiftSelectedDate = null;
-        ingredientBoard = null;
-        document.getElementById('ingredient_body').style.display = 'none';
-      }
-
-      /**
-       * 無操作時間の監視を始める
-       * 始める前に必ず前のタイマーを止めるので、ログインを繰り返しても重複しない
-       * @return {void} 戻り値なし
-       */
-      function startIdleWatch() {
-        stopIdleWatch();
-        lastActivityAt = Date.now();
-        idleTimerId = setInterval(checkIdleTime, IDLE_CHECK_INTERVAL_MS);
-      }
-
-      /**
-       * 無操作時間の監視を止める
-       * @return {void} 戻り値なし
-       */
-      function stopIdleWatch() {
-        if (idleTimerId) {
-          clearInterval(idleTimerId);
-          idleTimerId = null;
-        }
-      }
-
-      /**
-       * 最後の操作からの経過時間を調べ、予告通知と自動ログアウトを行う
-       * 時刻の差で判定するため、途中で操作があっても数え間違えない
-       * @return {void} 戻り値なし
-       */
-      function checkIdleTime() {
-        if (authToken === '') {
-          return;
-        }
-
-        const idleTime = Date.now() - lastActivityAt;
-        if (idleTime >= IDLE_LOGOUT_MS) {
-          doLogout(); // 確認ダイアログは出さずにパスコード入力画面へ戻す
-          return;
-        }
-        if (idleTime >= IDLE_NOTICE_MS) {
-          showIdleNotice();
-        }
-      }
-
-      /**
-       * 画面内の操作を受け取り、最後に操作した時刻を更新する
-       * サーバーへは送らず、ブラウザ内だけで記録する
-       * @param {boolean} isThrottled 回数を間引く操作（マウス移動）なら true
-       * @return {void} 戻り値なし
-       */
-      function handleUserActivity(isThrottled) {
-        if (authToken === '') {
-          return;
-        }
-
-        const now = Date.now();
-        // マウス移動は回数が多いので、前回の更新から一定時間あいたときだけ更新する
-        if (isThrottled && (now - lastActivityAt) < ACTIVITY_UPDATE_INTERVAL_MS) {
-          return;
-        }
-
-        lastActivityAt = now;
-        if (isIdleNoticeShown) {
-          hideIdleNotice(); // 通知が出ていたら操作ですぐ消し、この時点から数え直す
-        }
-      }
-
-      /**
-       * ログアウト予告の通知を表示する（すでに出ているときは何もしない）
-       * @return {void} 戻り値なし
-       */
-      function showIdleNotice() {
-        if (isIdleNoticeShown) {
-          return;
-        }
-        isIdleNoticeShown = true;
-        document.getElementById('idle_notice').classList.add('show');
-      }
-
-      /**
-       * ログアウト予告の通知を消す
-       * @return {void} 戻り値なし
-       */
-      function hideIdleNotice() {
-        isIdleNoticeShown = false;
-        document.getElementById('idle_notice').classList.remove('show');
-      }
-
-      /**
-       * 通信を始めたときのログインが今も続いているかを調べる
-       * ログアウト後に遅れて届いた結果で、以前の画面を出し直さないために使う
-       * @param {number} sessionId 通信を始めた時点の loginSessionId
-       * @return {boolean} 同じログインが続いていれば true
-       */
-      function isSameLoginSession(sessionId) {
-        return authToken !== '' && sessionId === loginSessionId;
-      }
-
-      function selectEmployee(el) {
-        selectedEmpId = el.dataset.empId;
-
-        const items = document.querySelectorAll('.employee-item');
-        for (let i = 0; i < items.length; i++) {
-          items[i].classList.remove('selected');
-        }
-        el.classList.add('selected');
-
-        document.getElementById('selected_emp_name').innerHTML = el.dataset.empName;
-        document.getElementById('record_message').innerHTML = '';
-        hideTodayWorkCard(); // 前の従業員の本日の業務情報を新しい従業員の画面に残さない
-        document.getElementById('right_panel').style.display = 'block';
-        startClock();
+        hideSharedNoteCard();
       }
 
       /**
@@ -416,6 +580,11 @@
         if (!selectedEmpId) {
           return;
         }
+        // 退勤は打刻せず、まず共有メモダイアログを開く（打刻は「入力せず退勤」か確認画面の「退勤」を押した時点で行う）
+        if (type === '退勤') {
+          openSharedNoteDialog();
+          return;
+        }
         // 打刻ボタンを押した時点の従業員IDを保持しておく。本日の業務情報の取得が終わるまでの間に
         // 別の従業員へ選択が切り替えられても、この従業員ID宛の結果しか画面に反映しないようにするため
         const empIdAtClick = selectedEmpId;
@@ -429,6 +598,7 @@
             showRecordMessage(message);
             if (type === '出勤') {
               loadTodayWorkInfo(empIdAtClick);
+              loadSharedNotesForClockIn(empIdAtClick);
             }
           })
           .withFailureHandler(function (error) {
@@ -541,61 +711,750 @@
         card.style.display = 'block';
       }
 
-      function openAddEmployeeModal() {
-        document.getElementById('add_last_name').value = '';
-        document.getElementById('add_first_name').value = '';
-        document.getElementById('add_employee_error').innerHTML = '';
-        document.getElementById('add_employee_overlay').style.display = 'flex';
+      // 共有メモ：本日の業務の隣に出すカード
+      // 共有メモが1件も無いときは、不自然に空のカードを出さずそのまま非表示にする
+
+      /**
+       * 従業員一覧から名前を選んだときに呼ぶ。その日すでに表示済みの共有メモがあれば取得する
+       * （出勤ボタンを押した瞬間しか見られない、という実装にはしない）
+       * @param {string} empId 選択された従業員番号
+       * @return {void} 戻り値なし
+       */
+      function loadSharedNotesForSelection(empId) {
+        const sessionId = loginSessionId;
+        google.script.run
+          .withSuccessHandler(function (notes) {
+            if (!isSameLoginSession(sessionId) || selectedEmpId !== empId) {
+              return;
+            }
+            renderSharedNoteCard(notes);
+          })
+          .withFailureHandler(function () {
+            if (!isSameLoginSession(sessionId) || selectedEmpId !== empId) {
+              return;
+            }
+            hideSharedNoteCard();
+          })
+          .getSharedNotesForSelection(empId);
       }
 
-      function closeAddEmployeeModal() {
-        document.getElementById('add_employee_overlay').style.display = 'none';
+      /**
+       * 出勤に成功した直後に呼ぶ。まだ表示していない共有メモを、今日はじめて表示したことにして取得する
+       * @param {string} empId 出勤した従業員番号
+       * @return {void} 戻り値なし
+       */
+      function loadSharedNotesForClockIn(empId) {
+        const sessionId = loginSessionId;
+        google.script.run
+          .withSuccessHandler(function (notes) {
+            if (!isSameLoginSession(sessionId) || selectedEmpId !== empId) {
+              return;
+            }
+            renderSharedNoteCard(notes);
+          })
+          .withFailureHandler(function () {
+            if (!isSameLoginSession(sessionId) || selectedEmpId !== empId) {
+              return;
+            }
+            hideSharedNoteCard();
+          })
+          .getSharedNotesForClockIn(empId);
       }
 
-      function handleOverlayClick(event) {
-        // 暗い背景そのものをクリックしたときだけ閉じる（モーダル本体のクリックは無視）
-        if (event.target === event.currentTarget) {
-          closeAddEmployeeModal();
-        }
-      }
+      /**
+       * 共有メモカードへ、送信日時・送信者名・本文を縦に並べて描画する
+       * @param {Array} notes [{ senderName, body, createdAtLabel }, ...]
+       * @return {void} 戻り値なし
+       */
+      function renderSharedNoteCard(notes) {
+        const card = document.getElementById('shared_note_card');
+        const body = document.getElementById('shared_note_card_body');
+        body.innerHTML = '';
 
-      function submitAddEmployee() {
-        const lastName = document.getElementById('add_last_name').value.trim();
-        const firstName = document.getElementById('add_first_name').value.trim();
-        const errorEl = document.getElementById('add_employee_error');
-
-        if (lastName === '' || firstName === '') {
-          errorEl.innerHTML = '姓と名を入力してください';
+        if (!notes || notes.length === 0) {
+          card.style.display = 'none';
           return;
         }
-        errorEl.innerHTML = '';
 
-        const submitBtn = document.getElementById('add_employee_submit_btn');
+        for (let i = 0; i < notes.length; i++) {
+          const item = document.createElement('div');
+          item.className = 'shared-note-item';
+
+          const meta = document.createElement('div');
+          meta.className = 'shared-note-meta';
+          meta.textContent = notes[i].createdAtLabel + '　' + notes[i].senderName + 'さんから';
+          item.appendChild(meta);
+
+          const bodyEl = document.createElement('div');
+          bodyEl.className = 'shared-note-body';
+          bodyEl.textContent = notes[i].body;
+          item.appendChild(bodyEl);
+
+          body.appendChild(item);
+        }
+
+        card.style.display = 'block';
+      }
+
+      function hideSharedNoteCard() {
+        document.getElementById('shared_note_card').style.display = 'none';
+        document.getElementById('shared_note_card_body').innerHTML = '';
+      }
+
+      // 共有メモ：退勤ボタンを押したときのダイアログ
+      // ダイアログを開いている間は退勤時刻をまだ記録しない。「入力せず退勤」か
+      // 確認画面の「退勤」を押した時点の時刻で、はじめて退勤を記録する
+
+      // ダイアログの対象となっている従業員番号（開いていない間は null）
+      let sharedNoteEmpId = null;
+
+      // 共有先を誰も選んでいないときに、プルダウンの枠内へ出す案内文
+      const SHARED_NOTE_SELECT_PLACEHOLDER = '共有したいスタッフを選択してください（複数選択可）';
+
+      // 確認画面の「退勤」・「入力せず退勤」の二重送信を防ぐフラグ
+      let isSharedNoteSubmitting = false;
+
+      /**
+       * 退勤ボタンが押されたときに、共有メモダイアログを入力画面から開く
+       * @return {void} 戻り値なし
+       */
+      function openSharedNoteDialog() {
+        if (!selectedEmpId) {
+          return;
+        }
+        sharedNoteEmpId = selectedEmpId;
+
+        document.getElementById('shared_note_text').value = '';
+        document.getElementById('shared_note_recipient_list').innerHTML = '';
+        closeSharedNoteRecipientDropdown();
+        updateSharedNoteSelectLabel();
+        showSharedNoteInputError('');
+        showSharedNoteConfirmError('');
+        showSharedNoteInputView();
+        document.getElementById('shared_note_overlay').style.display = 'flex';
+
+        const empId = sharedNoteEmpId;
+        const sessionId = loginSessionId;
+        google.script.run
+          .withSuccessHandler(function (candidates) {
+            if (!isSameLoginSession(sessionId) || sharedNoteEmpId !== empId) {
+              return;
+            }
+            renderSharedNoteRecipientList(candidates || []);
+          })
+          .withFailureHandler(function (error) {
+            if (!isSameLoginSession(sessionId) || sharedNoteEmpId !== empId) {
+              return;
+            }
+            showSharedNoteInputError('共有先の取得に失敗しました: ' + error.message);
+          })
+          .getSharedNoteRecipientCandidates(empId, authToken);
+      }
+
+      /**
+       * 共有先のチェックボックス一覧（プルダウンの中身）を作る
+       * 店長は名簿に含まれないため対象に出てこない。本人はサーバー側で除外済み
+       * 従業員番号は出さず、氏名だけを並べる
+       * @param {Array} candidates [{ id, name, number }, ...]
+       * @return {void} 戻り値なし
+       */
+      function renderSharedNoteRecipientList(candidates) {
+        const list = document.getElementById('shared_note_recipient_list');
+        list.innerHTML = '';
+
+        if (candidates.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'shared-note-recipient-empty';
+          empty.textContent = '共有できる他の従業員がいません';
+          list.appendChild(empty);
+          return;
+        }
+
+        for (let i = 0; i < candidates.length; i++) {
+          const label = document.createElement('label');
+          label.className = 'modal-check shared-note-recipient-item';
+
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.value = String(candidates[i].id);
+          checkbox.dataset.name = candidates[i].name;
+          checkbox.addEventListener('change', updateSharedNoteSelectLabel);
+          label.appendChild(checkbox);
+
+          const text = document.createElement('span');
+          text.textContent = candidates[i].name;
+          label.appendChild(text);
+
+          list.appendChild(label);
+        }
+      }
+
+      /**
+       * チェックされている共有先を取り出す
+       * @return {Array} [{ id, name }, ...]
+       */
+      function getSharedNoteCheckedRecipients() {
+        const boxes = document.querySelectorAll('#shared_note_recipient_list input[type=checkbox]:checked');
+        const result = [];
+        for (let i = 0; i < boxes.length; i++) {
+          result.push({ 'id': boxes[i].value, 'name': boxes[i].dataset.name });
+        }
+        return result;
+      }
+
+      /**
+       * 共有先プルダウンを開閉する（閉じた枠自体を押したときに呼ぶ）
+       * 共有メモダイアログの開閉とは別処理で、ここでダイアログが閉じることはない
+       * @return {void} 戻り値なし
+       */
+      function toggleSharedNoteRecipientDropdown() {
+        document.getElementById('shared_note_select').classList.toggle('open');
+      }
+
+      function closeSharedNoteRecipientDropdown() {
+        document.getElementById('shared_note_select').classList.remove('open');
+      }
+
+      /**
+       * プルダウンの外側がクリックされたときに、一覧だけを閉じる（共有メモダイアログは閉じない）
+       * @param {Event} event クリックイベント
+       * @return {void} 戻り値なし
+       */
+      function handleDocumentClickForSharedNoteDropdown(event) {
+        const selectBox = document.getElementById('shared_note_select');
+        if (!selectBox.classList.contains('open') || selectBox.contains(event.target)) {
+          return;
+        }
+        closeSharedNoteRecipientDropdown();
+      }
+
+      /**
+       * 閉じた状態の枠内の表示を、選ばれている人数に合わせて更新する
+       * 1人以上選ばれていれば氏名を並べず「○名選択中」と出す
+       * @return {void} 戻り値なし
+       */
+      function updateSharedNoteSelectLabel() {
+        const label = document.getElementById('shared_note_select_label');
+        const count = getSharedNoteCheckedRecipients().length;
+        if (count === 0) {
+          label.textContent = SHARED_NOTE_SELECT_PLACEHOLDER;
+          label.classList.add('shared-note-select-placeholder');
+          return;
+        }
+        label.textContent = count + '名選択中';
+        label.classList.remove('shared-note-select-placeholder');
+      }
+
+      function showSharedNoteInputView() {
+        document.getElementById('shared_note_input_view').style.display = 'block';
+        document.getElementById('shared_note_confirm_view').style.display = 'none';
+      }
+
+      function showSharedNoteConfirmView() {
+        document.getElementById('shared_note_input_view').style.display = 'none';
+        document.getElementById('shared_note_confirm_view').style.display = 'block';
+      }
+
+      function showSharedNoteInputError(message) {
+        document.getElementById('shared_note_input_error').textContent = message;
+      }
+
+      function showSharedNoteConfirmError(message) {
+        document.getElementById('shared_note_confirm_error').textContent = message;
+      }
+
+      /**
+       * 「確認画面へ」が押されたときの入力チェックと、確認画面への切り替え
+       * 共有先が1人以上・本文ありの両方がそろわないと進めない
+       * 「戻る」で入力画面に戻っても選択内容・本文はDOMに残ったままなので消えない
+       * @return {void} 戻り値なし
+       */
+      function goToSharedNoteConfirm() {
+        const checked = getSharedNoteCheckedRecipients();
+        const noteText = document.getElementById('shared_note_text').value.trim();
+        if (checked.length === 0 || noteText === '') {
+          showSharedNoteInputError('共有先を1人以上選び、共有メモを入力してください');
+          return;
+        }
+        showSharedNoteInputError('');
+
+        const recipientsBox = document.getElementById('shared_note_confirm_recipients');
+        recipientsBox.innerHTML = '';
+        for (let i = 0; i < checked.length; i++) {
+          const line = document.createElement('div');
+          line.className = 'shared-note-confirm-recipient';
+          line.textContent = checked[i].name;
+          recipientsBox.appendChild(line);
+        }
+        document.getElementById('shared_note_confirm_body').textContent = noteText;
+
+        showSharedNoteConfirmError('');
+        showSharedNoteConfirmView();
+      }
+
+      /**
+       * 確認画面の「戻る」。入力画面へ戻すだけで、選択内容・本文には触れない
+       * @return {void} 戻り値なし
+       */
+      function backToSharedNoteInput() {
+        showSharedNoteInputView();
+      }
+
+      /**
+       * ダイアログを閉じる（「×」・「入力せず退勤」・退勤処理の完了時だけ呼ぶ）
+       * 誤って入力内容を失わないよう、背景クリックでは閉じない
+       * @return {void} 戻り値なし
+       */
+      function closeSharedNoteModal() {
+        document.getElementById('shared_note_overlay').style.display = 'none';
+        document.getElementById('shared_note_text').value = '';
+        document.getElementById('shared_note_recipient_list').innerHTML = '';
+        closeSharedNoteRecipientDropdown();
+        updateSharedNoteSelectLabel();
+        showSharedNoteInputError('');
+        showSharedNoteConfirmError('');
+        sharedNoteEmpId = null;
+      }
+
+      /**
+       * 「入力せず退勤」。共有メモを保存せず、このボタンを押した時刻で退勤を記録する
+       * @return {void} 戻り値なし
+       */
+      function submitClockOutWithoutSharedNote() {
+        if (isSharedNoteSubmitting || !sharedNoteEmpId) {
+          return;
+        }
+        isSharedNoteSubmitting = true;
+        setSharedNoteButtonsDisabled(true);
+
+        const empId = sharedNoteEmpId;
+        const sessionId = loginSessionId;
+        google.script.run
+          .withSuccessHandler(function (message) {
+            isSharedNoteSubmitting = false;
+            setSharedNoteButtonsDisabled(false);
+            closeSharedNoteModal();
+            if (!isSameLoginSession(sessionId) || selectedEmpId !== empId) {
+              return;
+            }
+            showRecordMessage(message);
+          })
+          .withFailureHandler(function (error) {
+            isSharedNoteSubmitting = false;
+            setSharedNoteButtonsDisabled(false);
+            if (!isSameLoginSession(sessionId) || sharedNoteEmpId !== empId) {
+              return;
+            }
+            showSharedNoteInputError('退勤処理に失敗しました: ' + error.message);
+          })
+          .recordClock(empId, '退勤');
+      }
+
+      /**
+       * 確認画面の「退勤」。共有メモの保存が成功したあとに、このボタンを押した時刻で退勤を記録する
+       * 連打で二重登録・二重退勤が起きないよう、送信中はボタンを無効化する
+       * @return {void} 戻り値なし
+       */
+      function submitClockOutWithSharedNote() {
+        if (isSharedNoteSubmitting || !sharedNoteEmpId) {
+          return;
+        }
+        const checked = getSharedNoteCheckedRecipients();
+        const noteText = document.getElementById('shared_note_text').value.trim();
+        if (checked.length === 0 || noteText === '') {
+          showSharedNoteConfirmError('共有先を1人以上選び、共有メモを入力してください');
+          return;
+        }
+
+        isSharedNoteSubmitting = true;
+        setSharedNoteButtonsDisabled(true);
+        showSharedNoteConfirmError('');
+
+        const empId = sharedNoteEmpId;
+        const sessionId = loginSessionId;
+        const recipientIds = [];
+        for (let i = 0; i < checked.length; i++) {
+          recipientIds.push(checked[i].id);
+        }
+
+        google.script.run
+          .withSuccessHandler(function (message) {
+            isSharedNoteSubmitting = false;
+            setSharedNoteButtonsDisabled(false);
+            closeSharedNoteModal();
+            if (!isSameLoginSession(sessionId) || selectedEmpId !== empId) {
+              return;
+            }
+            showRecordMessage(message);
+          })
+          .withFailureHandler(function (error) {
+            isSharedNoteSubmitting = false;
+            setSharedNoteButtonsDisabled(false);
+            if (!isSameLoginSession(sessionId) || sharedNoteEmpId !== empId) {
+              return;
+            }
+            showSharedNoteConfirmError('エラー: ' + error.message);
+          })
+          .saveSharedNoteAndClockOut(empId, recipientIds, noteText, authToken);
+      }
+
+      function setSharedNoteButtonsDisabled(disabled) {
+        document.getElementById('shared_note_skip_btn').disabled = disabled;
+        document.getElementById('shared_note_confirm_submit_btn').disabled = disabled;
+      }
+
+      // 店長画面：従業員編集（追加・削除）
+      // 通信中に同じ操作を二重に送らないためのフラグ
+      let isEmployeeEditSubmitting = false;
+
+      // 削除しようとしている従業員。対象を選ぶまでは null
+      let employeeDeleteTarget = null;
+
+      /**
+       * 従業員編集を、追加・削除のどちらも選んでいない状態に戻す
+       * 見出しと2つのボタンだけが見えて、その下は空欄になる
+       * @return {void} 戻り値なし
+       */
+      function resetEmployeeEditSection() {
+        isEmployeeEditSubmitting = false;
+        employeeDeleteTarget = null;
+
+        document.getElementById('employee_add_mode_btn').classList.remove('selected');
+        document.getElementById('employee_delete_mode_btn').classList.remove('selected');
+        document.getElementById('employee_add_block').style.display = 'none';
+        document.getElementById('employee_delete_block').style.display = 'none';
+        document.getElementById('employee_delete_confirm').style.display = 'none';
+
+        document.getElementById('add_last_name').value = '';
+        document.getElementById('add_first_name').value = '';
+        document.getElementById('employee_delete_message').textContent = '';
+        document.getElementById('employee_delete_list').innerHTML = '';
+        showEmployeeEditStatus('add_employee_status', '', false);
+        showEmployeeEditStatus('employee_delete_status', '', false);
+      }
+
+      /**
+       * 「従業員の追加」を押したとき、その下に登録フォームを表示する
+       * @return {void} 戻り値なし
+       */
+      function showEmployeeAddForm() {
+        if (isEmployeeEditSubmitting) {
+          return;
+        }
+        document.getElementById('employee_add_mode_btn').classList.add('selected');
+        document.getElementById('employee_delete_mode_btn').classList.remove('selected');
+        document.getElementById('employee_delete_block').style.display = 'none';
+        document.getElementById('employee_add_block').style.display = 'block';
+
+        document.getElementById('add_last_name').value = '';
+        document.getElementById('add_first_name').value = '';
+        showEmployeeEditStatus('add_employee_status', '', false);
+        document.getElementById('add_last_name').focus();
+      }
+
+      /**
+       * 「従業員の削除」を押したとき、その下に削除対象を選ぶ従業員一覧を表示する
+       * 対象は自動で選ばず、店長が選んで初めて詳細と削除確認を出す
+       * @return {void} 戻り値なし
+       */
+      function showEmployeeDeleteList() {
+        if (isEmployeeEditSubmitting) {
+          return;
+        }
+        document.getElementById('employee_delete_mode_btn').classList.add('selected');
+        document.getElementById('employee_add_mode_btn').classList.remove('selected');
+        document.getElementById('employee_add_block').style.display = 'none';
+        document.getElementById('employee_delete_block').style.display = 'block';
+        document.getElementById('employee_delete_confirm').style.display = 'none';
+        employeeDeleteTarget = null;
+        showEmployeeEditStatus('employee_delete_status', '', false);
+
+        // 削除対象は必ず最新の一覧から選ぶ
+        document.getElementById('employee_delete_message').textContent = '読み込み中...';
+        document.getElementById('employee_delete_list').innerHTML = '';
+        loadEmployeeList(function (error) {
+          document.getElementById('employee_delete_message').textContent = 'エラー: ' + error.message;
+        });
+      }
+
+      /**
+       * 削除対象として選べる従業員（有効な従業員）を一覧に描く
+       * @return {void} 戻り値なし
+       */
+      function renderEmployeeDeleteList() {
+        const list = document.getElementById('employee_delete_list');
+        list.innerHTML = '';
+
+        if (employeeListItems.length === 0) {
+          document.getElementById('employee_delete_message').textContent = '削除できる従業員がいません';
+          return;
+        }
+
+        document.getElementById('employee_delete_message').textContent = '';
+        for (let i = 0; i < employeeListItems.length; i++) {
+          list.appendChild(createEmployeeDeleteItem(employeeListItems[i]));
+        }
+      }
+
+      /**
+       * 削除対象の一覧に並べる、従業員1人分の項目を作る
+       * @param {Object} employee { id, name, number }
+       * @return {Element} 一覧の項目
+       */
+      function createEmployeeDeleteItem(employee) {
+        const item = document.createElement('li');
+        item.className = 'employee-delete-item';
+        item.dataset.empId = String(employee.id);
+        renderEmployeeNameBlock(item, employee);
+        item.addEventListener('click', function () {
+          selectEmployeeDeleteTarget(employee, item);
+        });
+        return item;
+      }
+
+      /**
+       * 削除対象の従業員を選び、氏名・従業員番号と削除の影響を画面内に表示する
+       * @param {Object} employee 選ばれた従業員
+       * @param {Element} item 一覧の項目
+       * @return {void} 戻り値なし
+       */
+      function selectEmployeeDeleteTarget(employee, item) {
+        if (isEmployeeEditSubmitting) {
+          return;
+        }
+        employeeDeleteTarget = employee;
+
+        const items = document.querySelectorAll('.employee-delete-item');
+        for (let i = 0; i < items.length; i++) {
+          items[i].classList.remove('selected');
+        }
+        item.classList.add('selected');
+
+        document.getElementById('employee_delete_confirm').style.display = 'block';
+        renderEmployeeNameBlock(document.getElementById('employee_delete_target'), employee);
+        document.getElementById('employee_delete_impact').innerHTML = '';
+        document.getElementById('employee_delete_preview_message').textContent = '読み込み中...';
+        showEmployeeEditStatus('employee_delete_status', '', false);
+
+        const sessionId = loginSessionId;
+        const targetId = String(employee.id);
+        google.script.run
+          .withSuccessHandler(function (preview) {
+            if (!isSameLoginSession(sessionId) || !isEmployeeDeleteTarget(targetId)) {
+              return;
+            }
+            document.getElementById('employee_delete_preview_message').textContent = '';
+            renderEmployeeDeleteImpact(preview);
+          })
+          .withFailureHandler(function (error) {
+            if (!isSameLoginSession(sessionId) || !isEmployeeDeleteTarget(targetId)) {
+              return;
+            }
+            document.getElementById('employee_delete_preview_message').textContent = 'エラー: ' + error.message;
+          })
+          .getEmployeeDeletionPreview(employee.id, authToken);
+      }
+
+      /**
+       * その従業員が、今まさに削除確認を出している対象かどうかを返す
+       * 読み込み中に別の従業員が選ばれていた場合、古い結果を画面に出さないために使う
+       * @param {string} empId 確かめたい従業員番号（文字列）
+       * @return {boolean} 対象なら true
+       */
+      function isEmployeeDeleteTarget(empId) {
+        return employeeDeleteTarget !== null && String(employeeDeleteTarget.id) === empId;
+      }
+
+      /**
+       * 削除するとどうなるかと、本日以降のシフトの件数・内容を表示する
+       * @param {Object} preview getEmployeeDeletionPreview() が返した内容
+       * @return {void} 戻り値なし
+       */
+      function renderEmployeeDeleteImpact(preview) {
+        const container = document.getElementById('employee_delete_impact');
+        container.innerHTML = '';
+
+        const notes = [
+          '削除すると、従業員一覧・打刻の対象・新しいシフトの選択肢・本日の業務設定・スキル管理の編集対象から外れます。',
+          '過去の勤怠・シフト・スキルの記録と氏名は、これまでどおり残ります。',
+          'この従業員番号は、新しく追加する別の従業員には使いません。'
+        ];
+        for (let i = 0; i < notes.length; i++) {
+          const note = document.createElement('div');
+          note.className = 'employee-delete-impact-line';
+          note.textContent = notes[i];
+          container.appendChild(note);
+        }
+
+        const upcomingShifts = preview.upcomingShifts || [];
+        const summary = document.createElement('div');
+        summary.className = 'employee-delete-impact-line employee-delete-shift-summary';
+        if (upcomingShifts.length === 0) {
+          summary.textContent = 'この従業員には本日以降のシフトがありません。';
+          container.appendChild(summary);
+          return;
+        }
+
+        summary.textContent = 'この従業員には本日以降のシフトが' + upcomingShifts.length +
+          '件あります。削除後は交代が必要な枠として残ります。';
+        container.appendChild(summary);
+
+        const list = document.createElement('ul');
+        list.className = 'employee-delete-shift-list';
+        for (let s = 0; s < upcomingShifts.length; s++) {
+          const shift = upcomingShifts[s];
+          const row = document.createElement('li');
+          row.textContent = formatShiftDateLabel(shift.date) + '　' +
+            shift.startTime + '〜' + shift.endTime + '　' + shift.position;
+          list.appendChild(row);
+        }
+        container.appendChild(list);
+      }
+
+      /**
+       * 削除を実行せずに、削除対象の選択へ戻る
+       * @return {void} 戻り値なし
+       */
+      function backToEmployeeDeleteList() {
+        if (isEmployeeEditSubmitting) {
+          return;
+        }
+        employeeDeleteTarget = null;
+        document.getElementById('employee_delete_confirm').style.display = 'none';
+        showEmployeeEditStatus('employee_delete_status', '', false);
+
+        const items = document.querySelectorAll('.employee-delete-item');
+        for (let i = 0; i < items.length; i++) {
+          items[i].classList.remove('selected');
+        }
+      }
+
+      /**
+       * 確認した内容で従業員を削除する
+       * 名簿の行や氏名は消えず、削除済みとして扱われるだけなので過去の記録は残る
+       * @return {void} 戻り値なし
+       */
+      function submitDeleteEmployee() {
+        if (isEmployeeEditSubmitting || employeeDeleteTarget === null) {
+          return;
+        }
+
+        isEmployeeEditSubmitting = true;
+        const submitBtn = document.getElementById('employee_delete_submit_btn');
         submitBtn.disabled = true;
-        submitBtn.innerHTML = '登録中...';
+        submitBtn.textContent = '削除中...';
+        showEmployeeEditStatus('employee_delete_status', '', false);
 
         const sessionId = loginSessionId;
         google.script.run
-          .withSuccessHandler(function () {
+          .withSuccessHandler(function (result) {
+            finishEmployeeDeleting();
             if (!isSameLoginSession(sessionId)) {
               return;
             }
-            window.location.reload();
+            employeeDeleteTarget = null;
+            document.getElementById('employee_delete_confirm').style.display = 'none';
+            applyEmployeeList(result.employees); // 削除後の一覧に更新する
+            // 削除結果は、一覧を描き直したあとに出す（描き直しで文言が消えないようにする）
+            showEmployeeEditStatus('employee_delete_status', result.message, false);
           })
           .withFailureHandler(function (error) {
+            finishEmployeeDeleting();
             if (!isSameLoginSession(sessionId)) {
               return;
             }
-            errorEl.innerHTML = error.message;
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = '登録';
+            showEmployeeEditStatus('employee_delete_status', 'エラー: ' + error.message, true);
           })
-          .addEmployee(lastName, firstName);
+          .deleteEmployee(employeeDeleteTarget.id, authToken);
+      }
+
+      /**
+       * 削除の通信が終わったときに、ボタンを押せる状態へ戻す
+       * @return {void} 戻り値なし
+       */
+      function finishEmployeeDeleting() {
+        isEmployeeEditSubmitting = false;
+        const submitBtn = document.getElementById('employee_delete_submit_btn');
+        submitBtn.disabled = false;
+        submitBtn.textContent = '削除する';
+      }
+
+      /**
+       * 入力した姓・名で従業員を追加する
+       * 追加後もページは読み込み直さず、店長画面で操作を続けられるようにする
+       * @return {void} 戻り値なし
+       */
+      function submitAddEmployee() {
+        if (isEmployeeEditSubmitting) {
+          return;
+        }
+
+        const lastName = document.getElementById('add_last_name').value.trim();
+        const firstName = document.getElementById('add_first_name').value.trim();
+        if (lastName === '' || firstName === '') {
+          showEmployeeEditStatus('add_employee_status', '姓と名を入力してください', true);
+          return;
+        }
+
+        isEmployeeEditSubmitting = true;
+        const submitBtn = document.getElementById('add_employee_submit_btn');
+        submitBtn.disabled = true;
+        submitBtn.textContent = '登録中...';
+        showEmployeeEditStatus('add_employee_status', '', false);
+
+        const sessionId = loginSessionId;
+        google.script.run
+          .withSuccessHandler(function (result) {
+            finishEmployeeAdding();
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
+            document.getElementById('add_last_name').value = '';
+            document.getElementById('add_first_name').value = '';
+            showEmployeeEditStatus('add_employee_status', result.message, false);
+            applyEmployeeList(result.employees); // 追加した従業員を一覧にも反映する
+          })
+          .withFailureHandler(function (error) {
+            finishEmployeeAdding();
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
+            showEmployeeEditStatus('add_employee_status', 'エラー: ' + error.message, true);
+          })
+          .addEmployee(lastName, firstName, authToken);
+      }
+
+      /**
+       * 追加の通信が終わったときに、ボタンを押せる状態へ戻す
+       * @return {void} 戻り値なし
+       */
+      function finishEmployeeAdding() {
+        isEmployeeEditSubmitting = false;
+        const submitBtn = document.getElementById('add_employee_submit_btn');
+        submitBtn.disabled = false;
+        submitBtn.textContent = '登録';
+      }
+
+      /**
+       * 従業員編集の状態（登録中・完了・エラー）を表示する
+       * @param {string} elementId 表示先の要素のID
+       * @param {string} message 表示する文言（空文字で消す）
+       * @param {boolean} isError エラーとして赤く出すなら true
+       * @return {void} 戻り値なし
+       */
+      function showEmployeeEditStatus(elementId, message, isError) {
+        const statusEl = document.getElementById(elementId);
+        statusEl.textContent = message;
+        if (isError) {
+          statusEl.classList.add('error');
+        } else {
+          statusEl.classList.remove('error');
+        }
       }
 
       /**
        * 店長画面のサイドバーで選ばれた機能をメイン領域に表示する
-       * まだ実装していない機能は共通の「準備中」画面を見出しだけ差し替えて表示する
+       * メニューを押すまでは何も表示しないので、ログイン直後のメイン領域は空欄のままになる
        */
       function showManagerSection(navItem) {
         const navItems = document.querySelectorAll('.manager-nav-item');
@@ -610,7 +1469,10 @@
         }
 
         const sectionName = navItem.dataset.section;
-        if (sectionName === 'dashboard') {
+        if (sectionName === 'employee_edit') {
+          document.getElementById('section_employee_edit').style.display = 'block';
+          resetEmployeeEditSection(); // 開いた時点では追加・削除のどちらも選ばず、その下は空欄にする
+        } else if (sectionName === 'dashboard') {
           document.getElementById('section_dashboard').style.display = 'block';
           loadTodayWork(); // 開くたびに最新の本日の業務設定を読み直す
         } else if (sectionName === 'attendance') {
@@ -622,12 +1484,10 @@
         } else if (sectionName === 'shift') {
           document.getElementById('section_shift').style.display = 'block';
           loadShiftMonth(shiftYear, shiftMonth); // 開くたびに表示中の月のシフト状況を読み直す
-        } else if (sectionName === 'ingredient') {
-          document.getElementById('section_ingredient').style.display = 'block';
-          loadIngredientBoard(); // 開くたびに最新の在庫・確認事項を読み直す
-        } else {
-          document.getElementById('preparing_heading').textContent = navItem.textContent;
-          document.getElementById('section_preparing').style.display = 'block';
+        } else if (sectionName === 'order') {
+          document.getElementById('section_order').style.display = 'block';
+          changeOrderView('cart'); // 開いたときは必ず「発注する食材」から始める
+          loadOrderBoard(); // 開くたびに最新の業者・食材・発注履歴を読み直す
         }
       }
 
@@ -863,15 +1723,20 @@
         }
       }
 
-      // スキル項目・評価値（code.js の SKILL_ITEMS / SKILL_LEVELS と揃える）
-      const SKILL_ITEMS = ['接客', 'レジ', 'バー', '厨房', '肉の仕込み', '締め作業'];
-      const SKILL_LEVELS = ['◎', '○', '△', '×'];
+      // スキル項目・評価値（config.js の SKILL_ITEMS / SKILL_LEVELS をそのまま埋め込み、二重管理しない）
+      // 評価は「未習得・習得中・習得済」の3つだけで、記号は画面にも保存先にも出てこない
+      const SKILL_ITEMS = <?!= JSON.stringify(SKILL_ITEMS) ?>;
+      const SKILL_LEVELS = <?!= JSON.stringify(SKILL_LEVELS) ?>;
+
+      let skillMatrix = []; // サーバーから取得した、有効な従業員ごとのスキル情報
+      let skillSelectedEmpId = null; // 右側に出している従業員（文字列にした従業員番号）
 
       /**
-       * 従業員スキル一覧をサーバーから取得する
+       * 従業員ごとのスキル情報をサーバーから取得する
+       * @return {void} 戻り値なし
        */
       function loadSkills() {
-        document.getElementById('skill_table').style.display = 'none';
+        document.getElementById('skill_layout').style.display = 'none';
         showSkillMessage('読み込み中...', false);
 
         const sessionId = loginSessionId;
@@ -892,139 +1757,293 @@
       }
 
       /**
-       * 取得したスキル一覧を表に描画する
-       * 各行は select（◎/○/△/×）と、その行だけを保存する「保存」ボタンで構成する
+       * 取得したスキル情報を、左の従業員一覧と右のスキル詳細に描画する
+       * @param {Array} matrix [{ id, name, number, skills, updatedAt }, ...]
+       * @return {void} 戻り値なし
        */
       function renderSkills(matrix) {
-        const tbody = document.getElementById('skill_tbody');
-        tbody.innerHTML = '';
+        skillMatrix = matrix;
 
-        if (matrix.length === 0) {
+        if (skillMatrix.length === 0) {
+          skillSelectedEmpId = null;
           showSkillMessage('従業員名簿に従業員が登録されていません', false);
           return;
         }
 
-        for (let i = 0; i < matrix.length; i++) {
-          tbody.appendChild(createSkillRow(matrix[i]));
+        // 取得し直した一覧から選択中の従業員が消えていたら、右側の表示も解除する
+        if (skillSelectedEmpId !== null && findSkillEmployee(skillSelectedEmpId) === null) {
+          skillSelectedEmpId = null;
         }
 
+        renderSkillEmployeeList();
+        renderSkillDetail();
         showSkillMessage('', false);
-        document.getElementById('skill_table').style.display = 'table';
+        document.getElementById('skill_layout').style.display = 'grid';
       }
 
       /**
-       * スキル一覧の1行分（氏名・各スキルのselect＋更新日・保存ボタン）を作る
-       * 評価と更新日は列を分けず、同じセルの中に縦に並べて表示する（画面が横に広がらないようにするため）
+       * 左側の従業員一覧（氏名・従業員番号）を描く
+       * 削除済みの従業員はサーバーの getSkillMatrix が返さないので、この一覧には出てこない
+       * @return {void} 戻り値なし
        */
-      function createSkillRow(employeeSkill) {
-        const row = document.createElement('tr');
+      function renderSkillEmployeeList() {
+        const list = document.getElementById('skill_employee_list');
+        list.innerHTML = '';
 
-        const nameCell = document.createElement('td');
-        nameCell.textContent = employeeSkill.name;
-        row.appendChild(nameCell);
+        for (let i = 0; i < skillMatrix.length; i++) {
+          list.appendChild(createSkillEmployeeListItem(skillMatrix[i]));
+        }
+      }
 
-        for (let i = 0; i < SKILL_ITEMS.length; i++) {
-          const item = SKILL_ITEMS[i];
-          const cell = document.createElement('td');
-          cell.className = 'skill-cell';
+      /**
+       * 従業員一覧の1人分の項目を作る
+       * @param {Object} employeeSkill { id, name, number, skills, updatedAt }
+       * @return {Element} 一覧の項目
+       */
+      function createSkillEmployeeListItem(employeeSkill) {
+        const item = document.createElement('li');
+        item.className = 'skill-employee-item';
+        item.dataset.empId = String(employeeSkill.id);
+        renderEmployeeNameBlock(item, employeeSkill); // 従業員画面の一覧と同じ見た目にそろえる
+        if (skillSelectedEmpId !== null && String(employeeSkill.id) === skillSelectedEmpId) {
+          item.classList.add('selected');
+        }
+        item.addEventListener('click', function () {
+          selectSkillEmployee(String(employeeSkill.id));
+        });
+        return item;
+      }
 
-          const select = document.createElement('select');
-          for (let j = 0; j < SKILL_LEVELS.length; j++) {
-            const option = document.createElement('option');
-            option.value = SKILL_LEVELS[j];
-            option.textContent = SKILL_LEVELS[j];
-            select.appendChild(option);
+      /**
+       * 一覧で押された従業員を選択状態にし、右側にその人のスキルを出す
+       * @param {string} empId 文字列にした従業員番号
+       * @return {void} 戻り値なし
+       */
+      function selectSkillEmployee(empId) {
+        if (skillSelectedEmpId === empId) {
+          return; // 同じ人を押し直したときは、編集途中の選択内容をそのまま残す
+        }
+        skillSelectedEmpId = empId;
+
+        const items = document.querySelectorAll('.skill-employee-item');
+        for (let i = 0; i < items.length; i++) {
+          if (items[i].dataset.empId === empId) {
+            items[i].classList.add('selected');
+          } else {
+            items[i].classList.remove('selected');
           }
-          select.value = employeeSkill.skills[item];
-          select.dataset.skillItem = item;
-
-          const dateLabel = document.createElement('div');
-          dateLabel.className = 'skill-updated-at';
-          dateLabel.dataset.skillItem = item;
-          dateLabel.textContent = formatSkillUpdatedAtLabel(employeeSkill.updatedAt[item]);
-
-          cell.appendChild(select);
-          cell.appendChild(dateLabel);
-          row.appendChild(cell);
         }
 
-        const actionCell = document.createElement('td');
-        const saveBtn = document.createElement('button');
-        saveBtn.type = 'button';
-        saveBtn.className = 'skill-save-btn';
-        saveBtn.textContent = '保存';
-        const statusSpan = document.createElement('span');
-        statusSpan.className = 'skill-row-status';
-        saveBtn.addEventListener('click', function () {
-          saveSkillRow(employeeSkill.id, row, saveBtn, statusSpan);
-        });
-        actionCell.appendChild(saveBtn);
-        actionCell.appendChild(statusSpan);
-        row.appendChild(actionCell);
+        renderSkillDetail();
+      }
+
+      /**
+       * 画面が持っているスキル情報から、指定した従業員を探す
+       * @param {string} empId 文字列にした従業員番号
+       * @return {Object} 見つかった従業員のスキル情報。見つからなければ null
+       */
+      function findSkillEmployee(empId) {
+        for (let i = 0; i < skillMatrix.length; i++) {
+          if (String(skillMatrix[i].id) === String(empId)) {
+            return skillMatrix[i];
+          }
+        }
+        return null;
+      }
+
+      /**
+       * 右側に、選択中の従業員1人分のスキルを描く
+       * 誰も選んでいないときは案内文だけを出す
+       * @return {void} 戻り値なし
+       */
+      function renderSkillDetail() {
+        const detail = document.getElementById('skill_detail');
+        const emptyMessage = document.getElementById('skill_detail_empty');
+        const employeeSkill = (skillSelectedEmpId === null) ? null : findSkillEmployee(skillSelectedEmpId);
+
+        if (employeeSkill === null) {
+          detail.style.display = 'none';
+          emptyMessage.style.display = 'block';
+          return;
+        }
+
+        // 上部に氏名と従業員番号を出し、誰のスキルを編集しているかを確認できるようにする
+        renderEmployeeNameBlock(document.getElementById('skill_detail_header'), employeeSkill);
+
+        const itemsEl = document.getElementById('skill_detail_items');
+        itemsEl.innerHTML = '';
+        for (let i = 0; i < SKILL_ITEMS.length; i++) {
+          itemsEl.appendChild(createSkillDetailItem(SKILL_ITEMS[i], employeeSkill));
+        }
+
+        showSkillSaveStatus('', false);
+        document.getElementById('skill_save_btn').disabled = false;
+        emptyMessage.style.display = 'none';
+        detail.style.display = 'block';
+      }
+
+      /**
+       * スキル1項目分の行（スキル名・評価のドロップダウン・最終更新日）を作る
+       * ドロップダウンを変えただけでは保存しない。保存ボタンを押したときにまとめて送る
+       * @param {string} item スキル名
+       * @param {Object} employeeSkill { id, name, number, skills, updatedAt }
+       * @return {Element} スキル1項目分の行
+       */
+      function createSkillDetailItem(item, employeeSkill) {
+        const row = document.createElement('div');
+        row.className = 'skill-detail-item';
+
+        const nameEl = document.createElement('div');
+        nameEl.className = 'skill-detail-item-name';
+        nameEl.textContent = item;
+        row.appendChild(nameEl);
+
+        const select = document.createElement('select');
+        for (let i = 0; i < SKILL_LEVELS.length; i++) {
+          const option = document.createElement('option');
+          option.value = SKILL_LEVELS[i];
+          option.textContent = SKILL_LEVELS[i];
+          select.appendChild(option);
+        }
+        // 想定外の値が届いても空欄にならないよう、選べる評価でなければ「未習得」に寄せる
+        select.value = (SKILL_LEVELS.indexOf(employeeSkill.skills[item]) !== -1) ?
+          employeeSkill.skills[item] : SKILL_LEVELS[0];
+        select.dataset.skillItem = item;
+        row.appendChild(select);
+
+        const dateLabel = document.createElement('div');
+        dateLabel.className = 'skill-detail-item-updated-at';
+        dateLabel.dataset.skillItem = item;
+        dateLabel.textContent = formatSkillUpdatedAtLabel(employeeSkill.updatedAt[item]);
+        row.appendChild(dateLabel);
 
         return row;
       }
 
       /**
-       * 更新日（'yyyy/MM/dd'形式、未保存なら空文字）を「更新：8/19」のような表示用文字列にする
+       * 更新日（'yyyy/MM/dd'形式、未保存なら空文字）を「最終更新：8/19」の形にする
+       * @param {string} dateStr サーバーから届いた更新日
+       * @return {string} 表示用の文字列
        */
       function formatSkillUpdatedAtLabel(dateStr) {
         if (!dateStr) {
-          return '更新：-';
+          return '最終更新：-';
         }
         const parts = dateStr.split('/');
         if (parts.length !== 3) {
-          return '更新：-';
+          return '最終更新：-';
         }
-        return '更新：' + Number(parts[1]) + '/' + Number(parts[2]);
+        return '最終更新：' + Number(parts[1]) + '/' + Number(parts[2]);
       }
 
       /**
-       * 1行分のスキル評価をまとめて保存する
-       * selectを変更しただけでは保存されず、この「保存」ボタンを押した時点でまとめて送信する
+       * 選択中の従業員の6項目をまとめて保存する
+       * 変えていない項目の更新日はサーバー側でも動かさないので、変えた項目だけ日付が新しくなる
+       * @return {void} 戻り値なし
        */
-      function saveSkillRow(empId, row, saveBtn, statusSpan) {
-        const selects = row.querySelectorAll('select');
+      function saveSelectedEmployeeSkills() {
+        const employeeSkill = (skillSelectedEmpId === null) ? null : findSkillEmployee(skillSelectedEmpId);
+        if (employeeSkill === null) {
+          return;
+        }
+
+        const selects = document.getElementById('skill_detail_items').querySelectorAll('select');
         const skillValues = [];
         for (let i = 0; i < selects.length; i++) {
           skillValues.push(selects[i].value);
         }
 
+        const saveBtn = document.getElementById('skill_save_btn');
         saveBtn.disabled = true;
-        statusSpan.textContent = '保存中...';
-        statusSpan.classList.remove('error');
+        showSkillSaveStatus('保存中...', false);
 
         const sessionId = loginSessionId;
+        const savedEmpId = skillSelectedEmpId;
         google.script.run
           .withSuccessHandler(function (result) {
             if (!isSameLoginSession(sessionId)) {
               return;
             }
+            applySavedSkills(savedEmpId, skillValues, result.updatedAt);
+            if (skillSelectedEmpId !== savedEmpId) {
+              return; // 保存の間に別の従業員へ切り替わっていたら、いまの表示はそのままにする
+            }
             saveBtn.disabled = false;
-            statusSpan.textContent = result.message;
-            statusSpan.classList.remove('error');
-            updateSkillRowDates(row, result.updatedAt);
+            renderSkillDetailUpdatedAt(result.updatedAt);
+            showSkillSaveStatus('保存しました', false);
           })
           .withFailureHandler(function (error) {
-            if (!isSameLoginSession(sessionId)) {
+            if (!isSameLoginSession(sessionId) || skillSelectedEmpId !== savedEmpId) {
               return;
             }
             saveBtn.disabled = false;
-            statusSpan.textContent = 'エラー: ' + error.message;
-            statusSpan.classList.add('error');
+            showSkillSaveStatus('エラー: ' + error.message, true);
           })
-          .saveEmployeeSkills(empId, skillValues, authToken);
+          .saveEmployeeSkills(employeeSkill.id, skillValues, authToken);
       }
 
       /**
-       * 保存後、サーバーから返ってきた最新の更新日で行内の表示を書き換える
-       * （評価が変わっていない項目の更新日はサーバー側でも変更されていないので、そのまま同じ日付が返る）
+       * 保存できた内容を、画面が持っているスキル情報にも反映する
+       * 従業員を切り替えて戻ってきたときに、保存前の内容が出てしまうのを防ぐ
+       * @param {string} empId 保存した従業員番号
+       * @param {Array} skillValues 保存した評価（SKILL_ITEMS と同じ並び）
+       * @param {Object} updatedAt サーバーが返した最新の更新日
+       * @return {void} 戻り値なし
        */
-      function updateSkillRowDates(row, updatedAt) {
-        const dateLabels = row.querySelectorAll('.skill-updated-at');
+      function applySavedSkills(empId, skillValues, updatedAt) {
+        const employeeSkill = findSkillEmployee(empId);
+        if (employeeSkill === null) {
+          return;
+        }
+        for (let i = 0; i < SKILL_ITEMS.length; i++) {
+          employeeSkill.skills[SKILL_ITEMS[i]] = skillValues[i];
+          employeeSkill.updatedAt[SKILL_ITEMS[i]] = updatedAt[SKILL_ITEMS[i]];
+        }
+      }
+
+      /**
+       * 保存後、サーバーが返した最新の更新日で右側の「最終更新」だけを書き換える
+       * 評価が変わっていない項目はサーバー側でも更新日を動かしていないので、同じ日付が返る
+       * @param {Object} updatedAt サーバーが返した最新の更新日
+       * @return {void} 戻り値なし
+       */
+      function renderSkillDetailUpdatedAt(updatedAt) {
+        const dateLabels = document.querySelectorAll('#skill_detail_items .skill-detail-item-updated-at');
         for (let i = 0; i < dateLabels.length; i++) {
-          const item = dateLabels[i].dataset.skillItem;
-          dateLabels[i].textContent = formatSkillUpdatedAtLabel(updatedAt[item]);
+          dateLabels[i].textContent = formatSkillUpdatedAtLabel(updatedAt[dateLabels[i].dataset.skillItem]);
+        }
+      }
+
+      /**
+       * スキル管理画面の表示を初期状態に戻す（ログインし直したときに前の内容を残さない）
+       * @return {void} 戻り値なし
+       */
+      function resetSkillSection() {
+        skillMatrix = [];
+        skillSelectedEmpId = null;
+        document.getElementById('skill_layout').style.display = 'none';
+        document.getElementById('skill_employee_list').innerHTML = '';
+        document.getElementById('skill_detail').style.display = 'none';
+        document.getElementById('skill_detail_empty').style.display = 'block';
+        document.getElementById('skill_detail_header').innerHTML = '';
+        document.getElementById('skill_detail_items').innerHTML = '';
+        showSkillSaveStatus('', false);
+        showSkillMessage('', false);
+      }
+
+      /**
+       * 保存ボタンのそばに出す短い通知（保存中・保存しました・エラー）を切り替える
+       * @param {string} message 表示する文言（空文字で消す）
+       * @param {boolean} isError エラーとして赤字にするなら true
+       * @return {void} 戻り値なし
+       */
+      function showSkillSaveStatus(message, isError) {
+        const statusEl = document.getElementById('skill_save_status');
+        statusEl.textContent = message;
+        if (isError) {
+          statusEl.classList.add('error');
+        } else {
+          statusEl.classList.remove('error');
         }
       }
 
@@ -1033,7 +2052,7 @@
       }
 
       /**
-       * 表の代わりに出す一行メッセージ（読み込み中・従業員なし・エラー）を切り替える
+       * 一覧・詳細の代わりに出す一行メッセージ（読み込み中・従業員なし・エラー）を切り替える
        */
       function showSkillMessage(message, isError) {
         const messageEl = document.getElementById('skill_message');
@@ -1422,11 +2441,13 @@
 
       /**
        * シフト割当の1行分（従業員・出勤・退勤・ポジション・備考・削除）を作る
+       * 削除済みの従業員の枠は、元の氏名を選択肢に残したまま「交代が必要」と表示する
        */
       function createShiftAssignmentRow(assignment) {
         const row = document.createElement('tr');
         row.className = 'shift-row';
 
+        // 交代先に選べるのは有効な従業員だけ
         const employeeOptions = [];
         for (let i = 0; i < shiftDayEmployees.length; i++) {
           employeeOptions.push({
@@ -1434,9 +2455,24 @@
             'label': shiftDayEmployees[i].name
           });
         }
+        if (assignment.isDeletedEmployee) {
+          // 交代先を選ぶまで、元の従業員が選ばれたままになるようにする
+          employeeOptions.push({
+            'value': String(assignment.employeeId),
+            'label': (assignment.employeeName || ('従業員番号 ' + assignment.employeeId)) + '（削除済み）'
+          });
+        }
 
-        row.appendChild(createShiftCell(
-          createShiftSelect('shift-employee-select', employeeOptions, assignment.employeeId, '未選択')));
+        const employeeCell = createShiftCell(
+          createShiftSelect('shift-employee-select', employeeOptions, assignment.employeeId, '未選択'));
+        if (assignment.needsReplacement) {
+          row.classList.add('shift-row-replacement');
+          const replacementNote = document.createElement('div');
+          replacementNote.className = 'shift-replacement-note';
+          replacementNote.textContent = '削除済み従業員のため、交代が必要';
+          employeeCell.appendChild(replacementNote);
+        }
+        row.appendChild(employeeCell);
         row.appendChild(createShiftCell(createShiftTimeInput('shift-start-time', assignment.startTime)));
         row.appendChild(createShiftCell(createShiftTimeInput('shift-end-time', assignment.endTime)));
         row.appendChild(createShiftCell(
@@ -1556,10 +2592,13 @@
         const tbody = document.getElementById('shift_assignment_tbody');
         tbody.appendChild(createShiftAssignmentRow({
           'employeeId': '',
+          'employeeName': '',
           'startTime': '',
           'endTime': '',
           'position': '',
-          'note': ''
+          'note': '',
+          'isDeletedEmployee': false,
+          'needsReplacement': false
         }));
         refreshShiftEmptyRow(tbody, 6, 'シフトの割当はまだありません');
       }
@@ -1684,11 +2723,12 @@
               return;
             }
             finishShiftSaving();
-            showShiftSaveStatus(result.message, false);
-            // 保存した日の確認事項と、カレンダーの印（○／△！）を最新の内容に更新する
+            // 保存した日の割当・確認事項と、カレンダーの印（○／△！）を最新の内容に更新する
+            // 交代が済んだ枠の「交代が必要」の表示も、ここで描き直されて消える
             if (shiftSelectedDate === savedDateKey) {
-              renderShiftWarnings(result.warnings);
+              renderShiftDay(result);
             }
+            showShiftSaveStatus(result.message, false);
             loadShiftMonth(shiftYear, shiftMonth);
           })
           .withFailureHandler(function (error) {
@@ -1768,390 +2808,8 @@
         }
       }
 
-      // 店長画面：食材管理
-      // サーバーから受け取った最新の食材管理情報。保存のたびに丸ごと入れ替える
-      let ingredientBoard = null;
-      // 表示中のタブ（原材料／仕込み済み）と保存状態の絞り込み（空文字はすべて）
-      let ingredientCategory = '原材料';
-      let ingredientStorageFilter = '';
-      // 操作ごとの「操作キー」。再送しても在庫が二重に動かないよう、保存が成功するまで同じ値を使う
-      const ingredientOperationKeys = {};
-      // 各モーダルが対象にしている在庫明細
-      let ingredientTargetLot = null;
-
-      /**
-       * 食材管理の情報をサーバーから取得する
-       */
-      function loadIngredientBoard() {
-        document.getElementById('ingredient_reload_btn').disabled = true;
-        showIngredientMessage('読み込み中...', false);
-
-        const sessionId = loginSessionId;
-        google.script.run
-          .withSuccessHandler(function (board) {
-            if (!isSameLoginSession(sessionId)) {
-              return;
-            }
-            document.getElementById('ingredient_reload_btn').disabled = false;
-            showIngredientMessage('', false);
-            applyIngredientBoard(board);
-          })
-          .withFailureHandler(function (error) {
-            if (!isSameLoginSession(sessionId)) {
-              return;
-            }
-            document.getElementById('ingredient_reload_btn').disabled = false;
-            document.getElementById('ingredient_body').style.display = 'none';
-            showIngredientMessage('エラー: ' + error.message, true);
-          })
-          .getIngredientBoard(authToken);
-      }
-
-      /**
-       * 受け取った食材管理情報で画面を作り直す
-       */
-      function applyIngredientBoard(board) {
-        ingredientBoard = board;
-        document.getElementById('ingredient_body').style.display = 'block';
-        renderIngredientAlerts();
-        renderIngredientTable();
-      }
-
-      function showIngredientMessage(message, isError) {
-        const messageEl = document.getElementById('ingredient_message');
-        messageEl.textContent = message;
-        if (isError) {
-          messageEl.classList.add('error');
-        } else {
-          messageEl.classList.remove('error');
-        }
-      }
-
-      /**
-       * 画面上部の確認事項（期限未設定・期限接近・残量不足・発注）を描画する
-       * 色だけで区別せず、見出しと本文の言葉でも状態が分かるようにする
-       */
-      function renderIngredientAlerts() {
-        const container = document.getElementById('ingredient_alerts');
-        container.innerHTML = '';
-
-        const groups = [
-          { 'key': 'expiryUnset', 'title': '期限が未設定・不明', 'level': 'check' },
-          { 'key': 'expiryNear', 'title': '期限切れ・期限が近い', 'level': 'warning' },
-          { 'key': 'lowStock', 'title': '残量不足', 'level': 'warning' },
-          { 'key': 'order', 'title': '発注の確認', 'level': 'info' },
-          { 'key': 'pending', 'title': '保存が完了していない明細', 'level': 'warning' }
-        ];
-
-        let total = 0;
-        for (let i = 0; i < groups.length; i++) {
-          const items = ingredientBoard.alerts[groups[i].key] || [];
-          if (items.length === 0) {
-            continue;
-          }
-          total = total + items.length;
-          container.appendChild(createIngredientAlertCard(groups[i], items));
-        }
-
-        if (total === 0) {
-          const emptyCard = document.createElement('div');
-          emptyCard.className = 'ingredient-alert-card ingredient-alert-none';
-          emptyCard.textContent = '確認が必要な食材はありません（' + ingredientBoard.nowText + ' 時点）';
-          container.appendChild(emptyCard);
-        }
-      }
-
-      /**
-       * 確認事項の1グループ分のカードを作る
-       */
-      function createIngredientAlertCard(group, items) {
-        const card = document.createElement('div');
-        card.className = 'ingredient-alert-card ingredient-alert-' + group.level;
-
-        const heading = document.createElement('div');
-        heading.className = 'ingredient-alert-heading';
-        heading.textContent = group.title + '：' + items.length + '件';
-        card.appendChild(heading);
-
-        const list = document.createElement('ul');
-        list.className = 'ingredient-alert-list';
-        for (let i = 0; i < items.length; i++) {
-          const item = document.createElement('li');
-          const title = document.createElement('span');
-          title.className = 'ingredient-alert-title';
-          title.textContent = items[i].title;
-          item.appendChild(title);
-          const detail = document.createElement('span');
-          detail.className = 'ingredient-alert-detail';
-          detail.textContent = items[i].detail;
-          item.appendChild(detail);
-
-          // 発注の記録は、誤って登録したときに取り消せるようにする（在庫は動かない）
-          if (group.key === 'order' && items[i].orderId) {
-            const orderId = items[i].orderId;
-            item.appendChild(createIngredientRowButton('発注の記録を取り消す', function () {
-              cancelIngredientOrderRecord(orderId);
-            }));
-          }
-          list.appendChild(item);
-        }
-        card.appendChild(list);
-        return card;
-      }
-
-      /**
-       * 発注の記録を取り消す（実際の注文には関係せず、在庫も増減しない）
-       */
-      function cancelIngredientOrderRecord(orderId) {
-        showIngredientMessage('発注の記録を取り消しています...', false);
-        const sessionId = loginSessionId;
-        google.script.run
-          .withSuccessHandler(function (result) {
-            if (!isSameLoginSession(sessionId)) {
-              return;
-            }
-            applyIngredientBoard(result.board);
-            showIngredientMessage(result.message, false);
-          })
-          .withFailureHandler(function (error) {
-            if (!isSameLoginSession(sessionId)) {
-              return;
-            }
-            showIngredientMessage('エラー: ' + error.message, true);
-          })
-          .cancelIngredientOrder({
-            'operationKey': createIngredientOperationKey(),
-            'orderId': orderId,
-            'actorEmpId': selectedEmpId ? String(selectedEmpId) : '',
-            'authToken': authToken
-          });
-      }
-
-      /**
-       * タブと絞り込みに合う在庫明細だけを取り出す
-       */
-      function getIngredientVisibleLots() {
-        const lots = [];
-        for (let i = 0; i < ingredientBoard.lots.length; i++) {
-          const lot = ingredientBoard.lots[i];
-          if (lot.category !== ingredientCategory) {
-            continue;
-          }
-          if (ingredientStorageFilter !== '' && lot.storageState !== ingredientStorageFilter) {
-            continue;
-          }
-          lots.push(lot);
-        }
-        return lots;
-      }
-
-      /**
-       * 在庫一覧の表を描画する（原材料と仕込み済みで列の構成が変わる）
-       */
-      function renderIngredientTable() {
-        const thead = document.getElementById('ingredient_thead');
-        const tbody = document.getElementById('ingredient_tbody');
-        thead.innerHTML = '';
-        tbody.innerHTML = '';
-
-        const isRawMaterial = (ingredientCategory === '原材料');
-        const columns = isRawMaterial
-          ? ['食材名', '残量の目安', '保存状態', '表示期限／使用期限', '冷凍した日時', '操作']
-          : ['食材名', '残量の目安', '仕込み日時', '使用期限', '保存状態', '確認事項', '操作'];
-
-        const headRow = document.createElement('tr');
-        for (let i = 0; i < columns.length; i++) {
-          const th = document.createElement('th');
-          th.textContent = columns[i];
-          headRow.appendChild(th);
-        }
-        thead.appendChild(headRow);
-
-        const lots = getIngredientVisibleLots();
-        const listMessage = document.getElementById('ingredient_list_message');
-        if (lots.length === 0) {
-          document.getElementById('ingredient_table').style.display = 'none';
-          listMessage.textContent = '表示できる在庫がありません。「入荷を記録」「仕込みを記録」から登録してください';
-          listMessage.classList.remove('error');
-          return;
-        }
-        listMessage.textContent = '';
-
-        for (let i = 0; i < lots.length; i++) {
-          tbody.appendChild(createIngredientRow(lots[i], isRawMaterial));
-        }
-        document.getElementById('ingredient_table').style.display = 'table';
-      }
-
-      /**
-       * 在庫一覧の1行分を作る
-       */
-      function createIngredientRow(lot, isRawMaterial) {
-        const row = document.createElement('tr');
-        row.appendChild(createIngredientNameCell(lot));
-        row.appendChild(createIngredientTextCell(lot.quantityText));
-
-        if (isRawMaterial) {
-          row.appendChild(createIngredientTextCell(lot.storageState));
-          row.appendChild(createIngredientExpiryCell(lot));
-          row.appendChild(createIngredientTextCell(lot.frozenText));
-        } else {
-          row.appendChild(createIngredientTextCell(lot.preparedAtText));
-          row.appendChild(createIngredientExpiryCell(lot));
-          row.appendChild(createIngredientTextCell(lot.storageState));
-          row.appendChild(createIngredientIssueCell(lot));
-        }
-        row.appendChild(createIngredientActionCell(lot));
-        return row;
-      }
-
-      function createIngredientTextCell(text) {
-        const cell = document.createElement('td');
-        cell.textContent = (text === '' || text === undefined || text === null) ? '-' : text;
-        return cell;
-      }
-
-      /**
-       * 食材名のセル。原材料一覧では確認事項も小さく添える
-       */
-      function createIngredientNameCell(lot) {
-        const cell = document.createElement('td');
-        const name = document.createElement('div');
-        name.className = 'ingredient-name';
-        name.textContent = lot.name;
-        cell.appendChild(name);
-
-        if (ingredientCategory === '原材料' && lot.issues.length > 0) {
-          const note = document.createElement('div');
-          note.className = 'ingredient-row-issue';
-          note.textContent = lot.issues.join(' / ');
-          cell.appendChild(note);
-        }
-        return cell;
-      }
-
-      /**
-       * 期限のセル。状態は色だけでなく文言でも示す
-       */
-      function createIngredientExpiryCell(lot) {
-        const cell = document.createElement('td');
-        const label = document.createElement('span');
-        label.className = 'ingredient-expiry ingredient-expiry-' + getIngredientExpiryClass(lot.expiry.state);
-        label.textContent = lot.expiry.label;
-        cell.appendChild(label);
-        return cell;
-      }
-
-      function getIngredientExpiryClass(state) {
-        if (state === '期限切れ') {
-          return 'expired';
-        }
-        if (state === '期限接近') {
-          return 'soon';
-        }
-        if (state === '要確認') {
-          return 'unknown';
-        }
-        return 'ok';
-      }
-
-      function createIngredientIssueCell(lot) {
-        const cell = document.createElement('td');
-        cell.textContent = lot.issues.length === 0 ? '特になし' : lot.issues.join(' / ');
-        if (lot.issues.length > 0) {
-          cell.classList.add('ingredient-row-issue');
-        }
-        return cell;
-      }
-
-      /**
-       * 操作ボタン（残量更新・詳細・冷凍／解凍）のセルを作る
-       */
-      function createIngredientActionCell(lot) {
-        const cell = document.createElement('td');
-        cell.className = 'ingredient-action-cell';
-
-        cell.appendChild(createIngredientRowButton('残量更新', function () {
-          openIngredientAmountModal(lot.id);
-        }));
-        cell.appendChild(createIngredientRowButton('詳細', function () {
-          openIngredientDetailModal(lot.id);
-        }));
-        if (lot.storageState === '冷蔵') {
-          cell.appendChild(createIngredientRowButton('冷凍に移す', function () {
-            openIngredientFreezeModal(lot.id);
-          }));
-        } else {
-          cell.appendChild(createIngredientRowButton(lot.storageState === '冷凍' ? '解凍する' : '解凍の完了', function () {
-            openIngredientThawModal(lot.id);
-          }));
-        }
-        return cell;
-      }
-
-      function createIngredientRowButton(label, handler) {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'ingredient-row-btn';
-        button.textContent = label;
-        button.addEventListener('click', handler);
-        return button;
-      }
-
-      /**
-       * タブ（原材料／仕込み済み）を切り替える
-       */
-      function selectIngredientCategory(button) {
-        const tabs = document.querySelectorAll('.ingredient-tab');
-        for (let i = 0; i < tabs.length; i++) {
-          tabs[i].classList.remove('selected');
-        }
-        button.classList.add('selected');
-        ingredientCategory = button.dataset.category;
-        renderIngredientTable();
-      }
-
-      /**
-       * 保存状態（冷蔵・冷凍・解凍中）の絞り込みを切り替える
-       */
-      function selectIngredientStorage(button) {
-        const filters = document.querySelectorAll('.ingredient-filter');
-        for (let i = 0; i < filters.length; i++) {
-          filters[i].classList.remove('selected');
-        }
-        button.classList.add('selected');
-        ingredientStorageFilter = button.dataset.storage;
-        renderIngredientTable();
-      }
-
-      /**
-       * 在庫IDから表示中の明細を探す
-       */
-      function findIngredientLotById(lotId) {
-        for (let i = 0; i < ingredientBoard.lots.length; i++) {
-          if (ingredientBoard.lots[i].id === lotId) {
-            return ingredientBoard.lots[i];
-          }
-        }
-        return null;
-      }
-
-      // 食材管理のモーダル共通処理
-
-      /**
-       * モーダルを開く
-       * 開くたびに新しい操作キーを作り、保存が成功するまでは同じキーを使い続ける
-       * （通信が途中で切れて再送になっても、サーバー側で同じ操作と分かり在庫が二重に動かない）
-       */
-      function openIngredientModal(overlayId, keyName) {
-        if (!ingredientBoard) {
-          showIngredientMessage('食材の情報を読み込めていません。「更新」を押してください', true);
-          return false;
-        }
-        ingredientOperationKeys[keyName] = createIngredientOperationKey();
-        document.getElementById(overlayId).style.display = 'flex';
-        return true;
-      }
+      // 店長画面：発注管理で使う共通のダイアログ操作
+      // 「食材を追加」と「業者・発注条件の設定」の2つのダイアログから呼ぶ
 
       function closeIngredientModal(overlayId) {
         document.getElementById(overlayId).style.display = 'none';
@@ -2166,67 +2824,10 @@
 
       /**
        * 1回の保存を表す操作キーを作る
+       * 通信が途中で切れて再送になっても、サーバー側で同じ操作と分かるようにするために使う
        */
       function createIngredientOperationKey() {
         return 'op-' + Date.now() + '-' + Math.random().toString(36).substring(2, 10);
-      }
-
-      /**
-       * サーバーへ保存し、成功したら最新の内容で画面を作り直す
-       * 保存中はボタンを押せなくし、失敗したときは入力を残したままエラーだけを出す
-       */
-      function runIngredientSave(config) {
-        const submitBtn = document.getElementById(config.submitBtnId);
-        const errorEl = document.getElementById(config.errorId);
-        if (submitBtn.disabled) {
-          return; // 保存中の連打は無視する
-        }
-        errorEl.textContent = '';
-
-        let payload;
-        try {
-          payload = config.buildPayload();
-        } catch (error) {
-          errorEl.textContent = error.message;
-          return;
-        }
-        payload.operationKey = ingredientOperationKeys[config.keyName];
-        payload.actorEmpId = selectedEmpId ? String(selectedEmpId) : '';
-        // 店長専用の保存なので、サーバー側で権限を確認できるようトークンを添える
-        payload.authToken = authToken;
-
-        const originalLabel = submitBtn.textContent;
-        submitBtn.disabled = true;
-        submitBtn.textContent = '保存中...';
-
-        const sessionId = loginSessionId;
-        const runner = google.script.run
-          .withSuccessHandler(function (result) {
-            if (!isSameLoginSession(sessionId)) {
-              return;
-            }
-            submitBtn.disabled = false;
-            submitBtn.textContent = originalLabel;
-            ingredientOperationKeys[config.keyName] = createIngredientOperationKey();
-            if (config.keepOpen !== true) {
-              closeIngredientModal(config.overlayId);
-            }
-            applyIngredientBoard(result.board);
-            showIngredientMessage(result.message, false);
-            if (config.onSuccess) {
-              config.onSuccess();
-            }
-          })
-          .withFailureHandler(function (error) {
-            if (!isSameLoginSession(sessionId)) {
-              return;
-            }
-            submitBtn.disabled = false;
-            submitBtn.textContent = originalLabel;
-            // 保存できていないので成功の表示はせず、入力内容はそのまま残す
-            errorEl.textContent = 'エラー: ' + error.message;
-          });
-        runner[config.method](payload);
       }
 
       /**
@@ -2254,10 +2855,940 @@
         select.value = (selectedValue === undefined || selectedValue === null) ? '' : selectedValue;
       }
 
+      // 店長画面：発注管理
+      // サーバーから受け取った最新の発注管理情報（業者・食材・発注履歴）。送信のたびに丸ごと入れ替える
+      let orderBoard = null;
+
+      // ドロップダウンで選んでいる表示項目。'cart' / 'confirm' / 'history' / 'vendor' のどれか1つだけを表示する
+      let orderView = 'cart';
+
+      // これから発注する食材（[{ ingredientId, quantity }]）。送信できるまで画面の中だけで持つ
+      let orderCart = [];
+
+      // 「この業者へ発注」で絞り込んでいる業者ID（空文字ならすべての業者から選べる）
+      let orderVendorFilterId = '';
+
+      // 業者詳細で開いている業者ID（空文字なら業者の一覧を出す）
+      let orderSelectedVendorId = '';
+
+      // 業者詳細で「取扱食材を見る」を開いているか
+      let orderVendorItemsOpen = false;
+
+      // 確認画面で組み立てた、業者ごとの発注メール
+      let orderDrafts = [];
+
+      // 送信1回分の操作キー。通信のやり直しで同じメールを二重に送らないために使う
+      let orderSendKey = '';
+
+      // 送信中かどうか。送信中に確認内容を描き直しても、送信ボタンを押せる状態に戻さないために使う
+      let orderSending = false;
+
+      /**
+       * 発注管理の情報をサーバーから取得する
+       * @return {void} 戻り値なし
+       */
+      function loadOrderBoard() {
+        document.getElementById('order_reload_btn').disabled = true;
+        showOrderMessage('読み込み中...', false);
+
+        const sessionId = loginSessionId;
+        google.script.run
+          .withSuccessHandler(function (board) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
+            document.getElementById('order_reload_btn').disabled = false;
+            showOrderMessage('', false);
+            applyOrderBoard(board);
+          })
+          .withFailureHandler(function (error) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
+            document.getElementById('order_reload_btn').disabled = false;
+            document.getElementById('order_body').style.display = 'none';
+            showOrderMessage('エラー: ' + error.message, true);
+          })
+          .getOrderBoard(authToken);
+      }
+
+      /**
+       * 受け取った発注管理情報で画面を作り直す
+       * 一覧から消えた食材は、発注する食材からも外す
+       * @param {Object} board サーバーから届いた発注管理情報
+       * @return {void} 戻り値なし
+       */
+      function applyOrderBoard(board) {
+        orderBoard = board;
+        document.getElementById('order_body').style.display = 'block';
+
+        const keptCart = [];
+        for (let i = 0; i < orderCart.length; i++) {
+          if (findOrderItemById(orderCart[i].ingredientId)) {
+            keptCart.push(orderCart[i]);
+          }
+        }
+        orderCart = keptCart;
+
+        if (orderSelectedVendorId !== '' && !findOrderVendorById(orderSelectedVendorId)) {
+          orderSelectedVendorId = '';
+        }
+        renderOrderView();
+      }
+
+      function showOrderMessage(message, isError) {
+        const messageEl = document.getElementById('order_message');
+        messageEl.textContent = message;
+        if (isError) {
+          messageEl.classList.add('error');
+        } else {
+          messageEl.classList.remove('error');
+        }
+      }
+
+      /**
+       * 表示項目を切り替える
+       * 4つの表示のうち、選ばれた1つだけを出す
+       * @param {string} viewName 'cart' / 'confirm' / 'history' / 'vendor'
+       * @return {void} 戻り値なし
+       */
+      function changeOrderView(viewName) {
+        orderView = viewName;
+        document.getElementById('order_view_select').value = viewName;
+        renderOrderView();
+      }
+
+      /**
+       * いま選ばれている表示項目だけを描き直す
+       * @return {void} 戻り値なし
+       */
+      function renderOrderView() {
+        const views = ['cart', 'confirm', 'history', 'vendor'];
+        for (let i = 0; i < views.length; i++) {
+          document.getElementById('order_view_' + views[i]).style.display = (views[i] === orderView) ? 'block' : 'none';
+        }
+        if (!orderBoard) {
+          return;
+        }
+        if (orderView === 'cart') {
+          renderOrderCart();
+        } else if (orderView === 'confirm') {
+          refreshOrderConfirm();
+        } else if (orderView === 'history') {
+          renderOrderHistory();
+        } else if (orderView === 'vendor') {
+          renderOrderVendor();
+        }
+      }
+
+      /**
+       * 要素を1つ作る（class名と表示文字をまとめて指定する）
+       */
+      function createOrderElement(tagName, className, text) {
+        const element = document.createElement(tagName);
+        if (className) {
+          element.className = className;
+        }
+        if (text !== undefined && text !== null) {
+          element.textContent = text;
+        }
+        return element;
+      }
+
+      /**
+       * 押すと別の表示に移る文字（業者名など）を作る
+       */
+      function createOrderLinkButton(text, onClick) {
+        const button = createOrderElement('button', 'order-link', text);
+        button.type = 'button';
+        button.addEventListener('click', onClick);
+        return button;
+      }
+
+      function findOrderItemById(ingredientId) {
+        for (let i = 0; i < orderBoard.items.length; i++) {
+          if (orderBoard.items[i].id === ingredientId) {
+            return orderBoard.items[i];
+          }
+        }
+        return null;
+      }
+
+      function findOrderVendorById(vendorId) {
+        for (let i = 0; i < orderBoard.vendors.length; i++) {
+          if (orderBoard.vendors[i].id === vendorId) {
+            return orderBoard.vendors[i];
+          }
+        }
+        return null;
+      }
+
+      function findOrderCartItem(ingredientId) {
+        for (let i = 0; i < orderCart.length; i++) {
+          if (orderCart[i].ingredientId === ingredientId) {
+            return orderCart[i];
+          }
+        }
+        return null;
+      }
+
+      // 数量は小数第1位までにそろえる（キロ単位の食材を 0.5 きざみで発注できるようにする）
+      function roundOrderQuantity(quantity) {
+        return Math.round(quantity * 10) / 10;
+      }
+
+      // 発注する食材
+
+      /**
+       * 発注する食材の一覧を描き直す
+       * @return {void} 戻り値なし
+       */
+      function renderOrderCart() {
+        renderOrderCartFilter();
+
+        const list = document.getElementById('order_cart_list');
+        list.innerHTML = '';
+
+        if (orderCart.length === 0) {
+          list.appendChild(createOrderElement('div', 'order-empty',
+            '発注する食材がまだありません。「＋ 食材を追加」から選んでください。'));
+          document.getElementById('order_cart_footer').style.display = 'none';
+          return;
+        }
+
+        for (let i = 0; i < orderCart.length; i++) {
+          const cartItem = orderCart[i];
+          const item = findOrderItemById(cartItem.ingredientId);
+          if (!item) {
+            continue;
+          }
+          list.appendChild(createOrderCartCard(item, cartItem));
+        }
+        document.getElementById('order_cart_footer').style.display = 'flex';
+      }
+
+      /**
+       * 発注する食材1件分のカードを作る
+       */
+      function createOrderCartCard(item, cartItem) {
+        const card = createOrderElement('div', 'order-cart-card');
+        card.appendChild(createOrderElement('div', 'order-cart-name', item.name));
+
+        const quantityBox = createOrderElement('div', 'order-cart-quantity');
+        const minusBtn = createOrderElement('button', 'order-step-btn', '−');
+        minusBtn.type = 'button';
+        minusBtn.setAttribute('aria-label', item.name + 'の数量を減らす');
+        minusBtn.addEventListener('click', function () { changeOrderQuantity(item.id, -1); });
+        quantityBox.appendChild(minusBtn);
+
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.className = 'order-quantity-input';
+        input.min = '0';
+        input.step = '0.1';
+        input.value = String(cartItem.quantity);
+        input.setAttribute('aria-label', item.name + 'の数量');
+        input.addEventListener('change', function () { setOrderQuantity(item.id, this.value); });
+        quantityBox.appendChild(input);
+
+        const plusBtn = createOrderElement('button', 'order-step-btn', '＋');
+        plusBtn.type = 'button';
+        plusBtn.setAttribute('aria-label', item.name + 'の数量を増やす');
+        plusBtn.addEventListener('click', function () { changeOrderQuantity(item.id, 1); });
+        quantityBox.appendChild(plusBtn);
+
+        quantityBox.appendChild(createOrderElement('span', 'order-cart-unit', item.unit));
+        card.appendChild(quantityBox);
+
+        // 業者は食材マスタの設定から自動で決まる。押すとその業者の詳細を開く
+        const vendorBox = createOrderElement('div', 'order-cart-vendor');
+        vendorBox.appendChild(document.createTextNode('業者：'));
+        if (item.vendorId === '') {
+          vendorBox.appendChild(document.createTextNode('未設定'));
+        } else {
+          vendorBox.appendChild(createOrderLinkButton(item.vendorName, function () {
+            openOrderVendorDetail(item.vendorId);
+          }));
+        }
+        card.appendChild(vendorBox);
+
+        const removeBtn = createOrderElement('button', 'order-remove-btn', '削除');
+        removeBtn.type = 'button';
+        removeBtn.addEventListener('click', function () { removeOrderCartItem(item.id); });
+        card.appendChild(removeBtn);
+        return card;
+      }
+
+      /**
+       * 「この業者へ発注」で絞り込んでいるときの案内を出す
+       */
+      function renderOrderCartFilter() {
+        const box = document.getElementById('order_cart_filter');
+        box.innerHTML = '';
+        const vendor = orderVendorFilterId === '' ? null : findOrderVendorById(orderVendorFilterId);
+        if (!vendor) {
+          box.style.display = 'none';
+          return;
+        }
+        box.appendChild(createOrderElement('span', '', vendor.name + ' の取扱食材から追加できます'));
+        box.appendChild(createOrderLinkButton('絞り込みを解除', function () {
+          orderVendorFilterId = '';
+          renderOrderCart();
+        }));
+        box.style.display = 'flex';
+      }
+
+      /**
+       * 発注する食材を1件追加する（すでにあるときは数量を1つ増やす）
+       * @param {string} ingredientId 食材ID
+       * @return {void} 戻り値なし
+       */
+      function addOrderCartItem(ingredientId) {
+        const item = findOrderItemById(ingredientId);
+        if (!item) {
+          return;
+        }
+        const cartItem = findOrderCartItem(ingredientId);
+        if (cartItem) {
+          changeOrderQuantity(ingredientId, 1);
+        } else {
+          orderCart.push({ 'ingredientId': ingredientId, 'quantity': 1 });
+        }
+        if (orderView === 'cart') {
+          renderOrderCart();
+        }
+      }
+
+      /**
+       * ＋ / − ボタンで数量を変える
+       * 0以下にはしない（やめるときは削除ボタンを使う）
+       */
+      function changeOrderQuantity(ingredientId, delta) {
+        const cartItem = findOrderCartItem(ingredientId);
+        if (!cartItem) {
+          return;
+        }
+        const next = roundOrderQuantity(cartItem.quantity + delta);
+        if (next <= 0 || next > orderBoard.maxQuantity) {
+          return;
+        }
+        cartItem.quantity = next;
+        renderOrderCart();
+      }
+
+      /**
+       * 数量欄に直接入力された値を反映する
+       */
+      function setOrderQuantity(ingredientId, value) {
+        const cartItem = findOrderCartItem(ingredientId);
+        if (!cartItem) {
+          return;
+        }
+        const quantity = roundOrderQuantity(Number(value));
+        if (isFinite(quantity) && quantity > 0 && quantity <= orderBoard.maxQuantity) {
+          cartItem.quantity = quantity;
+        }
+        renderOrderCart(); // 入力できない値だったときは、いまの数量に戻す
+      }
+
+      function removeOrderCartItem(ingredientId) {
+        const kept = [];
+        for (let i = 0; i < orderCart.length; i++) {
+          if (orderCart[i].ingredientId !== ingredientId) {
+            kept.push(orderCart[i]);
+          }
+        }
+        orderCart = kept;
+        renderOrderCart();
+      }
+
+      function clearOrderCart() {
+        orderCart = [];
+        renderOrderCart();
+      }
+
+      // 食材を追加するダイアログ
+
+      /**
+       * 食材を選ぶダイアログを開く
+       * @param {string} vendorId 先に絞り込んでおく業者ID（空文字ならすべての業者）
+       * @return {void} 戻り値なし
+       */
+      function openOrderItemModal(vendorId) {
+        if (!orderBoard) {
+          showOrderMessage('発注の情報を読み込めていません。「更新」を押してください', true);
+          return;
+        }
+        const options = [];
+        for (let i = 0; i < orderBoard.vendors.length; i++) {
+          options.push({ 'value': orderBoard.vendors[i].id, 'label': orderBoard.vendors[i].name });
+        }
+        const selectedVendorId = (vendorId !== undefined && vendorId !== '') ? vendorId : orderVendorFilterId;
+        fillIngredientSelect('order_item_vendor', options, selectedVendorId, 'すべての業者');
+        document.getElementById('order_item_error').textContent = '';
+        renderOrderItemChoices();
+        document.getElementById('order_item_overlay').style.display = 'flex';
+      }
+
+      /**
+       * ダイアログの中に、選べる食材を業者ごとに並べる
+       * @return {void} 戻り値なし
+       */
+      function renderOrderItemChoices() {
+        const container = document.getElementById('order_item_choices');
+        container.innerHTML = '';
+        const vendorId = document.getElementById('order_item_vendor').value;
+
+        let currentGroupName = null;
+        let buttonsBox = null;
+        let shownCount = 0;
+        for (let i = 0; i < orderBoard.items.length; i++) {
+          const item = orderBoard.items[i];
+          if (vendorId !== '' && item.vendorId !== vendorId) {
+            continue;
+          }
+          const groupName = item.vendorId === '' ? '業者が未設定の食材（発注できません）' : item.vendorName;
+          if (groupName !== currentGroupName) {
+            container.appendChild(createOrderElement('div', 'order-item-group-name', groupName));
+            buttonsBox = createOrderElement('div', 'order-item-buttons');
+            container.appendChild(buttonsBox);
+            currentGroupName = groupName;
+          }
+
+          const inCart = findOrderCartItem(item.id);
+          const button = createOrderElement('button', 'order-item-btn' + (inCart ? ' added' : ''),
+            item.name + (inCart ? '（追加済み ' + inCart.quantity + item.unit + '）' : '　' + item.unit));
+          button.type = 'button';
+          if (item.vendorId === '') {
+            button.disabled = true; // 業者が決まっていない食材は、どこへ発注するか判断できないので選べない
+          } else {
+            button.addEventListener('click', function () {
+              addOrderCartItem(item.id);
+              renderOrderItemChoices();
+            });
+          }
+          buttonsBox.appendChild(button);
+          shownCount++;
+        }
+
+        if (shownCount === 0) {
+          container.appendChild(createOrderElement('div', 'order-empty', '選べる食材がありません。'));
+        }
+      }
+
+      // 発注内容確認
+
+      /**
+       * いまの発注内容を業者ごとにまとめ直し、送るメールの内容をサーバーに組み立ててもらう
+       * 確認した内容とそのまま同じメールを送るため、文面は画面では作らない
+       * @return {void} 戻り値なし
+       */
+      function refreshOrderConfirm() {
+        const list = document.getElementById('order_confirm_list');
+        list.innerHTML = '';
+        document.getElementById('order_send_footer').style.display = 'none';
+        orderDrafts = [];
+
+        if (orderCart.length === 0) {
+          showOrderConfirmMessage('発注する食材が選ばれていません。「発注する食材」から追加してください', false);
+          return;
+        }
+        showOrderConfirmMessage('発注内容を作成中...', false);
+
+        const sessionId = loginSessionId;
+        google.script.run
+          .withSuccessHandler(function (result) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
+            showOrderConfirmMessage('', false);
+            renderOrderConfirm(result.drafts);
+          })
+          .withFailureHandler(function (error) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
+            showOrderConfirmMessage('エラー: ' + error.message, true);
+          })
+          .getOrderDrafts({
+            'authToken': authToken,
+            'items': orderCart,
+            'deliveryDate': document.getElementById('order_delivery_date').value,
+            'note': document.getElementById('order_extra_note').value
+          });
+      }
+
+      function showOrderConfirmMessage(message, isError) {
+        const messageEl = document.getElementById('order_confirm_message');
+        messageEl.textContent = message;
+        if (isError) {
+          messageEl.classList.add('error');
+        } else {
+          messageEl.classList.remove('error');
+        }
+      }
+
+      /**
+       * 業者ごとにまとめた発注内容と、送るメールの内容を描く
+       * @param {Array<Object>} drafts サーバーが組み立てた業者ごとの発注メール
+       * @return {void} 戻り値なし
+       */
+      function renderOrderConfirm(drafts) {
+        orderDrafts = drafts;
+        const list = document.getElementById('order_confirm_list');
+        list.innerHTML = '';
+
+        for (let i = 0; i < drafts.length; i++) {
+          list.appendChild(createOrderConfirmCard(drafts[i]));
+        }
+
+        const footer = document.getElementById('order_send_footer');
+        updateOrderSendButton();
+        if (!orderSending) {
+          showOrderSendStatus('', false);
+        }
+        footer.style.display = drafts.length > 0 ? 'flex' : 'none';
+      }
+
+      /**
+       * 業者1社分の確認カードを作る
+       */
+      function createOrderConfirmCard(draft) {
+        const card = createOrderElement('div', 'order-vendor-card');
+
+        const title = createOrderElement('div', 'order-vendor-card-title');
+        title.appendChild(createOrderLinkButton(draft.vendorName, function () {
+          openOrderVendorDetail(draft.vendorId);
+        }));
+        card.appendChild(title);
+
+        const meta = createOrderElement('div', 'order-vendor-meta');
+        meta.appendChild(createOrderElement('div', '', '送信先：' + (draft.to === '' ? '未登録' : draft.to)));
+        if (draft.orderNote !== '') {
+          meta.appendChild(createOrderElement('div', '', '発注時の注意事項：' + draft.orderNote));
+        }
+        card.appendChild(meta);
+
+        const lines = createOrderElement('ul', 'order-line-list');
+        for (let i = 0; i < draft.lines.length; i++) {
+          const li = document.createElement('li');
+          li.appendChild(createOrderElement('span', '', draft.lines[i].name));
+          li.appendChild(createOrderElement('span', 'order-line-quantity', draft.lines[i].quantityText));
+          lines.appendChild(li);
+        }
+        card.appendChild(lines);
+
+        if (draft.appliedRuleTexts.length > 0) {
+          const ruleList = createOrderElement('ul', 'order-rule-list');
+          for (let i = 0; i < draft.appliedRuleTexts.length; i++) {
+            ruleList.appendChild(createOrderElement('li', '', draft.appliedRuleTexts[i]));
+          }
+          card.appendChild(ruleList);
+        }
+
+        card.appendChild(createOrderElement('div', 'order-mail-subject', '件名：' + draft.subject));
+        card.appendChild(createOrderElement('pre', 'order-mail-preview', draft.body));
+
+        if (!draft.canSend) {
+          card.appendChild(createOrderElement('div', 'modal-error', draft.sendBlockReason));
+        }
+        return card;
+      }
+
+      /**
+       * 送信ボタンの文言と押せるかどうかを、いまの状態に合わせる
+       * 例：2業者なら「2社へ発注する」と表示する
+       * @return {void} 戻り値なし
+       */
+      function updateOrderSendButton() {
+        const sendBtn = document.getElementById('order_send_btn');
+        sendBtn.textContent = orderSending ? '送信中...' : (orderDrafts.length + '社へ発注する');
+        sendBtn.disabled = orderSending;
+      }
+
+      function showOrderSendStatus(message, isError) {
+        const statusEl = document.getElementById('order_send_status');
+        statusEl.textContent = message;
+        if (isError) {
+          statusEl.classList.add('error');
+        } else {
+          statusEl.classList.remove('error');
+        }
+      }
+
+      /**
+       * 業者ごとの発注メールを送り、送れた分を発注履歴に保存する
+       * @return {void} 戻り値なし
+       */
+      function submitOrderMails() {
+        if (orderSending || orderDrafts.length === 0) {
+          return; // 送信中の連打は無視する
+        }
+        if (orderSendKey === '') {
+          orderSendKey = createIngredientOperationKey();
+        }
+
+        orderSending = true;
+        updateOrderSendButton();
+        showOrderSendStatus('', false);
+
+        const sessionId = loginSessionId;
+        google.script.run
+          .withSuccessHandler(function (result) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
+            orderSending = false;
+            updateOrderSendButton();
+            orderSendKey = ''; // 送信が終わったので、次の発注では新しい操作キーを使う
+            applyOrderAfterSend(result);
+          })
+          .withFailureHandler(function (error) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
+            orderSending = false;
+            updateOrderSendButton();
+            // 送れていないので発注内容はそのまま残し、同じ操作キーでやり直せるようにする
+            showOrderSendStatus('エラー: ' + error.message, true);
+          })
+          .sendOrderMails({
+            'authToken': authToken,
+            'operationKey': orderSendKey,
+            'items': orderCart,
+            'deliveryDate': document.getElementById('order_delivery_date').value,
+            'note': document.getElementById('order_extra_note').value
+          });
+      }
+
+      /**
+       * 送信結果を画面に反映する
+       * 送れた業者の食材だけを発注一覧から外し、送れなかった分は残す
+       * @param {Object} result サーバーから届いた送信結果
+       * @return {void} 戻り値なし
+       */
+      function applyOrderAfterSend(result) {
+        const detail = result.detail;
+        if (!detail) {
+          // 同じ送信が二重に届いたとき（サーバーはメールを送り直していない）
+          orderCart = [];
+        } else {
+          const keptCart = [];
+          for (let i = 0; i < orderCart.length; i++) {
+            const item = findOrderItemById(orderCart[i].ingredientId);
+            if (item && detail.sentVendorIds.indexOf(item.vendorId) === -1) {
+              keptCart.push(orderCart[i]);
+            }
+          }
+          orderCart = keptCart;
+        }
+
+        const hasFailure = !!(detail && detail.failures && detail.failures.length > 0);
+        applyOrderBoard(result.board);
+        showOrderMessage(result.message, hasFailure);
+
+        if (!hasFailure && orderCart.length === 0) {
+          document.getElementById('order_delivery_date').value = '';
+          document.getElementById('order_extra_note').value = '';
+          changeOrderView('history'); // 保存された発注履歴をそのまま確認できるようにする
+        } else {
+          showOrderSendStatus(result.message, hasFailure);
+        }
+      }
+
+      // 発注履歴
+
+      /**
+       * 発注履歴を新しい順に描く
+       * @return {void} 戻り値なし
+       */
+      function renderOrderHistory() {
+        const list = document.getElementById('order_history_list');
+        list.innerHTML = '';
+        document.getElementById('order_history_message').textContent =
+          '新しい発注が上に表示されます（' + orderBoard.nowText + ' 時点）';
+
+        if (orderBoard.history.length === 0) {
+          list.appendChild(createOrderElement('div', 'order-empty', '発注の記録はまだありません。'));
+          return;
+        }
+        for (let i = 0; i < orderBoard.history.length; i++) {
+          list.appendChild(createOrderHistoryCard(orderBoard.history[i]));
+        }
+      }
+
+      /**
+       * 発注履歴1件分のカードを作る
+       */
+      function createOrderHistoryCard(history) {
+        const card = createOrderElement('div', 'order-history-card');
+
+        const head = createOrderElement('div', 'order-history-head');
+        head.appendChild(createOrderElement('span', 'order-history-date', history.orderedAtLabel));
+        if (history.vendorId === '') {
+          head.appendChild(createOrderElement('span', '', history.vendorName));
+        } else {
+          head.appendChild(createOrderLinkButton(history.vendorName, function () {
+            openOrderVendorDetail(history.vendorId);
+          }));
+        }
+        head.appendChild(createOrderElement('span', 'order-history-tag', history.channelText));
+        card.appendChild(head);
+
+        const lines = createOrderElement('ul', 'order-line-list');
+        for (let i = 0; i < history.lines.length; i++) {
+          const li = document.createElement('li');
+          li.appendChild(createOrderElement('span', '', history.lines[i].name));
+          li.appendChild(createOrderElement('span', 'order-line-quantity', history.lines[i].quantityText));
+          lines.appendChild(li);
+        }
+        card.appendChild(lines);
+
+        const meta = createOrderElement('div', 'order-history-meta');
+        meta.appendChild(createOrderElement('div', '', '発注日時：' + history.orderedAt));
+        meta.appendChild(createOrderElement('div', '', '発注者：' + (history.orderedBy === '' ? '記録なし' : history.orderedBy)));
+        if (history.mailTo !== '') {
+          meta.appendChild(createOrderElement('div', '', '送信先：' + history.mailTo));
+        }
+        if (history.expectedDate !== '') {
+          meta.appendChild(createOrderElement('div', '', '入荷予定日：' + history.expectedDate));
+        }
+        meta.appendChild(createOrderElement('div', '', '状態：' + history.statusTexts.join('・')));
+        card.appendChild(meta);
+        return card;
+      }
+
+      // 業者詳細
+
+      /**
+       * 業者一覧か、選んだ業者の詳細のどちらかを出す
+       * @return {void} 戻り値なし
+       */
+      function renderOrderVendor() {
+        const listEl = document.getElementById('order_vendor_list');
+        const detailEl = document.getElementById('order_vendor_detail');
+        const vendor = orderSelectedVendorId === '' ? null : findOrderVendorById(orderSelectedVendorId);
+
+        if (vendor) {
+          listEl.style.display = 'none';
+          detailEl.style.display = 'block';
+          document.getElementById('order_vendor_heading').textContent = '業者詳細';
+          document.getElementById('order_vendor_message').textContent = '';
+          renderOrderVendorDetail(vendor);
+          return;
+        }
+
+        detailEl.style.display = 'none';
+        listEl.style.display = 'flex';
+        document.getElementById('order_vendor_heading').textContent = '業者詳細';
+        document.getElementById('order_vendor_message').textContent = '業者を選ぶと、連絡先と発注の条件を表示します';
+        renderOrderVendorList();
+      }
+
+      function renderOrderVendorList() {
+        const listEl = document.getElementById('order_vendor_list');
+        listEl.innerHTML = '';
+        if (orderBoard.vendors.length === 0) {
+          listEl.appendChild(createOrderElement('div', 'order-empty',
+            '業者が登録されていません。「業者・発注条件」から登録してください。'));
+          return;
+        }
+        for (let i = 0; i < orderBoard.vendors.length; i++) {
+          const vendor = orderBoard.vendors[i];
+          const tile = createOrderElement('button', 'order-vendor-tile');
+          tile.type = 'button';
+          tile.appendChild(createOrderElement('div', 'order-vendor-tile-name', vendor.name));
+          const meta = createOrderElement('div', 'order-vendor-tile-meta');
+          meta.appendChild(createOrderElement('div', '', '電話：' + (vendor.phone === '' ? '未登録' : vendor.phone)));
+          meta.appendChild(createOrderElement('div', '', '主な取扱商品：' + (vendor.mainItems === '' ? '未登録' : vendor.mainItems)));
+          tile.appendChild(meta);
+          tile.addEventListener('click', function () { openOrderVendorDetail(vendor.id); });
+          listEl.appendChild(tile);
+        }
+      }
+
+      /**
+       * 業者詳細を開く（ほかの表示から業者名を押したときにも使う）
+       * @param {string} vendorId 業者ID
+       * @return {void} 戻り値なし
+       */
+      function openOrderVendorDetail(vendorId) {
+        orderSelectedVendorId = vendorId;
+        orderVendorItemsOpen = false;
+        changeOrderView('vendor');
+      }
+
+      /**
+       * 選んだ業者の詳細・取扱食材・直近の発注を描く
+       * @param {Object} vendor 業者
+       * @return {void} 戻り値なし
+       */
+      function renderOrderVendorDetail(vendor) {
+        const container = document.getElementById('order_vendor_detail');
+        container.innerHTML = '';
+        container.appendChild(createOrderElement('h4', 'order-view-heading', vendor.name));
+
+        const actions = createOrderElement('div', 'order-detail-actions');
+        const backBtn = createOrderElement('button', 'ingredient-action-btn ingredient-action-sub', '業者一覧へ戻る');
+        backBtn.type = 'button';
+        backBtn.addEventListener('click', function () {
+          orderSelectedVendorId = '';
+          renderOrderVendor();
+        });
+        actions.appendChild(backBtn);
+
+        const orderBtn = createOrderElement('button', 'ingredient-action-btn', 'この業者へ発注');
+        orderBtn.type = 'button';
+        orderBtn.addEventListener('click', function () { startOrderForVendor(vendor.id); });
+        actions.appendChild(orderBtn);
+
+        const itemsBtn = createOrderElement('button', 'ingredient-action-btn ingredient-action-sub',
+          orderVendorItemsOpen ? '取扱食材を閉じる' : '取扱食材を見る');
+        itemsBtn.type = 'button';
+        itemsBtn.addEventListener('click', function () {
+          orderVendorItemsOpen = !orderVendorItemsOpen;
+          renderOrderVendorDetail(vendor);
+        });
+        actions.appendChild(itemsBtn);
+        container.appendChild(actions);
+
+        container.appendChild(createOrderVendorDetailGrid(vendor));
+
+        if (orderVendorItemsOpen) {
+          container.appendChild(createOrderElement('h4', 'order-subheading', '取扱食材'));
+          container.appendChild(createOrderVendorItemList(vendor));
+        }
+
+        container.appendChild(createOrderElement('h4', 'order-subheading', '直近の発注'));
+        container.appendChild(createOrderVendorRecentHistory(vendor));
+      }
+
+      /**
+       * 業者の登録内容を表にする（未登録の項目は「未登録」と出し、推測で埋めない）
+       */
+      function createOrderVendorDetailGrid(vendor) {
+        const rows = [
+          ['業者名', vendor.name],
+          ['住所', vendor.address],
+          ['電話番号', vendor.phone],
+          ['メールアドレス', vendor.email],
+          ['発注メールの送信先', vendor.mailToText],
+          ['営業時間', vendor.businessHours],
+          ['定休日', vendor.closedDays],
+          ['発注締切', vendor.deadlineText],
+          ['通常納品日数', vendor.leadTimeText],
+          ['配送曜日', vendor.deliveryDaysText],
+          ['主な取扱商品', vendor.mainItems],
+          ['発注時の注意事項', vendor.orderNote],
+          ['備考', vendor.note]
+        ];
+        const grid = createOrderElement('div', 'order-detail-grid');
+        for (let i = 0; i < rows.length; i++) {
+          grid.appendChild(createOrderElement('div', 'order-detail-label', rows[i][0]));
+          const hasValue = (rows[i][1] !== undefined && rows[i][1] !== null && rows[i][1] !== '');
+          grid.appendChild(createOrderElement('div', 'order-detail-value' + (hasValue ? '' : ' unset'),
+            hasValue ? rows[i][1] : '未登録'));
+        }
+        return grid;
+      }
+
+      /**
+       * その業者に紐付いている食材の一覧を作る
+       */
+      function createOrderVendorItemList(vendor) {
+        const box = createOrderElement('div', 'order-item-buttons');
+        let count = 0;
+        for (let i = 0; i < orderBoard.items.length; i++) {
+          const item = orderBoard.items[i];
+          if (item.vendorId !== vendor.id) {
+            continue;
+          }
+          const inCart = findOrderCartItem(item.id);
+          const button = createOrderElement('button', 'order-item-btn' + (inCart ? ' added' : ''),
+            item.name + '　' + item.unit + (item.productCode === '' ? '' : '（' + item.productCode + '）'));
+          button.type = 'button';
+          button.addEventListener('click', function () {
+            addOrderCartItem(item.id);
+            renderOrderVendorDetail(vendor);
+          });
+          box.appendChild(button);
+          count++;
+        }
+        if (count === 0) {
+          return createOrderElement('div', 'order-empty',
+            'この業者に紐付いた食材がありません。「業者・発注条件」で食材に業者を設定してください。');
+        }
+        return box;
+      }
+
+      /**
+       * その業者への直近の発注を作る
+       */
+      function createOrderVendorRecentHistory(vendor) {
+        const box = createOrderElement('div', 'order-history-list');
+        let count = 0;
+        for (let i = 0; i < orderBoard.history.length; i++) {
+          const history = orderBoard.history[i];
+          if (history.vendorId !== vendor.id || count >= orderBoard.recentHistoryCount) {
+            continue;
+          }
+          box.appendChild(createOrderHistoryCard(history));
+          count++;
+        }
+        if (count === 0) {
+          return createOrderElement('div', 'order-empty', 'この業者への発注の記録はまだありません。');
+        }
+        return box;
+      }
+
+      /**
+       * 業者詳細から発注へ移る
+       * その業者の食材だけを選べる状態にして、食材を追加するダイアログを開く
+       * @param {string} vendorId 業者ID
+       * @return {void} 戻り値なし
+       */
+      function startOrderForVendor(vendorId) {
+        orderVendorFilterId = vendorId;
+        changeOrderView('cart');
+        openOrderItemModal(vendorId);
+      }
+
+      // 業者・発注条件の設定
+      // 発注に必要なマスタ（業者の連絡先・発注条件と、食材の業者・発注単位・商品コード）だけを編集する
+
+      // 業者と食材は別々の保存なので、操作キーもそれぞれ用意する
+      const orderSettingKeys = {};
+
+      /**
+       * 「業者・発注条件の設定」ダイアログを開く
+       * 開くたびに新しい操作キーを作り、保存が成功するまでは同じキーを使い続ける
+       * @return {void} 戻り値なし
+       */
+      function openOrderSettingModal() {
+        if (!orderBoard) {
+          showOrderMessage('発注の情報を読み込めていません。「更新」を押してください', true);
+          return;
+        }
+        orderSettingKeys.supplier = createIngredientOperationKey();
+        orderSettingKeys.master = createIngredientOperationKey();
+
+        const settings = orderBoard.settings;
+        buildOrderWeekdayCheckboxes('supplier_order_days');
+        buildOrderWeekdayCheckboxes('supplier_ship_days');
+        buildOrderWeekdayCheckboxes('supplier_delivery_days');
+        buildOrderWeekdayCheckboxes('supplier_pickup_days');
+        fillIngredientSelect('supplier_lead_count', toOrderOptions(settings.leadTimeCounts), '営業日', '');
+        fillIngredientSelect('master_order_unit', toOrderOptions(settings.orderUnits), '', '発注単位を設定しない');
+        refreshOrderSettingSelects();
+        document.getElementById('supplier_error').textContent = '';
+        document.getElementById('master_error').textContent = '';
+        document.getElementById('order_setting_overlay').style.display = 'flex';
+      }
+
       /**
        * 値と表示が同じ選択肢の配列を作る
        */
-      function toIngredientOptions(values) {
+      function toOrderOptions(values) {
         const options = [];
         for (let i = 0; i < values.length; i++) {
           options.push({ 'value': values[i], 'label': values[i] });
@@ -2266,74 +3797,9 @@
       }
 
       /**
-       * 食材マスタの選択肢を作る
-       * @param {string} category '原材料' か '仕込み済み'。空文字ならすべて
+       * 未入力なら保存せずにエラーにする
        */
-      function getIngredientMasterOptions(category) {
-        const options = [];
-        for (let i = 0; i < ingredientBoard.masters.length; i++) {
-          const master = ingredientBoard.masters[i];
-          if (!master.active) {
-            continue;
-          }
-          if (category !== '' && master.category !== category) {
-            continue;
-          }
-          options.push({ 'value': master.id, 'label': master.name });
-        }
-        return options;
-      }
-
-      function findIngredientMasterById(ingredientId) {
-        for (let i = 0; i < ingredientBoard.masters.length; i++) {
-          if (ingredientBoard.masters[i].id === ingredientId) {
-            return ingredientBoard.masters[i];
-          }
-        }
-        return null;
-      }
-
-      function findIngredientSupplierById(supplierId) {
-        for (let i = 0; i < ingredientBoard.suppliers.length; i++) {
-          if (ingredientBoard.suppliers[i].id === supplierId) {
-            return ingredientBoard.suppliers[i];
-          }
-        }
-        return null;
-      }
-
-      /**
-       * 食材を選び直したとき、その食材の既定単位を単位のselectに反映する
-       */
-      function applyIngredientDefaultUnit(ingredientSelectId, unitSelectId) {
-        const master = findIngredientMasterById(document.getElementById(ingredientSelectId).value);
-        if (master && master.defaultUnit !== '') {
-          document.getElementById(unitSelectId).value = master.defaultUnit;
-        }
-      }
-
-      // 入力欄で使う日付・日時の文字列を作る（ブラウザの表示は端末の時計、保存時はGAS側で日本時間として扱う）
-      function formatIngredientInputDate(date) {
-        const pad = function (n) { return ('0' + n).slice(-2); };
-        return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
-      }
-
-      function formatIngredientInputDateTime(date) {
-        const pad = function (n) { return ('0' + n).slice(-2); };
-        return formatIngredientInputDate(date) + 'T' + pad(date.getHours()) + ':' + pad(date.getMinutes());
-      }
-
-      /**
-       * 日時の入力欄に「いま」を入れる（過去の日時に直すこともできる）
-       */
-      function setIngredientNow(inputId) {
-        document.getElementById(inputId).value = formatIngredientInputDateTime(new Date());
-      }
-
-      /**
-       * 入力必須の項目が空でないかを確かめる
-       */
-      function requireIngredientValue(inputId, label) {
+      function requireOrderValue(inputId, label) {
         const value = document.getElementById(inputId).value;
         if (value === '' || value === null) {
           throw new Error(label + 'を入力してください');
@@ -2341,586 +3807,52 @@
         return value;
       }
 
-      // 入荷を記録
-
-      function openIngredientReceiveModal() {
-        if (!openIngredientModal('ingredient_receive_overlay', 'receive')) {
-          return;
-        }
-        const pendingOrders = [];
-        for (let i = 0; i < ingredientBoard.orders.length; i++) {
-          const order = ingredientBoard.orders[i];
-          if (order.status === '発注済み') {
-            pendingOrders.push({
-              'value': order.id,
-              'label': order.name + ' ' + order.quantity + order.unit +
-                '（入荷予定 ' + (order.expectedDate === '' ? '未設定' : order.expectedDate) + '）'
-            });
-          }
-        }
-        fillIngredientSelect('receive_order', pendingOrders, '', '発注と結び付けない');
-        fillIngredientSelect('receive_ingredient', getIngredientMasterOptions(''), '', '食材を選んでください');
-        fillIngredientSelect('receive_unit', toIngredientOptions(ingredientBoard.units), '', '');
-        fillIngredientSelect('receive_expiry_kind', toIngredientOptions(ingredientBoard.expiryKinds), '表示期限', '');
-        document.getElementById('receive_quantity').value = '';
-        document.getElementById('receive_date').value = formatIngredientInputDate(new Date());
-        document.getElementById('receive_storage').value = '冷蔵';
-        document.getElementById('receive_expiry_date').value = '';
-        document.getElementById('receive_note').value = '';
-        document.getElementById('receive_error').textContent = '';
-        toggleIngredientExpiryDateInput();
-      }
-
       /**
-       * 期限の種類が「不明」のときは期限日を入力できないようにする
+       * 設定ダイアログの「編集する業者」「編集する食材」の選択肢を作り直す
+       * @return {void} 戻り値なし
        */
-      function toggleIngredientExpiryDateInput() {
-        const isUnknown = (document.getElementById('receive_expiry_kind').value === '不明');
-        const dateInput = document.getElementById('receive_expiry_date');
-        dateInput.disabled = isUnknown;
-        if (isUnknown) {
-          dateInput.value = '';
-        }
-      }
+      function refreshOrderSettingSelects() {
+        const settings = orderBoard.settings;
 
-      /**
-       * 発注済みを選んだとき、食材・数量・単位を入荷の入力欄に写す
-       */
-      function applyIngredientOrderToReceiveForm() {
-        const orderId = document.getElementById('receive_order').value;
-        if (orderId === '') {
-          return;
-        }
-        for (let i = 0; i < ingredientBoard.orders.length; i++) {
-          const order = ingredientBoard.orders[i];
-          if (order.id !== orderId) {
-            continue;
-          }
-          document.getElementById('receive_ingredient').value = order.ingredientId;
-          document.getElementById('receive_quantity').value = order.quantity;
-          document.getElementById('receive_unit').value = order.unit;
-          return;
-        }
-      }
-
-      function submitIngredientReceive() {
-        runIngredientSave({
-          'overlayId': 'ingredient_receive_overlay',
-          'errorId': 'receive_error',
-          'submitBtnId': 'receive_submit_btn',
-          'keyName': 'receive',
-          'method': 'saveIngredientReceive',
-          'buildPayload': function () {
-            return {
-              'ingredientId': requireIngredientValue('receive_ingredient', '食材'),
-              'quantity': requireIngredientValue('receive_quantity', '数量'),
-              'unit': document.getElementById('receive_unit').value,
-              'receivedDate': requireIngredientValue('receive_date', '入荷日'),
-              'storageState': document.getElementById('receive_storage').value,
-              'expiryKind': document.getElementById('receive_expiry_kind').value,
-              'expiryDate': document.getElementById('receive_expiry_date').value,
-              'note': document.getElementById('receive_note').value,
-              'orderId': document.getElementById('receive_order').value
-            };
-          }
-        });
-      }
-
-      // 仕込みを記録
-
-      function openIngredientPrepModal() {
-        if (!openIngredientModal('ingredient_prep_overlay', 'prep')) {
-          return;
-        }
-        fillIngredientSelect('prep_ingredient', getIngredientMasterOptions('仕込み済み'), '', '仕込み品を選んでください');
-        fillIngredientSelect('prep_unit', toIngredientOptions(ingredientBoard.units), '', '');
-        document.getElementById('prep_quantity').value = '';
-        document.getElementById('prep_prepared_at').value = formatIngredientInputDateTime(new Date());
-        document.getElementById('prep_prepared_unknown').checked = false;
-        document.getElementById('prep_use_by').value = '';
-        document.getElementById('prep_storage').value = '冷蔵';
-        document.getElementById('prep_note').value = '';
-        document.getElementById('prep_error').textContent = '';
-        document.getElementById('prep_consume_tbody').innerHTML = '';
-        toggleIngredientPreparedUnknown();
-      }
-
-      /**
-       * 仕込み日時が「不明」のときは日時の入力欄を使えないようにする
-       */
-      function toggleIngredientPreparedUnknown() {
-        const isUnknown = document.getElementById('prep_prepared_unknown').checked;
-        document.getElementById('prep_prepared_at').disabled = isUnknown;
-      }
-
-      /**
-       * 仕込みで使った原材料の行を1行増やす
-       */
-      function addIngredientConsumeRow() {
-        const tbody = document.getElementById('prep_consume_tbody');
-        const row = document.createElement('tr');
-
-        const lotCell = document.createElement('td');
-        const select = document.createElement('select');
-        select.className = 'ingredient-consume-lot';
-        const emptyOption = document.createElement('option');
-        emptyOption.value = '';
-        emptyOption.textContent = '原材料の明細を選んでください';
-        select.appendChild(emptyOption);
-        for (let i = 0; i < ingredientBoard.lots.length; i++) {
-          const lot = ingredientBoard.lots[i];
-          if (lot.category !== '原材料' || lot.status !== '有効') {
-            continue;
-          }
-          const option = document.createElement('option');
-          option.value = lot.id;
-          option.textContent = lot.name + '（' + lot.quantityText + '・' + lot.storageState + '）';
-          select.appendChild(option);
-        }
-        lotCell.appendChild(select);
-        row.appendChild(lotCell);
-
-        const remainCell = document.createElement('td');
-        const remainInput = document.createElement('input');
-        remainInput.type = 'number';
-        remainInput.className = 'ingredient-consume-remain';
-        remainInput.step = '0.01';
-        remainInput.min = '0';
-        remainCell.appendChild(remainInput);
-        const unitLabel = document.createElement('span');
-        unitLabel.className = 'modal-unit';
-        remainCell.appendChild(unitLabel);
-        select.addEventListener('change', function () {
-          const lot = findIngredientLotById(select.value);
-          unitLabel.textContent = lot ? lot.unit : '';
-        });
-        row.appendChild(remainCell);
-
-        const actionCell = document.createElement('td');
-        const deleteBtn = document.createElement('button');
-        deleteBtn.type = 'button';
-        deleteBtn.className = 'shift-delete-btn';
-        deleteBtn.textContent = '削除';
-        deleteBtn.addEventListener('click', function () {
-          tbody.removeChild(row);
-        });
-        actionCell.appendChild(deleteBtn);
-        row.appendChild(actionCell);
-
-        tbody.appendChild(row);
-      }
-
-      /**
-       * 仕込みで使った原材料の入力内容を集める
-       */
-      function collectIngredientConsumptions() {
-        const consumptions = [];
-        const rows = document.getElementById('prep_consume_tbody').querySelectorAll('tr');
-        for (let i = 0; i < rows.length; i++) {
-          const lotId = rows[i].querySelector('.ingredient-consume-lot').value;
-          const remaining = rows[i].querySelector('.ingredient-consume-remain').value;
-          if (lotId === '' && remaining === '') {
-            continue;
-          }
-          if (lotId === '') {
-            throw new Error('使った原材料の明細を選んでください');
-          }
-          if (remaining === '') {
-            throw new Error('使った原材料の「仕込み後の残量」を入力してください');
-          }
-          const lot = findIngredientLotById(lotId);
-          consumptions.push({
-            'lotId': lotId,
-            'version': lot ? lot.version : '',
-            'remainingQuantity': remaining
-          });
-        }
-        return consumptions;
-      }
-
-      function submitIngredientPrep() {
-        runIngredientSave({
-          'overlayId': 'ingredient_prep_overlay',
-          'errorId': 'prep_error',
-          'submitBtnId': 'prep_submit_btn',
-          'keyName': 'prep',
-          'method': 'saveIngredientPrep',
-          'buildPayload': function () {
-            const isUnknown = document.getElementById('prep_prepared_unknown').checked;
-            return {
-              'ingredientId': requireIngredientValue('prep_ingredient', '仕込み品'),
-              'quantity': requireIngredientValue('prep_quantity', '仕込んだ数量'),
-              'unit': document.getElementById('prep_unit').value,
-              'preparedAt': isUnknown ? '' : requireIngredientValue('prep_prepared_at', '仕込んだ日時'),
-              'preparedAtUnknown': isUnknown,
-              'useByDate': document.getElementById('prep_use_by').value,
-              'storageState': document.getElementById('prep_storage').value,
-              'note': document.getElementById('prep_note').value,
-              'consumptions': collectIngredientConsumptions()
-            };
-          }
-        });
-      }
-
-      // 残量の更新
-
-      function openIngredientAmountModal(lotId) {
-        if (!openIngredientModal('ingredient_amount_overlay', 'amount')) {
-          return;
-        }
-        ingredientTargetLot = findIngredientLotById(lotId);
-        document.getElementById('amount_target').textContent =
-          ingredientTargetLot.name + '（現在 ' + ingredientTargetLot.quantityText + '・' + ingredientTargetLot.storageState + '）';
-        document.getElementById('amount_quantity').value = ingredientTargetLot.quantity;
-        document.getElementById('amount_unit').textContent = ingredientTargetLot.unit;
-        document.getElementById('amount_finish').checked = false;
-        document.getElementById('amount_error').textContent = '';
-      }
-
-      function submitIngredientAmount() {
-        runIngredientSave({
-          'overlayId': 'ingredient_amount_overlay',
-          'errorId': 'amount_error',
-          'submitBtnId': 'amount_submit_btn',
-          'keyName': 'amount',
-          'method': 'saveIngredientAmount',
-          'buildPayload': function () {
-            return {
-              'lotId': ingredientTargetLot.id,
-              'version': ingredientTargetLot.version,
-              'quantity': requireIngredientValue('amount_quantity', '現在のおおよその残量'),
-              'finish': document.getElementById('amount_finish').checked
-            };
-          }
-        });
-      }
-
-      // 冷凍に移す（脂の取り分けも同じ画面から記録する）
-
-      function openIngredientFreezeModal(lotId) {
-        if (!openIngredientModal('ingredient_freeze_overlay', 'freeze')) {
-          return;
-        }
-        ingredientTargetLot = findIngredientLotById(lotId);
-        document.getElementById('freeze_target').textContent =
-          ingredientTargetLot.name + '（現在 ' + ingredientTargetLot.quantityText + '・' + ingredientTargetLot.storageState + '）';
-        document.querySelector('input[name="freeze_mode"][value="lot"]').checked = true;
-        document.getElementById('freeze_quantity').value = '';
-        document.getElementById('freeze_unit').textContent = ingredientTargetLot.unit;
-        document.getElementById('freeze_source_unit').textContent = ingredientTargetLot.unit;
-        document.getElementById('freeze_fat_quantity').value = '';
-        document.getElementById('freeze_source_remaining').value = '';
-        fillIngredientSelect('freeze_fat_unit', toIngredientOptions(ingredientBoard.units), ingredientTargetLot.unit, '');
-        document.getElementById('freeze_frozen_at').value = formatIngredientInputDateTime(new Date());
-        document.getElementById('freeze_use_by').value = '';
-        document.getElementById('freeze_error').textContent = '';
-        toggleIngredientFreezeMode();
-      }
-
-      /**
-       * 「この食材を冷凍する」と「脂を取り分けて冷凍する」で入力欄を切り替える
-       */
-      function toggleIngredientFreezeMode() {
-        const isFat = (document.querySelector('input[name="freeze_mode"]:checked').value === 'fat');
-        document.getElementById('freeze_lot_fields').style.display = isFat ? 'none' : 'block';
-        document.getElementById('freeze_fat_fields').style.display = isFat ? 'block' : 'none';
-      }
-
-      /**
-       * 冷凍する量に在庫の全量を入れる
-       */
-      function setIngredientFreezeAll() {
-        document.getElementById('freeze_quantity').value = ingredientTargetLot.quantity;
-      }
-
-      function submitIngredientFreeze() {
-        const isFat = (document.querySelector('input[name="freeze_mode"]:checked').value === 'fat');
-        runIngredientSave({
-          'overlayId': 'ingredient_freeze_overlay',
-          'errorId': 'freeze_error',
-          'submitBtnId': 'freeze_submit_btn',
-          'keyName': 'freeze',
-          'method': isFat ? 'saveIngredientFat' : 'saveIngredientFreeze',
-          'buildPayload': function () {
-            const payload = {
-              'lotId': ingredientTargetLot.id,
-              'version': ingredientTargetLot.version,
-              'frozenAt': requireIngredientValue('freeze_frozen_at', '冷凍した日時'),
-              'useByDate': document.getElementById('freeze_use_by').value
-            };
-            if (isFat) {
-              payload.fatQuantity = requireIngredientValue('freeze_fat_quantity', '脂の量');
-              payload.fatUnit = document.getElementById('freeze_fat_unit').value;
-              payload.sourceRemainingQuantity = requireIngredientValue('freeze_source_remaining', '取り分けたあとの元の食材の残量');
-            } else {
-              payload.quantity = requireIngredientValue('freeze_quantity', '冷凍する量');
-            }
-            return payload;
-          }
-        });
-      }
-
-      // 解凍（開始と完了）
-
-      function openIngredientThawModal(lotId) {
-        if (!openIngredientModal('ingredient_thaw_overlay', 'thaw')) {
-          return;
-        }
-        ingredientTargetLot = findIngredientLotById(lotId);
-        document.getElementById('thaw_target').textContent =
-          ingredientTargetLot.name + '（現在 ' + ingredientTargetLot.quantityText + '・' + ingredientTargetLot.storageState + '）';
-
-        const isFrozen = (ingredientTargetLot.storageState === '冷凍');
-        // 冷凍中なら「開始」、解凍中なら「完了」しか記録できないようにする
-        document.getElementById('thaw_mode_start').checked = isFrozen;
-        document.getElementById('thaw_mode_start').disabled = !isFrozen;
-        document.getElementById('thaw_mode_complete').checked = !isFrozen;
-        document.getElementById('thaw_mode_complete').disabled = isFrozen;
-
-        document.getElementById('thaw_quantity').value = '';
-        document.getElementById('thaw_unit').textContent = ingredientTargetLot.unit;
-        document.getElementById('thaw_started_at').value = formatIngredientInputDateTime(new Date());
-        document.getElementById('thaw_completed_at').value = formatIngredientInputDateTime(new Date());
-        document.getElementById('thaw_use_by').value = ingredientTargetLot.useByDate === ''
-          ? '' : ingredientTargetLot.useByDate.replace(/\//g, '-');
-        document.getElementById('thaw_error').textContent = '';
-        toggleIngredientThawMode();
-      }
-
-      /**
-       * 「解凍を開始する」と「解凍の完了を記録する」で入力欄を切り替える
-       */
-      function toggleIngredientThawMode() {
-        const isStart = document.getElementById('thaw_mode_start').checked;
-        document.getElementById('thaw_start_fields').style.display = isStart ? 'block' : 'none';
-        document.getElementById('thaw_complete_fields').style.display = isStart ? 'none' : 'block';
-      }
-
-      function setIngredientThawAll() {
-        document.getElementById('thaw_quantity').value = ingredientTargetLot.quantity;
-      }
-
-      function submitIngredientThaw() {
-        const isStart = document.getElementById('thaw_mode_start').checked;
-        runIngredientSave({
-          'overlayId': 'ingredient_thaw_overlay',
-          'errorId': 'thaw_error',
-          'submitBtnId': 'thaw_submit_btn',
-          'keyName': 'thaw',
-          'method': isStart ? 'saveIngredientThawStart' : 'saveIngredientThawComplete',
-          'buildPayload': function () {
-            const payload = {
-              'lotId': ingredientTargetLot.id,
-              'version': ingredientTargetLot.version,
-              'useByDate': document.getElementById('thaw_use_by').value
-            };
-            if (isStart) {
-              payload.quantity = requireIngredientValue('thaw_quantity', '解凍する量');
-              payload.startedAt = requireIngredientValue('thaw_started_at', '解凍を開始した日時');
-            } else {
-              payload.completedAt = requireIngredientValue('thaw_completed_at', '解凍が完了した日時');
-            }
-            return payload;
-          }
-        });
-      }
-
-      // 明細の詳細（記録されている内容の確認と、使用期限の設定）
-
-      function openIngredientDetailModal(lotId) {
-        if (!openIngredientModal('ingredient_detail_overlay', 'detail')) {
-          return;
-        }
-        ingredientTargetLot = findIngredientLotById(lotId);
-        const lot = ingredientTargetLot;
-
-        const rows = [
-          ['食材名', lot.name],
-          ['区分', lot.category],
-          ['残量の目安', lot.quantityText],
-          ['保存状態', lot.storageState],
-          ['いま管理している期限', lot.expiry.label],
-          ['ラベルの期限', lot.labelExpiryDate === '' ? '未登録' : (lot.labelExpiryKind + ' ' + lot.labelExpiryDate)],
-          ['店舗で決めた使用期限', lot.useByDate === '' ? '未設定（要確認）' : lot.useByDate],
-          ['入荷日', lot.receivedDate],
-          ['仕込み日時', lot.preparedAtText],
-          ['冷凍した日時', lot.frozenText],
-          ['解凍開始日時', lot.thawStartedAt],
-          ['解凍完了日時', lot.thawCompletedAt],
-          ['分割元の在庫ID', lot.sourceLotId],
-          ['最終確認', lot.checkedAt + (lot.checkedBy === '' ? '' : '（' + lot.checkedBy + '）')],
-          ['備考', lot.note],
-          ['確認事項', lot.issues.length === 0 ? '特になし' : lot.issues.join(' / ')]
-        ];
-
-        const list = document.getElementById('detail_list');
-        list.innerHTML = '';
-        for (let i = 0; i < rows.length; i++) {
-          const term = document.createElement('dt');
-          term.textContent = rows[i][0];
-          list.appendChild(term);
-          const description = document.createElement('dd');
-          description.textContent = (rows[i][1] === '' || rows[i][1] === undefined) ? '-' : rows[i][1];
-          list.appendChild(description);
-        }
-
-        document.getElementById('detail_use_by').value = lot.useByDate === '' ? '' : lot.useByDate.replace(/\//g, '-');
-        document.getElementById('detail_note').value = lot.note;
-        document.getElementById('detail_error').textContent = '';
-      }
-
-      function submitIngredientUseBy() {
-        runIngredientSave({
-          'overlayId': 'ingredient_detail_overlay',
-          'errorId': 'detail_error',
-          'submitBtnId': 'detail_submit_btn',
-          'keyName': 'detail',
-          'method': 'saveIngredientUseBy',
-          'buildPayload': function () {
-            return {
-              'lotId': ingredientTargetLot.id,
-              'version': ingredientTargetLot.version,
-              'useByDate': document.getElementById('detail_use_by').value,
-              'note': document.getElementById('detail_note').value
-            };
-          }
-        });
-      }
-
-      // 発注の記録
-
-      function openIngredientOrderModal() {
-        if (!openIngredientModal('ingredient_order_overlay', 'order')) {
-          return;
-        }
         const supplierOptions = [];
-        for (let i = 0; i < ingredientBoard.suppliers.length; i++) {
-          supplierOptions.push({ 'value': ingredientBoard.suppliers[i].id, 'label': ingredientBoard.suppliers[i].name });
-        }
-        fillIngredientSelect('order_ingredient', getIngredientMasterOptions(''), '', '食材を選んでください');
-        fillIngredientSelect('order_supplier', supplierOptions, '', '業者を選んでください');
-        fillIngredientSelect('order_unit', toIngredientOptions(ingredientBoard.units), '', '');
-        document.getElementById('order_quantity').value = '';
-        document.getElementById('order_ordered_at').value = formatIngredientInputDateTime(new Date());
-        document.getElementById('order_expected_date').value = '';
-        document.getElementById('order_note').value = '';
-        document.getElementById('order_error').textContent = '';
-        showIngredientOrderPlan();
-      }
-
-      /**
-       * 発注する食材に合わせて、単位と業者の初期値を入れる
-       */
-      function applyIngredientOrderDefaults() {
-        const master = findIngredientMasterById(document.getElementById('order_ingredient').value);
-        if (!master) {
-          return;
-        }
-        if (master.defaultUnit !== '') {
-          document.getElementById('order_unit').value = master.defaultUnit;
-        }
-        if (master.supplierId !== '') {
-          document.getElementById('order_supplier').value = master.supplierId;
-        }
-        showIngredientOrderPlan();
-      }
-
-      /**
-       * 選んだ業者の「次に納品できる日」と「発注締切」を表示する
-       */
-      function showIngredientOrderPlan() {
-        const supplier = findIngredientSupplierById(document.getElementById('order_supplier').value);
-        const planEl = document.getElementById('order_plan_text');
-        if (!supplier) {
-          planEl.textContent = '業者を選ぶと、次に納品できる日と発注締切を表示します';
-          return;
-        }
-        planEl.textContent = supplier.plan.text;
-      }
-
-      function submitIngredientOrder() {
-        runIngredientSave({
-          'overlayId': 'ingredient_order_overlay',
-          'errorId': 'order_error',
-          'submitBtnId': 'order_submit_btn',
-          'keyName': 'order',
-          'method': 'saveIngredientOrder',
-          'buildPayload': function () {
-            return {
-              'ingredientId': requireIngredientValue('order_ingredient', '食材'),
-              'supplierId': document.getElementById('order_supplier').value,
-              'quantity': requireIngredientValue('order_quantity', '発注数量'),
-              'unit': document.getElementById('order_unit').value,
-              'orderedAt': requireIngredientValue('order_ordered_at', '発注した日時'),
-              'expectedDate': document.getElementById('order_expected_date').value,
-              'note': document.getElementById('order_note').value
-            };
-          }
-        });
-      }
-
-      // 業者・発注条件と食材の設定
-
-      function openIngredientSettingModal() {
-        if (!openIngredientModal('ingredient_setting_overlay', 'supplier')) {
-          return;
-        }
-        // 業者と食材は別々の保存なので、操作キーもそれぞれ用意する
-        ingredientOperationKeys['master'] = createIngredientOperationKey();
-        buildIngredientWeekdayCheckboxes('supplier_order_days');
-        buildIngredientWeekdayCheckboxes('supplier_ship_days');
-        buildIngredientWeekdayCheckboxes('supplier_delivery_days');
-        buildIngredientWeekdayCheckboxes('supplier_pickup_days');
-        fillIngredientSelect('supplier_lead_count', toIngredientOptions(ingredientBoard.leadTimeCounts), '営業日', '');
-        fillIngredientSelect('master_category', toIngredientOptions(ingredientBoard.categories), '原材料', '');
-        fillIngredientSelect('master_unit', toIngredientOptions(ingredientBoard.units), '', '');
-        fillIngredientSelect('master_min_unit', toIngredientOptions(ingredientBoard.units), '', '');
-        refreshIngredientSettingSelects();
-        document.getElementById('supplier_error').textContent = '';
-        document.getElementById('master_error').textContent = '';
-      }
-
-      /**
-       * 設定モーダルの「編集する業者」「編集する食材」の選択肢を作り直す
-       */
-      function refreshIngredientSettingSelects() {
-        const supplierOptions = [];
-        for (let i = 0; i < ingredientBoard.suppliers.length; i++) {
-          supplierOptions.push({ 'value': ingredientBoard.suppliers[i].id, 'label': ingredientBoard.suppliers[i].name });
+        for (let i = 0; i < settings.suppliers.length; i++) {
+          supplierOptions.push({ 'value': settings.suppliers[i].id, 'label': settings.suppliers[i].name });
         }
         const currentSupplierId = document.getElementById('supplier_select').value;
         fillIngredientSelect('supplier_select', supplierOptions, currentSupplierId, '新しい業者を追加');
         fillIngredientSelect('master_supplier', supplierOptions, '', '業者を設定しない');
 
         const masterOptions = [];
-        for (let i = 0; i < ingredientBoard.masters.length; i++) {
+        for (let i = 0; i < settings.masters.length; i++) {
+          const master = settings.masters[i];
           masterOptions.push({
-            'value': ingredientBoard.masters[i].id,
-            'label': ingredientBoard.masters[i].name + '（' + ingredientBoard.masters[i].category + '）'
+            'value': master.id,
+            'label': master.name + (master.active ? '' : '（発注しない）')
           });
         }
         const currentMasterId = document.getElementById('master_select').value;
         fillIngredientSelect('master_select', masterOptions, currentMasterId, '新しい食材を追加');
 
-        applyIngredientSupplierToForm();
-        applyIngredientMasterToForm();
+        applyOrderSupplierToForm();
+        applyOrderMasterToForm();
       }
 
       /**
        * 曜日のチェックボックスを作る
        */
-      function buildIngredientWeekdayCheckboxes(containerId) {
+      function buildOrderWeekdayCheckboxes(containerId) {
         const container = document.getElementById(containerId);
         container.innerHTML = '';
-        for (let i = 0; i < ingredientBoard.weekdayLabels.length; i++) {
+        const labels = orderBoard.settings.weekdayLabels;
+        for (let i = 0; i < labels.length; i++) {
           const label = document.createElement('label');
           label.className = 'ingredient-weekday';
           const checkbox = document.createElement('input');
           checkbox.type = 'checkbox';
-          checkbox.value = ingredientBoard.weekdayLabels[i];
+          checkbox.value = labels[i];
           label.appendChild(checkbox);
           const text = document.createElement('span');
-          text.textContent = ingredientBoard.weekdayLabels[i];
+          text.textContent = labels[i];
           label.appendChild(text);
           container.appendChild(label);
         }
@@ -2929,7 +3861,7 @@
       /**
        * 曜日のチェックボックスに保存済みの設定を反映する
        */
-      function setIngredientWeekdayCheckboxes(containerId, weekdayText) {
+      function setOrderWeekdayCheckboxes(containerId, weekdayText) {
         const selected = (weekdayText === '' || weekdayText === undefined) ? [] : weekdayText.split('・');
         const checkboxes = document.getElementById(containerId).querySelectorAll('input');
         for (let i = 0; i < checkboxes.length; i++) {
@@ -2940,7 +3872,7 @@
       /**
        * チェックされた曜日を配列で取り出す
        */
-      function collectIngredientWeekdays(containerId) {
+      function collectOrderWeekdays(containerId) {
         const days = [];
         const checkboxes = document.getElementById(containerId).querySelectorAll('input');
         for (let i = 0; i < checkboxes.length; i++) {
@@ -2952,108 +3884,171 @@
       }
 
       /**
+       * 設定ダイアログの中から業者1件を探す
+       */
+      function findOrderSettingSupplierById(supplierId) {
+        const suppliers = orderBoard.settings.suppliers;
+        for (let i = 0; i < suppliers.length; i++) {
+          if (suppliers[i].id === supplierId) {
+            return suppliers[i];
+          }
+        }
+        return null;
+      }
+
+      /**
+       * 設定ダイアログの中から食材1件を探す
+       */
+      function findOrderSettingMasterById(ingredientId) {
+        const masters = orderBoard.settings.masters;
+        for (let i = 0; i < masters.length; i++) {
+          if (masters[i].id === ingredientId) {
+            return masters[i];
+          }
+        }
+        return null;
+      }
+
+      /**
        * 選んだ業者の設定を入力欄に反映する
        */
-      function applyIngredientSupplierToForm() {
-        const supplier = findIngredientSupplierById(document.getElementById('supplier_select').value);
+      function applyOrderSupplierToForm() {
+        const supplier = findOrderSettingSupplierById(document.getElementById('supplier_select').value);
         document.getElementById('supplier_name').value = supplier ? supplier.name : '';
         document.getElementById('supplier_deadline').value = supplier ? supplier.deadlineTime : '';
         document.getElementById('supplier_lead_time').value = (supplier && supplier.leadTimeDays !== null) ? supplier.leadTimeDays : '';
         document.getElementById('supplier_lead_count').value = (supplier && supplier.leadTimeCount !== '') ? supplier.leadTimeCount : '営業日';
         document.getElementById('supplier_closed_dates').value = supplier ? supplier.closedDatesText : '';
         document.getElementById('supplier_note').value = supplier ? supplier.note : '';
-        setIngredientWeekdayCheckboxes('supplier_order_days', supplier ? supplier.orderDaysText : '');
-        setIngredientWeekdayCheckboxes('supplier_ship_days', supplier ? supplier.shipDaysText : '');
-        setIngredientWeekdayCheckboxes('supplier_delivery_days', supplier ? supplier.deliveryDaysText : '');
-        setIngredientWeekdayCheckboxes('supplier_pickup_days', supplier ? supplier.pickupDaysText : '');
+        document.getElementById('supplier_address').value = supplier ? supplier.address : '';
+        document.getElementById('supplier_phone').value = supplier ? supplier.phone : '';
+        document.getElementById('supplier_email').value = supplier ? supplier.email : '';
+        document.getElementById('supplier_business_hours').value = supplier ? supplier.businessHours : '';
+        document.getElementById('supplier_closed_days').value = supplier ? supplier.closedDays : '';
+        document.getElementById('supplier_main_items').value = supplier ? supplier.mainItems : '';
+        document.getElementById('supplier_order_note').value = supplier ? supplier.orderNote : '';
+        setOrderWeekdayCheckboxes('supplier_order_days', supplier ? supplier.orderDaysText : '');
+        setOrderWeekdayCheckboxes('supplier_ship_days', supplier ? supplier.shipDaysText : '');
+        setOrderWeekdayCheckboxes('supplier_delivery_days', supplier ? supplier.deliveryDaysText : '');
+        setOrderWeekdayCheckboxes('supplier_pickup_days', supplier ? supplier.pickupDaysText : '');
         document.getElementById('supplier_plan_text').textContent = supplier
-          ? supplier.plan.text : '業者を保存すると、次に納品できる日と発注締切を表示します';
-      }
-
-      function submitIngredientSupplier() {
-        runIngredientSave({
-          'overlayId': 'ingredient_setting_overlay',
-          'errorId': 'supplier_error',
-          'submitBtnId': 'supplier_submit_btn',
-          'keyName': 'supplier',
-          'method': 'saveIngredientSupplier',
-          'keepOpen': true,
-          'onSuccess': refreshIngredientSettingSelects,
-          'buildPayload': function () {
-            return {
-              'supplierId': document.getElementById('supplier_select').value,
-              'name': requireIngredientValue('supplier_name', '業者名'),
-              'deadlineTime': document.getElementById('supplier_deadline').value,
-              'orderDays': collectIngredientWeekdays('supplier_order_days'),
-              'shipDays': collectIngredientWeekdays('supplier_ship_days'),
-              'deliveryDays': collectIngredientWeekdays('supplier_delivery_days'),
-              'pickupDays': collectIngredientWeekdays('supplier_pickup_days'),
-              'leadTimeDays': document.getElementById('supplier_lead_time').value,
-              'leadTimeCount': document.getElementById('supplier_lead_count').value,
-              'closedDates': document.getElementById('supplier_closed_dates').value,
-              'note': document.getElementById('supplier_note').value
-            };
-          }
-        });
+          ? supplier.planText : '業者を保存すると、次に納品できる日と発注締切を表示します';
       }
 
       /**
        * 選んだ食材の設定を入力欄に反映する
        */
-      function applyIngredientMasterToForm() {
-        const master = findIngredientMasterById(document.getElementById('master_select').value);
+      function applyOrderMasterToForm() {
+        const master = findOrderSettingMasterById(document.getElementById('master_select').value);
         document.getElementById('master_name').value = master ? master.name : '';
-        document.getElementById('master_category').value = master ? master.category : '原材料';
-        document.getElementById('master_unit').value = master ? master.defaultUnit : '';
         document.getElementById('master_supplier').value = master ? master.supplierId : '';
-        document.getElementById('master_min_quantity').value = (master && master.minQuantity !== null) ? master.minQuantity : '';
-        document.getElementById('master_min_unit').value = master ? master.minUnit : '';
-        document.getElementById('master_notify_expiry').checked = master ? master.notifyExpirySoon : false;
+        document.getElementById('master_order_unit').value = master ? master.orderUnit : '';
+        document.getElementById('master_product_code').value = master ? master.productCode : '';
         document.getElementById('master_active').checked = master ? master.active : true;
       }
 
-      function submitIngredientMaster() {
-        runIngredientSave({
-          'overlayId': 'ingredient_setting_overlay',
+      function submitOrderSupplier() {
+        runOrderSettingSave({
+          'errorId': 'supplier_error',
+          'submitBtnId': 'supplier_submit_btn',
+          'keyName': 'supplier',
+          'method': 'saveIngredientSupplier',
+          'buildPayload': function () {
+            return {
+              'supplierId': document.getElementById('supplier_select').value,
+              'name': requireOrderValue('supplier_name', '業者名'),
+              'deadlineTime': document.getElementById('supplier_deadline').value,
+              'orderDays': collectOrderWeekdays('supplier_order_days'),
+              'shipDays': collectOrderWeekdays('supplier_ship_days'),
+              'deliveryDays': collectOrderWeekdays('supplier_delivery_days'),
+              'pickupDays': collectOrderWeekdays('supplier_pickup_days'),
+              'leadTimeDays': document.getElementById('supplier_lead_time').value,
+              'leadTimeCount': document.getElementById('supplier_lead_count').value,
+              'closedDates': document.getElementById('supplier_closed_dates').value,
+              'note': document.getElementById('supplier_note').value,
+              'address': document.getElementById('supplier_address').value,
+              'phone': document.getElementById('supplier_phone').value,
+              'email': document.getElementById('supplier_email').value,
+              'businessHours': document.getElementById('supplier_business_hours').value,
+              'closedDays': document.getElementById('supplier_closed_days').value,
+              'mainItems': document.getElementById('supplier_main_items').value,
+              'orderNote': document.getElementById('supplier_order_note').value
+            };
+          }
+        });
+      }
+
+      function submitOrderMaster() {
+        runOrderSettingSave({
           'errorId': 'master_error',
           'submitBtnId': 'master_submit_btn',
           'keyName': 'master',
           'method': 'saveIngredientMaster',
-          'keepOpen': true,
-          'onSuccess': refreshIngredientSettingSelects,
           'buildPayload': function () {
-            const minQuantity = document.getElementById('master_min_quantity').value;
-            if (minQuantity !== '' && document.getElementById('master_min_unit').value === '') {
-              throw new Error('最低残量の単位を選んでください');
-            }
             return {
               'ingredientId': document.getElementById('master_select').value,
-              'name': requireIngredientValue('master_name', '食材名'),
-              'category': document.getElementById('master_category').value,
-              'defaultUnit': document.getElementById('master_unit').value,
+              'name': requireOrderValue('master_name', '食材名'),
               'supplierId': document.getElementById('master_supplier').value,
-              'minQuantity': minQuantity,
-              'minUnit': document.getElementById('master_min_unit').value,
-              'notifyExpirySoon': document.getElementById('master_notify_expiry').checked,
+              'orderUnit': document.getElementById('master_order_unit').value,
+              'productCode': document.getElementById('master_product_code').value,
               'active': document.getElementById('master_active').checked
             };
           }
         });
       }
 
-      // 食材管理のタブ・絞り込みのクリックを受け取る
-      window.addEventListener('load', function () {
-        const tabs = document.querySelectorAll('.ingredient-tab');
-        for (let i = 0; i < tabs.length; i++) {
-          tabs[i].addEventListener('click', function () {
-            selectIngredientCategory(this);
-          });
+      /**
+       * 設定をサーバーへ保存し、成功したら最新の発注管理情報で画面を作り直す
+       * 保存中はボタンを押せなくし、失敗したときは入力を残したままエラーだけを出す
+       * ダイアログは続けて編集できるよう開いたままにする
+       * @param {Object} config 保存するボタン・入力内容・呼び出すGAS関数
+       * @return {void} 戻り値なし
+       */
+      function runOrderSettingSave(config) {
+        const submitBtn = document.getElementById(config.submitBtnId);
+        const errorEl = document.getElementById(config.errorId);
+        if (submitBtn.disabled) {
+          return; // 保存中の連打は無視する
         }
-        const filters = document.querySelectorAll('.ingredient-filter');
-        for (let j = 0; j < filters.length; j++) {
-          filters[j].addEventListener('click', function () {
-            selectIngredientStorage(this);
-          });
+        errorEl.textContent = '';
+
+        let payload;
+        try {
+          payload = config.buildPayload();
+        } catch (error) {
+          errorEl.textContent = error.message;
+          return;
         }
-      });
+        payload.operationKey = orderSettingKeys[config.keyName];
+        // 店長専用の保存なので、サーバー側で権限を確認できるようトークンを添える
+        payload.authToken = authToken;
+
+        const originalLabel = submitBtn.textContent;
+        submitBtn.disabled = true;
+        submitBtn.textContent = '保存中...';
+
+        const sessionId = loginSessionId;
+        const runner = google.script.run
+          .withSuccessHandler(function (result) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
+            submitBtn.disabled = false;
+            submitBtn.textContent = originalLabel;
+            orderSettingKeys[config.keyName] = createIngredientOperationKey();
+            applyOrderBoard(result.board);
+            refreshOrderSettingSelects();
+            showOrderMessage(result.message, false);
+          })
+          .withFailureHandler(function (error) {
+            if (!isSameLoginSession(sessionId)) {
+              return;
+            }
+            submitBtn.disabled = false;
+            submitBtn.textContent = originalLabel;
+            // 保存できていないので成功の表示はせず、入力内容はそのまま残す
+            errorEl.textContent = 'エラー: ' + error.message;
+          });
+        runner[config.method](payload);
+      }
     </script>
