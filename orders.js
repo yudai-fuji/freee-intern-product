@@ -582,21 +582,12 @@ function sendOrderMails(input) {
  * 差出人に使いたいアドレスがGmailの別名に登録されていればその名前で送る
  */
 function sendOrderMail_(draft) {
-  const options = { 'name': ORDER_STORE_NAME };
-  if (normalizeIngredientText(ORDER_SENDER_EMAIL) !== '') {
-    const aliases = GmailApp.getAliases();
-    if (aliases.indexOf(ORDER_SENDER_EMAIL) !== -1) {
-      options.from = ORDER_SENDER_EMAIL;
-    }
-  }
-  function sendOrderMail_(draft) {
-    MailApp.sendEmail({
-      to: draft.to,
-      subject: draft.subject,
-      body: draft.body,
-      name: ORDER_STORE_NAME
-    });
-    }
+  MailApp.sendEmail({
+    to: draft.to,
+    subject: draft.subject,
+    body: draft.body,
+    name: ORDER_STORE_NAME
+  });
 }
 
 /**
