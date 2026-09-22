@@ -1,6 +1,6 @@
 // 従業員の取得・追加・削除・氏名管理を行う
 // 削除は名簿の行や氏名を消さず「状態」列を『削除済み』にするだけなので、
-// 過去の勤怠・シフト・スキルの記録と氏名はそのまま残り、従業員番号も別の人に使い回されない
+// 過去の勤怠・スキルの記録と氏名はそのまま残り、従業員番号も別の人に使い回されない
 
 /**
  * 従業員名簿に「状態」「削除日時」の列を用意する
@@ -98,7 +98,7 @@ function formatEmployeeNumber(empId) {
 
 /**
  * 有効な従業員（削除済みでなく、氏名が入っている人）の一覧を取得する
- * 従業員画面の一覧・シフトの選択肢・本日の業務設定・スキル管理の対象は、すべてこの一覧に揃える
+ * 従業員画面の一覧・本日の業務設定・スキル管理の対象は、すべてこの一覧に揃える
  * @return {Array} [{ id: 従業員番号, name: 氏名, number: 表示用の従業員番号 }, ...]
  */
 function getEmployees() {
@@ -130,7 +130,7 @@ function getActiveEmployeeList(authToken) {
 
 /**
  * 従業員番号と氏名の対応表をつくる（削除済みの人も含む）
- * 過去の勤怠やシフトに残っている記録の氏名を表示するために使う
+ * 過去の勤怠に残っている記録の氏名を表示するために使う
  * @return {Object} { '3': '川村 祐大', ... }
  */
 function getEmployeeNameMap() {
@@ -157,36 +157,6 @@ function getActiveEmployeeNameMap() {
     nameByEmpId[String(employees[i].id)] = employees[i].name;
   }
   return nameByEmpId;
-}
-
-/**
- * 削除済みの従業員番号の一覧をつくる
- * シフトの「交代が必要な枠」の判定と、新しい割当を断るために使う
- * @return {Object} { '3': true, ... } 削除済みの従業員番号だけを持つ
- */
-function getDeletedEmployeeIdSet() {
-  const rows = readEmployeeRows_();
-  const deletedIdSet = {};
-  for (let i = 0; i < rows.length; i++) {
-    if (rows[i].isDeleted) {
-      deletedIdSet[String(rows[i].id)] = true;
-    }
-  }
-  return deletedIdSet;
-}
-
-/**
- * 従業員番号の文字列から、名簿に入っている値そのもの（数値なら数値）を引ける対応表をつくる
- * 削除済みの人も含めるので、交代が決まるまで残すシフトの枠を元の値のまま書き戻せる
- * @return {Object} { '3': 3, ... }
- */
-function getEmployeeRawIdMap() {
-  const rows = readEmployeeRows_();
-  const rawIdByKey = {};
-  for (let i = 0; i < rows.length; i++) {
-    rawIdByKey[String(rows[i].id)] = rows[i].id;
-  }
-  return rawIdByKey;
 }
 
 /**
@@ -251,10 +221,9 @@ function addEmployee(lastName, firstName, authToken) {
 
 /**
  * 削除する前に、対象の従業員と削除の影響を確認するための情報を返す（店長だけが実行できる）
- * 本日以降のシフトは、削除後に「交代が必要な枠」として残るので、件数と内容を画面に出す
  * @param {*} empId 削除しようとしている従業員番号
  * @param {string} authToken ログイントークン
- * @return {Object} { id, name, number, upcomingShifts: [{ date, startTime, endTime, position, note }, ...] }
+ * @return {Object} { id, name, number }
  */
 function getEmployeeDeletionPreview(empId, authToken) {
   requireManagerRole_(authToken);
@@ -270,8 +239,7 @@ function getEmployeeDeletionPreview(empId, authToken) {
   return {
     'id': targetRow.id,
     'name': targetRow.name,
-    'number': formatEmployeeNumber(targetRow.id),
-    'upcomingShifts': getEmployeeUpcomingShifts_(targetRow.id)
+    'number': formatEmployeeNumber(targetRow.id)
   };
 }
 
@@ -280,7 +248,7 @@ function getEmployeeDeletionPreview(empId, authToken) {
  * 名簿の行と氏名はそのまま残し、状態列と削除日時列だけを書き換える
  * @param {*} empId 削除する従業員番号
  * @param {string} authToken ログイントークン
- * @return {Object} { message: 画面に出す文言, employees: 削除後の有効な従業員一覧, upcomingShiftCount: 残った本日以降のシフト件数 }
+ * @return {Object} { message: 画面に出す文言, employees: 削除後の有効な従業員一覧 }
  */
 function deleteEmployee(empId, authToken) {
   requireManagerRole_(authToken);
@@ -294,14 +262,12 @@ function deleteEmployee(empId, authToken) {
     throw new Error('この従業員はすでに削除されています');
   }
 
-  const upcomingShiftCount = getEmployeeUpcomingShifts_(targetRow.id).length;
   columns.sheet.getRange(targetRow.rowNumber, columns.statusColumn).setValue(EMPLOYEE_STATUS_DELETED);
   columns.sheet.getRange(targetRow.rowNumber, columns.deletedAtColumn).setValue(new Date());
 
   return {
     'message': targetRow.name + ' を削除しました（従業員番号 : ' + formatEmployeeNumber(targetRow.id) + '）',
-    'employees': getEmployees(),
-    'upcomingShiftCount': upcomingShiftCount
+    'employees': getEmployees()
   };
 }
 

@@ -1,37 +1,97 @@
 // 出退勤・休憩・労働時間・給与計算を行う
 
-//打刻履歴をおこなう
-function recordClock(empId, type) {
+// 画面を開き直しても、日本時間の当日履歴から打刻状態を復元する。
+function getTodayClockState(empId, authToken) {
+  requireLoggedIn_(authToken);
+  requireActiveClockEmployee_(empId);
+  return readTodayClockState_(empId, getSheet(SHEET_NAMES.TIME_CLOCKS), new Date());
+}
 
-  //打刻履歴に引数の種別があれば0,なければ-1
-  if (CLOCK_TYPES.indexOf(type) === -1) {
-    throw new Error('不正な打刻種別です');
-  }
-
-  //古い画面が開いたままでも、削除済み・名簿にない従業員の打刻は受け付けない
+function requireActiveClockEmployee_(empId) {
   const activeNameByEmpId = getActiveEmployeeNameMap();
   if (!activeNameByEmpId[String(empId)]) {
     throw new Error('この従業員は選べません。画面を再読み込みしてください');
   }
+  return activeNameByEmpId;
+}
 
-  //"打刻履歴"シートを取得
-  const timeClocksSheet = getSheet(SHEET_NAMES.TIME_CLOCKS);
+function allowedClockTypes_(state) {
+  if (state === 'not_clocked_in') return ['出勤'];
+  if (state === 'working') return ['退勤', '休憩開始'];
+  if (state === 'on_break') return ['休憩終了'];
+  return [];
+}
 
-  //書き込み先の空白の行を指定
-  const targetRow = timeClocksSheet.getLastRow() + 1;
+// 不正な順序は null。同日の再出勤は認めず、休憩終了後は勤務中に戻す。
+function nextClockState_(state, type) {
+  if (allowedClockTypes_(state).indexOf(type) === -1) return null;
+  if (type === '退勤') return 'clocked_out';
+  if (type === '休憩開始') return 'on_break';
+  return 'working';
+}
 
-  //時刻インスタンスを作成
-  const now = new Date();
+function readTodayClockState_(empId, sheet, now) {
+  const date = Utilities.formatDate(now, TIME_ZONE, 'yyyy/MM/dd');
+  const result = { employeeId: String(empId), date: date, state: 'not_clocked_in', allowedTypes: [] };
+  const lastRow = sheet.getLastRow();
+  const rows = lastRow < 2 ? [] : sheet.getRange(2, 1, lastRow - 1, 3).getValues();
+  const events = [];
+  for (let i = 0; i < rows.length; i++) {
+    const time = rows[i][2];
+    if (String(rows[i][0]) !== String(empId) || !(time instanceof Date) || isNaN(time.getTime())) continue;
+    if (Utilities.formatDate(time, TIME_ZONE, 'yyyy/MM/dd') !== date) continue;
+    events.push({ type: rows[i][1], time: time.getTime(), row: i + 2 });
+  }
+  events.sort(function (a, b) { return a.time - b.time || a.row - b.row; });
+  for (let i = 0; i < events.length; i++) {
+    const next = nextClockState_(result.state, events[i].type);
+    if (next === null) {
+      result.state = 'invalid';
+      result.error = '本日の打刻履歴の順序が不正です（' + events[i].row + '行目）。店長に確認してください';
+      return result;
+    }
+    result.state = next;
+  }
+  result.allowedTypes = allowedClockTypes_(result.state);
+  return result;
+}
 
-  //先ほどの行の 1列目:Id、2列目:種別、3列目:現在時刻 を書き込む
-  timeClocksSheet.getRange(targetRow, 1).setValue(empId);
-  timeClocksSheet.getRange(targetRow, 2).setValue(type);
-  timeClocksSheet.getRange(targetRow, 3).setValue(now);
+function recordClock(empId, type) {
+  return recordClockWithValidation_(empId, type);
+}
 
-  //now の日時を、Asia/Tokyo の時刻として、時:分:秒 形式の文字列に変換
-  const formattedTime = Utilities.formatDate(now, TIME_ZONE, "HH:mm:ss");
-  
-  return type + `を記録しました（${formattedTime}）`;
+// 通常打刻と共有メモ付き退勤で、状態の確認から保存まで同じロックを使う。
+function recordClockWithValidation_(empId, type, beforeRecord) {
+  if (CLOCK_TYPES.indexOf(type) === -1) throw new Error('不正な打刻種別です');
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) {
+    throw new Error('他の打刻処理が進行中です。少し待ってからもう一度お試しください');
+  }
+  try {
+    const activeNameByEmpId = requireActiveClockEmployee_(empId);
+    const sheet = getSheet(SHEET_NAMES.TIME_CLOCKS);
+    const now = new Date();
+    const clockState = readTodayClockState_(empId, sheet, now);
+    if (clockState.state === 'invalid') throw new Error(clockState.error);
+    const next = nextClockState_(clockState.state, type);
+    if (next === null) throw new Error('現在の打刻状態では「' + type + '」を記録できません。本日の打刻状態を確認してください');
+
+    // 状態検証後にメモを保存する。保存に失敗した場合は打刻を行わない。
+    if (beforeRecord) {
+      beforeRecord(activeNameByEmpId);
+      SpreadsheetApp.flush();
+    }
+    sheet.getRange(sheet.getLastRow() + 1, 1, 1, 3).setValues([[empId, type, now]]);
+    SpreadsheetApp.flush();
+    clockState.state = next;
+    clockState.allowedTypes = allowedClockTypes_(next);
+    return {
+      message: type + 'を記録しました（' + Utilities.formatDate(now, TIME_ZONE, 'HH:mm:ss') + '）',
+      clockState: clockState
+    };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 //

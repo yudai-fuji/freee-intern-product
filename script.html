@@ -2,12 +2,15 @@
       let selectedEmpId = null;
       let clockIntervalId = null;
 
-      // 従業員画面の一覧に出す、有効な従業員の一覧（{ id, name, number } の配列）
-      // 検索の絞り込みはこの配列だけを使うので、入力のたびにGASへ通信しない
-      let employeeListItems = [];
+      // 選択中の従業員の打刻状態。通信中・未取得時は操作できない。
+      let employeeClockState = null;
+      let clockStateRequestId = 0;
+      const pendingClockRequests = new Set();
+      const CLOCK_TIME_ZONE = <?!= JSON.stringify(TIME_ZONE) ?>;
 
-      // 検索欄に入力されている文字列
-      let employeeSearchKeyword = '';
+      // 従業員画面の一覧に出す、有効な従業員の一覧（{ id, name, number } の配列）
+      // 従業員画面と従業員編集で同じ有効な従業員一覧を使う
+      let employeeListItems = [];
 
       // 現在サーバーとの通信に使っているログイントークン（従業員用・店長用のどちらか一方）
       let authToken = '';
@@ -266,15 +269,16 @@
       }
 
       /**
-       * 従業員画面の一時的な表示（一覧・検索・選択中の従業員・打刻メッセージ・本日の業務）を消す
+       * 従業員画面の一時的な表示（一覧・選択中の従業員・打刻メッセージ・本日の業務）を消す
        * 打刻済みのデータには触れない
        * @return {void} 戻り値なし
        */
       function resetEmployeeScreen() {
+        isSharedNoteSubmitting = false;
+        closeSharedNoteModal();
+        pendingClockRequests.clear();
         clearEmployeeSelection();
 
-        employeeSearchKeyword = '';
-        document.getElementById('employee_search_input').value = '';
         employeeListItems = [];
         document.getElementById('employee_list').innerHTML = '';
         showEmployeeListMessage('');
@@ -298,7 +302,7 @@
 
         resetEmployeeEditSection();
         resetSkillSection();
-        hideShiftDetail();
+        shiftMonthRequestId++;
         shiftSelectedDate = null;
 
         orderBoard = null;
@@ -367,60 +371,7 @@
       }
 
       /**
-       * 検索に使う文字列を揃える
-       * 半角・全角の空白を取り除き、全角数字を半角に直すので、
-       * 氏名や入力に含まれる空白・入力方法の違いで検索結果が変わらない
-       * @param {string} text 元の文字列
-       * @return {string} 揃えたあとの文字列
-       */
-      function normalizeEmployeeSearchText(text) {
-        const base = (text === null || text === undefined) ? '' : String(text);
-        return base
-          .replace(/[０-９]/g, function (char) {
-            return String.fromCharCode(char.charCodeAt(0) - 0xFEE0);
-          })
-          .replace(/[\s\u3000]/g, '');
-      }
-
-      /**
-       * 検索欄に入力があるたびに、一覧を絞り込み直す（GASへは通信しない）
-       * @return {void} 戻り値なし
-       */
-      function handleEmployeeSearchInput() {
-        employeeSearchKeyword = document.getElementById('employee_search_input').value;
-        renderEmployeeList();
-      }
-
-      /**
-       * 検索文字列にあてはまる従業員だけを取り出す
-       * 数字だけの入力は従業員番号の完全一致、それ以外は氏名の部分一致で調べる
-       * @return {Array} 一覧に表示する従業員
-       */
-      function filterEmployeeItems() {
-        const keyword = normalizeEmployeeSearchText(employeeSearchKeyword);
-        if (keyword === '') {
-          return employeeListItems.slice(); // 入力が空のときは有効な従業員を全員表示する
-        }
-
-        const isNumberSearch = /^[0-9]+$/.test(keyword);
-        const matched = [];
-        for (let i = 0; i < employeeListItems.length; i++) {
-          const employee = employeeListItems[i];
-          if (isNumberSearch) {
-            // 「3」で13や30が出ないように、従業員番号は完全一致で調べる
-            if (normalizeEmployeeSearchText(employee.number) === keyword) {
-              matched.push(employee);
-            }
-          } else if (normalizeEmployeeSearchText(employee.name).indexOf(keyword) !== -1) {
-            // 姓だけ・名だけ・氏名の一部でも見つかるように、氏名は部分一致で調べる
-            matched.push(employee);
-          }
-        }
-        return matched;
-      }
-
-      /**
-       * 検索結果にあてはまる従業員だけを一覧に描く
+       * 有効な従業員を全員、一覧に描く
        * 先頭の人を自動選択はしない。描いたあとに選択中の従業員が一覧から消えていたら、
        * 選択と打刻欄も解除して、見えていない従業員への誤打刻を防ぐ
        * @return {void} 戻り値なし
@@ -429,7 +380,7 @@
         const list = document.getElementById('employee_list');
         list.innerHTML = '';
 
-        const employees = filterEmployeeItems();
+        const employees = employeeListItems;
         let isSelectedEmployeeShown = false;
         for (let i = 0; i < employees.length; i++) {
           const item = createEmployeeListItem(employees[i]);
@@ -442,8 +393,7 @@
 
         if (employeeListItems.length === 0) {
           showEmployeeListMessage('従業員が登録されていません');
-        } else if (employees.length === 0) {
-          showEmployeeListMessage('該当する従業員がいません');
+
         } else {
           showEmployeeListMessage('');
         }
@@ -490,7 +440,7 @@
       }
 
       /**
-       * 一覧の上に出す一行メッセージ（該当者なし・エラーなど）を切り替える
+       * 一覧の上に出す一行メッセージ（未登録・エラーなど）を切り替える
        * @param {string} message 表示する文言（空文字で消す）
        * @return {void} 戻り値なし
        */
@@ -506,6 +456,9 @@
        */
       function selectEmployee(employee, item) {
         selectedEmpId = String(employee.id);
+        employeeClockState = null;
+        clockStateRequestId++;
+        renderClockButtons();
 
         const items = document.querySelectorAll('.employee-item');
         for (let i = 0; i < items.length; i++) {
@@ -521,15 +474,19 @@
         document.getElementById('right_panel').style.display = 'block';
         startClock();
         loadSharedNotesForSelection(selectedEmpId); // その日すでに表示済みの共有メモがあれば出す
+        loadEmployeeClockState(selectedEmpId);
       }
 
       /**
        * 従業員の選択を解除し、打刻欄を隠す
-       * 検索で選択中の従業員が一覧から外れたときにも呼ぶ
+       * 選択中の従業員が削除されて一覧から外れたときにも呼ぶ
        * @return {void} 戻り値なし
        */
       function clearEmployeeSelection() {
         selectedEmpId = null;
+        employeeClockState = null;
+        clockStateRequestId++;
+        renderClockButtons();
 
         const items = document.querySelectorAll('.employee-item');
         for (let i = 0; i < items.length; i++) {
@@ -570,53 +527,122 @@
         const pad = function (n) { return ('0' + n).slice(-2); };
         document.getElementById('current_time').innerHTML =
           pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
+        if (selectedEmpId && employeeClockState && employeeClockState.date !== getClockTodayKey()) {
+          loadEmployeeClockState(selectedEmpId);
+        }
       }
 
-      function handleClockButtonClick(type) {
-        if (!selectedEmpId) {
-          return;
+      function getClockTodayKey() {
+        const parts = new Intl.DateTimeFormat('en', { timeZone: CLOCK_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+        const values = {};
+        parts.forEach(function (part) { values[part.type] = part.value; });
+        return values.year + '/' + values.month + '/' + values.day;
+      }
+
+      function clockRequestKey(empId, sessionId) {
+        return sessionId + ':' + empId;
+      }
+
+      function canRecordClock(type) {
+        return !!(selectedEmpId && employeeClockState &&
+          employeeClockState.employeeId === selectedEmpId &&
+          employeeClockState.date === getClockTodayKey() &&
+          employeeClockState.allowedTypes.indexOf(type) !== -1 &&
+          !pendingClockRequests.has(clockRequestKey(selectedEmpId, loginSessionId)));
+      }
+
+      function renderClockButtons() {
+        const buttons = document.querySelectorAll('[data-clock-type]');
+        for (let i = 0; i < buttons.length; i++) {
+          buttons[i].disabled = sharedNoteEmpId !== null || !canRecordClock(buttons[i].dataset.clockType);
         }
-        // 退勤は打刻せず、まず共有メモダイアログを開く（打刻は「入力せず退勤」か確認画面の「退勤」を押した時点で行う）
+        setSharedNoteButtonsDisabled(isSharedNoteSubmitting || sharedNoteEmpId !== selectedEmpId || !canRecordClock('退勤'));
+      }
+
+      function applyEmployeeClockState(state) {
+        employeeClockState = state && String(state.employeeId) === selectedEmpId ? state : null;
+        renderClockButtons();
+        if (!employeeClockState || employeeClockState.state === 'invalid') {
+          showRecordError(new Error(state && state.error ? state.error : '本日の打刻状態を確認できません。従業員を選び直してください'));
+        }
+      }
+
+      function loadEmployeeClockState(empId, preserveMessage) {
+        if (!empId || empId !== selectedEmpId) { return; }
+        const requestId = ++clockStateRequestId;
+        const sessionId = loginSessionId;
+        employeeClockState = null;
+        renderClockButtons();
+        if (!preserveMessage) { showRecordMessage('本日の打刻状態を確認中...'); }
+        google.script.run
+          .withSuccessHandler(function (state) {
+            if (!isSameLoginSession(sessionId) || selectedEmpId !== empId || requestId !== clockStateRequestId) { return; }
+            if (!preserveMessage) { showRecordMessage(''); }
+            applyEmployeeClockState(state);
+          })
+          .withFailureHandler(function (error) {
+            if (!isSameLoginSession(sessionId) || selectedEmpId !== empId || requestId !== clockStateRequestId) { return; }
+            employeeClockState = null;
+            renderClockButtons();
+            showRecordError(new Error('打刻状態の取得に失敗しました。従業員を選び直してください: ' + error.message));
+          })
+          .getTodayClockState(empId, authToken);
+      }
+
+      function startClockSubmission(empId) {
+        pendingClockRequests.add(clockRequestKey(empId, loginSessionId));
+        clockStateRequestId++; // 保存前の状態取得結果を保存後に反映しない。
+        renderClockButtons();
+      }
+
+      function finishClockSubmission(empId, sessionId, result, error) {
+        pendingClockRequests.delete(clockRequestKey(empId, sessionId));
+        if (!isSameLoginSession(sessionId) || selectedEmpId !== empId) { return false; }
+        clockStateRequestId++;
+        if (error) {
+          showRecordError(error);
+          loadEmployeeClockState(empId, true);
+        } else {
+          showRecordMessage(result.message);
+          applyEmployeeClockState(result.clockState);
+        }
+        return true;
+      }
+      function handleClockButtonClick(type) {
+        if (!canRecordClock(type) || sharedNoteEmpId !== null) { return; }
         if (type === '退勤') {
           openSharedNoteDialog();
           return;
         }
-        // 打刻ボタンを押した時点の従業員IDを保持しておく。本日の業務情報の取得が終わるまでの間に
-        // 別の従業員へ選択が切り替えられても、この従業員ID宛の結果しか画面に反映しないようにするため
         const empIdAtClick = selectedEmpId;
         const sessionId = loginSessionId;
-        document.getElementById('record_message').innerHTML = '登録中...';
+        startClockSubmission(empIdAtClick);
+        showRecordMessage('登録中...');
         google.script.run
-          .withSuccessHandler(function (message) {
-            if (!isSameLoginSession(sessionId)) {
-              return;
-            }
-            showRecordMessage(message);
+          .withSuccessHandler(function (result) {
+            if (!finishClockSubmission(empIdAtClick, sessionId, result, null)) { return; }
             if (type === '出勤') {
               loadTodayWorkInfo(empIdAtClick);
               loadSharedNotesForClockIn(empIdAtClick);
             }
           })
           .withFailureHandler(function (error) {
-            if (!isSameLoginSession(sessionId)) {
-              return;
-            }
-            showRecordError(error);
+            finishClockSubmission(empIdAtClick, sessionId, null, error);
           })
-          .recordClock(selectedEmpId, type);
+          .recordClock(empIdAtClick, type);
       }
 
       function showRecordMessage(message) {
-        document.getElementById('record_message').innerHTML = message;
+        document.getElementById('record_message').textContent = message;
       }
 
       function showRecordError(error) {
-        document.getElementById('record_message').innerHTML = 'エラー: ' + error.message;
+        document.getElementById('record_message').textContent = 'エラー: ' + error.message;
       }
 
       /**
        * 出勤成功後、本日の業務情報（ポジション・確認事項）を取得する
-       * recordClock() 自体には手を加えず、打刻の成否とは別処理として扱う
+       * 打刻結果を反映したあとに、業務情報を別処理として取得する
        * 取得中に従業員が切り替えられていた場合は、結果が戻ってきても表示しない（安全のためのガード）
        */
       function loadTodayWorkInfo(empId) {
@@ -815,10 +841,11 @@
        * @return {void} 戻り値なし
        */
       function openSharedNoteDialog() {
-        if (!selectedEmpId) {
+        if (!canRecordClock('退勤') || isSharedNoteSubmitting || sharedNoteEmpId !== null) {
           return;
         }
         sharedNoteEmpId = selectedEmpId;
+        renderClockButtons();
 
         document.getElementById('shared_note_text').value = '';
         document.getElementById('shared_note_recipient_list').innerHTML = '';
@@ -1002,6 +1029,7 @@
        * @return {void} 戻り値なし
        */
       function closeSharedNoteModal() {
+        if (isSharedNoteSubmitting) { return; }
         document.getElementById('shared_note_overlay').style.display = 'none';
         document.getElementById('shared_note_text').value = '';
         document.getElementById('shared_note_recipient_list').innerHTML = '';
@@ -1010,88 +1038,59 @@
         showSharedNoteInputError('');
         showSharedNoteConfirmError('');
         sharedNoteEmpId = null;
+        renderClockButtons();
       }
 
-      /**
-       * 「入力せず退勤」。共有メモを保存せず、このボタンを押した時刻で退勤を記録する
-       * @return {void} 戻り値なし
-       */
+      /** メモを保存せず、ボタンを押した時点で退勤する。 */
       function submitClockOutWithoutSharedNote() {
-        if (isSharedNoteSubmitting || !sharedNoteEmpId) {
-          return;
-        }
-        isSharedNoteSubmitting = true;
-        setSharedNoteButtonsDisabled(true);
+        submitSharedNoteClockOut(false);
+      }
 
+      /** メモの保存後に退勤する。サーバー側でも打刻順序を検証する。 */
+      function submitClockOutWithSharedNote() {
+        submitSharedNoteClockOut(true);
+      }
+
+      function submitSharedNoteClockOut(withNote) {
+        if (isSharedNoteSubmitting || sharedNoteEmpId !== selectedEmpId || !canRecordClock('退勤')) { return; }
         const empId = sharedNoteEmpId;
         const sessionId = loginSessionId;
-        google.script.run
-          .withSuccessHandler(function (message) {
-            isSharedNoteSubmitting = false;
-            setSharedNoteButtonsDisabled(false);
-            closeSharedNoteModal();
-            if (!isSameLoginSession(sessionId) || selectedEmpId !== empId) {
-              return;
-            }
-            showRecordMessage(message);
-          })
-          .withFailureHandler(function (error) {
-            isSharedNoteSubmitting = false;
-            setSharedNoteButtonsDisabled(false);
-            if (!isSameLoginSession(sessionId) || sharedNoteEmpId !== empId) {
-              return;
-            }
-            showSharedNoteInputError('退勤処理に失敗しました: ' + error.message);
-          })
-          .recordClock(empId, '退勤');
-      }
-
-      /**
-       * 確認画面の「退勤」。共有メモの保存が成功したあとに、このボタンを押した時刻で退勤を記録する
-       * 連打で二重登録・二重退勤が起きないよう、送信中はボタンを無効化する
-       * @return {void} 戻り値なし
-       */
-      function submitClockOutWithSharedNote() {
-        if (isSharedNoteSubmitting || !sharedNoteEmpId) {
-          return;
-        }
-        const checked = getSharedNoteCheckedRecipients();
+        const recipients = withNote ? getSharedNoteCheckedRecipients() : [];
         const noteText = document.getElementById('shared_note_text').value.trim();
-        if (checked.length === 0 || noteText === '') {
+        if (withNote && (recipients.length === 0 || noteText === '')) {
           showSharedNoteConfirmError('共有先を1人以上選び、共有メモを入力してください');
           return;
         }
-
         isSharedNoteSubmitting = true;
-        setSharedNoteButtonsDisabled(true);
+        startClockSubmission(empId);
+        showSharedNoteInputError('');
         showSharedNoteConfirmError('');
-
-        const empId = sharedNoteEmpId;
-        const sessionId = loginSessionId;
-        const recipientIds = [];
-        for (let i = 0; i < checked.length; i++) {
-          recipientIds.push(checked[i].id);
-        }
-
-        google.script.run
-          .withSuccessHandler(function (message) {
-            isSharedNoteSubmitting = false;
-            setSharedNoteButtonsDisabled(false);
-            closeSharedNoteModal();
-            if (!isSameLoginSession(sessionId) || selectedEmpId !== empId) {
-              return;
+        const runner = google.script.run
+          .withSuccessHandler(function (result) {
+            pendingClockRequests.delete(clockRequestKey(empId, sessionId));
+            if (!isSameLoginSession(sessionId)) { return; }
+            if (sharedNoteEmpId === empId) {
+              isSharedNoteSubmitting = false;
+              closeSharedNoteModal();
             }
-            showRecordMessage(message);
+            finishClockSubmission(empId, sessionId, result, null);
           })
           .withFailureHandler(function (error) {
-            isSharedNoteSubmitting = false;
-            setSharedNoteButtonsDisabled(false);
-            if (!isSameLoginSession(sessionId) || sharedNoteEmpId !== empId) {
-              return;
+            pendingClockRequests.delete(clockRequestKey(empId, sessionId));
+            if (!isSameLoginSession(sessionId)) { return; }
+            if (sharedNoteEmpId === empId) {
+              isSharedNoteSubmitting = false;
+              const message = '退勤処理に失敗しました: ' + error.message;
+              if (withNote) { showSharedNoteConfirmError(message); }
+              else { showSharedNoteInputError(message); }
             }
-            showSharedNoteConfirmError('エラー: ' + error.message);
-          })
-          .saveSharedNoteAndClockOut(empId, recipientIds, noteText, authToken);
+            finishClockSubmission(empId, sessionId, null, error);
+          });
+        if (withNote) {
+          runner.saveSharedNoteAndClockOut(empId, recipients.map(function (item) { return item.id; }), noteText, authToken);
+        } else {
+          runner.recordClock(empId, '退勤');
+        }
       }
 
       function setSharedNoteButtonsDisabled(disabled) {
@@ -1240,7 +1239,7 @@
               return;
             }
             document.getElementById('employee_delete_preview_message').textContent = '';
-            renderEmployeeDeleteImpact(preview);
+            renderEmployeeDeleteImpact();
           })
           .withFailureHandler(function (error) {
             if (!isSameLoginSession(sessionId) || !isEmployeeDeleteTarget(targetId)) {
@@ -1262,17 +1261,16 @@
       }
 
       /**
-       * 削除するとどうなるかと、本日以降のシフトの件数・内容を表示する
-       * @param {Object} preview getEmployeeDeletionPreview() が返した内容
+       * 従業員を削除した場合の影響を表示する
        * @return {void} 戻り値なし
        */
-      function renderEmployeeDeleteImpact(preview) {
+      function renderEmployeeDeleteImpact() {
         const container = document.getElementById('employee_delete_impact');
         container.innerHTML = '';
 
         const notes = [
-          '削除すると、従業員一覧・打刻の対象・新しいシフトの選択肢・本日の業務設定・スキル管理の編集対象から外れます。',
-          '過去の勤怠・シフト・スキルの記録と氏名は、これまでどおり残ります。',
+          '削除すると、従業員一覧・打刻の対象・本日の業務設定・スキル管理の編集対象から外れます。',
+          '過去の勤怠・スキルの記録と氏名は、これまでどおり残ります。',
           'この従業員番号は、新しく追加する別の従業員には使いません。'
         ];
         for (let i = 0; i < notes.length; i++) {
@@ -1282,29 +1280,6 @@
           container.appendChild(note);
         }
 
-        const upcomingShifts = preview.upcomingShifts || [];
-        const summary = document.createElement('div');
-        summary.className = 'employee-delete-impact-line employee-delete-shift-summary';
-        if (upcomingShifts.length === 0) {
-          summary.textContent = 'この従業員には本日以降のシフトがありません。';
-          container.appendChild(summary);
-          return;
-        }
-
-        summary.textContent = 'この従業員には本日以降のシフトが' + upcomingShifts.length +
-          '件あります。削除後は交代が必要な枠として残ります。';
-        container.appendChild(summary);
-
-        const list = document.createElement('ul');
-        list.className = 'employee-delete-shift-list';
-        for (let s = 0; s < upcomingShifts.length; s++) {
-          const shift = upcomingShifts[s];
-          const row = document.createElement('li');
-          row.textContent = formatShiftDateLabel(shift.date) + '　' +
-            shift.startTime + '〜' + shift.endTime + '　' + shift.position;
-          list.appendChild(row);
-        }
-        container.appendChild(list);
       }
 
       /**
@@ -1479,7 +1454,7 @@
           loadSkills(); // 開くたびに最新のスキル情報を読み直す
         } else if (sectionName === 'shift') {
           document.getElementById('section_shift').style.display = 'block';
-          loadShiftMonth(shiftYear, shiftMonth); // 開くたびに表示中の月のシフト状況を読み直す
+          loadShiftMonth(shiftYear, shiftMonth); // 開くたびにカレンダーの年月と今日の日付を取得する
         } else if (sectionName === 'order') {
           document.getElementById('section_order').style.display = 'block';
           changeOrderView('cart'); // 開いたときは必ず「発注する食材」から始める
@@ -2060,51 +2035,41 @@
         }
       }
 
-      // 店長画面：シフト作成
-      // カレンダーで表示中の年月。初回はサーバーが返す今日の年月に合わせるため null から始める
+      // 店長画面：シフト作成（現在は日付を選ぶ月間カレンダーのみ）
       let shiftYear = null;
       let shiftMonth = null;
-      let shiftSelectedDate = null; // 選択中の日付キー（'yyyy/MM/dd'）
-      let shiftMonthDays = {}; // 日付キーごとの { status, warnings }
-      let shiftTodayKey = ''; // サーバー側で判定した今日の日付キー
-      let shiftDayEmployees = []; // 編集欄の従業員selectに出す一覧
-      let shiftDayRequestId = 0; // 日別データの取得が前後したとき、古い結果を捨てるための番号
-      let isShiftSaving = false; // 二重保存を防ぐ
-
+      let shiftSelectedDate = null;
+      let shiftTodayKey = '';
+      let shiftMonthRequestId = 0;
       const SHIFT_WEEKDAY_LABELS = ['日', '月', '火', '水', '木', '金', '土'];
 
-      /**
-       * 指定した年月のシフト状況（日付ごとの状態と確認事項）をサーバーから取得する
-       * year・month に null を渡した場合は、サーバー側で今日を含む月が選ばれる
-       */
       function loadShiftMonth(year, month) {
         setShiftMonthButtonsDisabled(true);
         showShiftMessage('読み込み中...', false);
 
         const sessionId = loginSessionId;
+        const requestId = ++shiftMonthRequestId;
         google.script.run
           .withSuccessHandler(function (result) {
-            if (!isSameLoginSession(sessionId)) {
+            if (!isSameLoginSession(sessionId) || requestId !== shiftMonthRequestId) {
               return;
             }
             setShiftMonthButtonsDisabled(false);
             shiftYear = result.year;
             shiftMonth = result.month;
             shiftTodayKey = result.today;
-            shiftMonthDays = result.days;
 
             // 表示中の月から外れた日付を選んだままにしない
             if (shiftSelectedDate !== null &&
                 shiftSelectedDate.indexOf(buildShiftMonthPrefix(result.year, result.month)) !== 0) {
               shiftSelectedDate = null;
-              hideShiftDetail();
             }
 
             showShiftMessage('', false);
             renderShiftCalendar();
           })
           .withFailureHandler(function (error) {
-            if (!isSameLoginSession(sessionId)) {
+            if (!isSameLoginSession(sessionId) || requestId !== shiftMonthRequestId) {
               return;
             }
             // 通信に失敗しても前月・翌月ボタンは押せる状態に戻す（表示中の年月は変更しない）
@@ -2119,9 +2084,6 @@
         document.getElementById('shift_next_btn').disabled = disabled;
       }
 
-      /**
-       * 前月・翌月ボタンで表示月を切り替え、その月のデータを取り直す
-       */
       function changeShiftMonth(offset) {
         if (shiftYear === null || shiftMonth === null) {
           // 最初の読み込みに失敗して表示中の年月が分からない状態。
@@ -2149,10 +2111,6 @@
         return buildShiftMonthPrefix(year, month) + ('0' + day).slice(-2);
       }
 
-      /**
-       * 表示中の月の日付セルを日曜〜土曜の7列で描画する
-       * 月初より前・月末より後のセルは空欄にする
-       */
       function renderShiftCalendar() {
         document.getElementById('shift_month_label').textContent = shiftYear + '年' + shiftMonth + '月';
 
@@ -2175,144 +2133,26 @@
         }
       }
 
-      /**
-       * 日付セル1つ分（日付・状態の印・要確認の吹き出し）を作る
-       */
-      function createShiftDayCell(day, weekdayIndex) {
+      function createShiftDayCell(day, weekday) {
         const dateKey = buildShiftDateKey(shiftYear, shiftMonth, day);
-        const dayData = shiftMonthDays[dateKey];
-        const status = dayData ? dayData.status : 'uncreated';
-        const warnings = (dayData && dayData.warnings) ? dayData.warnings : [];
-
         const cell = document.createElement('button');
         cell.type = 'button';
         cell.className = 'shift-day-cell';
         cell.dataset.dateKey = dateKey;
-        if (status === 'warning') {
-          cell.classList.add('warning');
-        }
-        if (dateKey === shiftTodayKey) {
-          cell.classList.add('today');
-        }
-        const isSelected = (dateKey === shiftSelectedDate);
-        if (isSelected) {
-          cell.classList.add('selected');
-        }
-        cell.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
-        cell.setAttribute('aria-label', shiftMonth + '月' + day + '日 ' + getShiftStatusText(status, warnings.length));
-
+        if (weekday === 1) { cell.classList.add('monday'); }
+        if (dateKey === shiftTodayKey) { cell.classList.add('today'); }
+        const isSelected = dateKey === shiftSelectedDate;
+        cell.classList.toggle('selected', isSelected);
+        cell.setAttribute('aria-pressed', String(isSelected));
+        cell.setAttribute('aria-label', shiftMonth + '月' + day + '日（' + SHIFT_WEEKDAY_LABELS[weekday] + '）' + (weekday === 1 ? ' 定休日' : ''));
         const number = document.createElement('span');
         number.className = 'shift-day-number';
         number.textContent = String(day);
         cell.appendChild(number);
-
-        const statusBox = document.createElement('span');
-        statusBox.className = 'shift-day-status';
-
-        const mark = document.createElement('span');
-        mark.className = 'shift-mark shift-mark-' + status;
-        mark.textContent = getShiftMarkText(status);
-        statusBox.appendChild(mark);
-
-        const label = document.createElement('span');
-        label.className = 'shift-day-label';
-        label.textContent = getShiftLabelText(status, warnings.length);
-        statusBox.appendChild(label);
-
-        cell.appendChild(statusBox);
-
-        if (status === 'warning') {
-          const tooltip = createShiftTooltip(dateKey, warnings, weekdayIndex);
-          cell.setAttribute('aria-describedby', tooltip.id);
-          cell.appendChild(tooltip);
-        }
-
-        cell.addEventListener('click', function () {
-          selectShiftDate(dateKey);
-        });
-
+        cell.addEventListener('click', function () { selectShiftDate(dateKey); });
         return cell;
       }
 
-      function getShiftMarkText(status) {
-        if (status === 'ok') {
-          return '○';
-        }
-        if (status === 'warning') {
-          return '△！';
-        }
-        return '—';
-      }
-
-      function getShiftLabelText(status, warningCount) {
-        if (status === 'warning') {
-          return warningCount + '件';
-        }
-        if (status === 'uncreated') {
-          return '未作成';
-        }
-        return '';
-      }
-
-      function getShiftStatusText(status, warningCount) {
-        if (status === 'ok') {
-          return '作成済み・問題なし';
-        }
-        if (status === 'warning') {
-          return '要確認 ' + warningCount + '件';
-        }
-        return '未作成';
-      }
-
-      /**
-       * 要確認の日に付ける吹き出しを作る
-       * セルは button なので、マウスを乗せたときだけでなくキーボードでフォーカスしたときにも表示される
-       */
-      function createShiftTooltip(dateKey, warnings, weekdayIndex) {
-        const tooltip = document.createElement('span');
-        tooltip.className = 'shift-tooltip';
-        tooltip.id = 'shift_tooltip_' + dateKey.replace(/\//g, '');
-        tooltip.setAttribute('role', 'tooltip');
-        if (weekdayIndex === 0) {
-          tooltip.classList.add('shift-tooltip-start'); // 日曜の列は左端に寄せる
-        } else if (weekdayIndex === 6) {
-          tooltip.classList.add('shift-tooltip-end'); // 土曜の列は右端に寄せる
-        }
-        for (let i = 0; i < warnings.length; i++) {
-          tooltip.appendChild(createShiftWarningItem(warnings[i]));
-        }
-        return tooltip;
-      }
-
-      /**
-       * 確認事項1件分（時間帯・内容・理由）を作る
-       * button の中（吹き出し）にも置けるよう、div ではなく span で組み立てる
-       */
-      function createShiftWarningItem(warning) {
-        const item = document.createElement('span');
-        item.className = 'shift-warning-item';
-
-        const time = document.createElement('span');
-        time.className = 'shift-warning-time';
-        time.textContent = warning.time;
-        item.appendChild(time);
-
-        const title = document.createElement('span');
-        title.className = 'shift-warning-title';
-        title.textContent = warning.title;
-        item.appendChild(title);
-
-        const reason = document.createElement('span');
-        reason.className = 'shift-warning-reason';
-        reason.textContent = warning.reason;
-        item.appendChild(reason);
-
-        return item;
-      }
-
-      /**
-       * 日付を選択状態にし、その日の編集欄を読み込む
-       */
       function selectShiftDate(dateKey) {
         shiftSelectedDate = dateKey;
 
@@ -2327,447 +2167,8 @@
           cells[i].setAttribute('aria-pressed', isSelected ? 'true' : 'false');
         }
 
-        loadShiftDay(dateKey);
       }
 
-      /**
-       * 選択した日のシフト割当・必要人数条件・従業員一覧をサーバーから取得する
-       * 取得中に別の日付へ切り替えられた場合は、戻ってきた結果を反映しない
-       */
-      function loadShiftDay(dateKey) {
-        shiftDayRequestId++;
-        const requestId = shiftDayRequestId;
-        const sessionId = loginSessionId;
-
-        document.getElementById('shift_detail').style.display = 'block';
-        document.getElementById('shift_detail_body').style.display = 'none';
-        document.getElementById('shift_detail_heading').textContent = formatShiftDateLabel(dateKey) + 'のシフト';
-        document.getElementById('shift_detail_warnings').innerHTML = '';
-        showShiftDetailMessage('読み込み中...', false);
-        showShiftSaveStatus('', false);
-
-        google.script.run
-          .withSuccessHandler(function (result) {
-            if (!isSameLoginSession(sessionId) || requestId !== shiftDayRequestId) {
-              return;
-            }
-            renderShiftDay(result);
-          })
-          .withFailureHandler(function (error) {
-            if (!isSameLoginSession(sessionId) || requestId !== shiftDayRequestId) {
-              return;
-            }
-            showShiftDetailMessage('エラー: ' + error.message, true);
-          })
-          .getShiftDay(dateKey, authToken);
-      }
-
-      /**
-       * 取得した1日分のシフトを編集欄に描画する
-       */
-      function renderShiftDay(result) {
-        shiftDayEmployees = result.employees;
-        renderShiftWarnings(result.warnings);
-
-        const assignmentTbody = document.getElementById('shift_assignment_tbody');
-        assignmentTbody.innerHTML = '';
-        for (let i = 0; i < result.assignments.length; i++) {
-          assignmentTbody.appendChild(createShiftAssignmentRow(result.assignments[i]));
-        }
-        refreshShiftEmptyRow(assignmentTbody, 6, 'シフトの割当はまだありません');
-
-        const requirementTbody = document.getElementById('shift_requirement_tbody');
-        requirementTbody.innerHTML = '';
-        for (let r = 0; r < result.requirements.length; r++) {
-          requirementTbody.appendChild(createShiftRequirementRow(result.requirements[r]));
-        }
-        refreshShiftEmptyRow(requirementTbody, 5, '必要人数条件はまだありません');
-
-        showShiftDetailMessage('', false);
-        document.getElementById('shift_detail_body').style.display = 'block';
-      }
-
-      /**
-       * 確認事項を編集欄にも表示する
-       * ホバーできない環境では吹き出しを読めないため、同じ内容をここに出す
-       */
-      function renderShiftWarnings(warnings) {
-        const container = document.getElementById('shift_detail_warnings');
-        container.innerHTML = '';
-        if (!warnings || warnings.length === 0) {
-          return;
-        }
-
-        const heading = document.createElement('div');
-        heading.className = 'shift-warning-heading';
-        heading.textContent = '確認事項（' + warnings.length + '件）';
-        container.appendChild(heading);
-
-        for (let i = 0; i < warnings.length; i++) {
-          container.appendChild(createShiftWarningItem(warnings[i]));
-        }
-      }
-
-      /**
-       * 行が1件も無いときだけ、表に「まだありません」の1行を出す
-       */
-      function refreshShiftEmptyRow(tbody, columnCount, message) {
-        const emptyRow = tbody.querySelector('.shift-empty-row');
-        const hasRow = (tbody.querySelector('.shift-row') !== null);
-
-        if (hasRow) {
-          if (emptyRow) {
-            tbody.removeChild(emptyRow);
-          }
-          return;
-        }
-        if (emptyRow) {
-          return;
-        }
-
-        const row = document.createElement('tr');
-        row.className = 'shift-empty-row';
-        const cell = document.createElement('td');
-        cell.className = 'shift-table-empty';
-        cell.colSpan = columnCount;
-        cell.textContent = message;
-        row.appendChild(cell);
-        tbody.appendChild(row);
-      }
-
-      /**
-       * シフト割当の1行分（従業員・出勤・退勤・ポジション・備考・削除）を作る
-       * 削除済みの従業員の枠は、元の氏名を選択肢に残したまま「交代が必要」と表示する
-       */
-      function createShiftAssignmentRow(assignment) {
-        const row = document.createElement('tr');
-        row.className = 'shift-row';
-
-        // 交代先に選べるのは有効な従業員だけ
-        const employeeOptions = [];
-        for (let i = 0; i < shiftDayEmployees.length; i++) {
-          employeeOptions.push({
-            'value': String(shiftDayEmployees[i].id),
-            'label': shiftDayEmployees[i].name
-          });
-        }
-        if (assignment.isDeletedEmployee) {
-          // 交代先を選ぶまで、元の従業員が選ばれたままになるようにする
-          employeeOptions.push({
-            'value': String(assignment.employeeId),
-            'label': (assignment.employeeName || ('従業員番号 ' + assignment.employeeId)) + '（削除済み）'
-          });
-        }
-
-        const employeeCell = createShiftCell(
-          createShiftSelect('shift-employee-select', employeeOptions, assignment.employeeId, '未選択'));
-        if (assignment.needsReplacement) {
-          row.classList.add('shift-row-replacement');
-          const replacementNote = document.createElement('div');
-          replacementNote.className = 'shift-replacement-note';
-          replacementNote.textContent = '削除済み従業員のため、交代が必要';
-          employeeCell.appendChild(replacementNote);
-        }
-        row.appendChild(employeeCell);
-        row.appendChild(createShiftCell(createShiftTimeInput('shift-start-time', assignment.startTime)));
-        row.appendChild(createShiftCell(createShiftTimeInput('shift-end-time', assignment.endTime)));
-        row.appendChild(createShiftCell(
-          createShiftSelect('shift-position-select', getShiftPositionOptions(), assignment.position, '未選択')));
-
-        const noteInput = document.createElement('input');
-        noteInput.type = 'text';
-        noteInput.className = 'shift-note-input';
-        noteInput.value = assignment.note;
-        row.appendChild(createShiftCell(noteInput));
-
-        row.appendChild(createShiftCell(
-          createShiftDeleteButton(row, 6, 'シフトの割当はまだありません')));
-
-        return row;
-      }
-
-      /**
-       * 必要人数条件の1行分（開始・終了・ポジション・必要人数・削除）を作る
-       */
-      function createShiftRequirementRow(requirement) {
-        const row = document.createElement('tr');
-        row.className = 'shift-row';
-
-        row.appendChild(createShiftCell(createShiftTimeInput('shift-requirement-start-time', requirement.startTime)));
-        row.appendChild(createShiftCell(createShiftTimeInput('shift-requirement-end-time', requirement.endTime)));
-        row.appendChild(createShiftCell(
-          createShiftSelect('shift-requirement-position-select', getShiftPositionOptions(), requirement.position, '未選択')));
-
-        const countInput = document.createElement('input');
-        countInput.type = 'number';
-        countInput.className = 'shift-required-count-input';
-        countInput.min = '1';
-        countInput.step = '1';
-        countInput.value = String(requirement.requiredCount);
-        row.appendChild(createShiftCell(countInput));
-
-        row.appendChild(createShiftCell(
-          createShiftDeleteButton(row, 5, '必要人数条件はまだありません')));
-
-        return row;
-      }
-
-      function createShiftCell(child) {
-        const cell = document.createElement('td');
-        cell.appendChild(child);
-        return cell;
-      }
-
-      function createShiftTimeInput(className, value) {
-        const input = document.createElement('input');
-        input.type = 'time';
-        input.className = className;
-        input.value = value;
-        return input;
-      }
-
-      function getShiftPositionOptions() {
-        const options = [];
-        for (let i = 0; i < POSITION_ITEMS.length; i++) {
-          options.push({ 'value': POSITION_ITEMS[i], 'label': POSITION_ITEMS[i] });
-        }
-        return options;
-      }
-
-      /**
-       * 選択肢のselectを作る
-       * 保存済みの値が選択肢に無い場合（名簿から消えた従業員など）は、その値の選択肢を足して
-       * 画面を開いただけで内容が別の値に変わってしまわないようにする
-       */
-      function createShiftSelect(className, options, selectedValue, placeholder) {
-        const select = document.createElement('select');
-        select.className = className;
-        const currentValue = selectedValue ? String(selectedValue) : '';
-
-        const emptyOption = document.createElement('option');
-        emptyOption.value = '';
-        emptyOption.textContent = placeholder;
-        select.appendChild(emptyOption);
-
-        let hasCurrentValue = false;
-        for (let i = 0; i < options.length; i++) {
-          const option = document.createElement('option');
-          option.value = options[i].value;
-          option.textContent = options[i].label;
-          select.appendChild(option);
-          if (options[i].value === currentValue) {
-            hasCurrentValue = true;
-          }
-        }
-
-        if (currentValue !== '' && !hasCurrentValue) {
-          const unknownOption = document.createElement('option');
-          unknownOption.value = currentValue;
-          unknownOption.textContent = currentValue + '（選択肢にありません）';
-          select.appendChild(unknownOption);
-        }
-
-        select.value = currentValue;
-        return select;
-      }
-
-      function createShiftDeleteButton(row, columnCount, emptyMessage) {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'shift-delete-btn';
-        button.textContent = '削除';
-        button.addEventListener('click', function () {
-          const tbody = row.parentNode;
-          tbody.removeChild(row);
-          refreshShiftEmptyRow(tbody, columnCount, emptyMessage);
-        });
-        return button;
-      }
-
-      function addShiftAssignmentRow() {
-        const tbody = document.getElementById('shift_assignment_tbody');
-        tbody.appendChild(createShiftAssignmentRow({
-          'employeeId': '',
-          'employeeName': '',
-          'startTime': '',
-          'endTime': '',
-          'position': '',
-          'note': '',
-          'isDeletedEmployee': false,
-          'needsReplacement': false
-        }));
-        refreshShiftEmptyRow(tbody, 6, 'シフトの割当はまだありません');
-      }
-
-      function addShiftRequirementRow() {
-        const tbody = document.getElementById('shift_requirement_tbody');
-        tbody.appendChild(createShiftRequirementRow({
-          'startTime': '',
-          'endTime': '',
-          'position': '',
-          'requiredCount': 1
-        }));
-        refreshShiftEmptyRow(tbody, 5, '必要人数条件はまだありません');
-      }
-
-      function collectShiftAssignments() {
-        const rows = document.getElementById('shift_assignment_tbody').querySelectorAll('.shift-row');
-        const assignments = [];
-        for (let i = 0; i < rows.length; i++) {
-          assignments.push({
-            'employeeId': rows[i].querySelector('.shift-employee-select').value,
-            'startTime': rows[i].querySelector('.shift-start-time').value,
-            'endTime': rows[i].querySelector('.shift-end-time').value,
-            'position': rows[i].querySelector('.shift-position-select').value,
-            'note': rows[i].querySelector('.shift-note-input').value
-          });
-        }
-        return assignments;
-      }
-
-      function collectShiftRequirements() {
-        const rows = document.getElementById('shift_requirement_tbody').querySelectorAll('.shift-row');
-        const requirements = [];
-        for (let i = 0; i < rows.length; i++) {
-          requirements.push({
-            'startTime': rows[i].querySelector('.shift-requirement-start-time').value,
-            'endTime': rows[i].querySelector('.shift-requirement-end-time').value,
-            'position': rows[i].querySelector('.shift-requirement-position-select').value,
-            'requiredCount': rows[i].querySelector('.shift-required-count-input').value
-          });
-        }
-        return requirements;
-      }
-
-      /**
-       * 保存前にブラウザ側でも入力を確認する（同じ内容をサーバー側でも検証する）
-       * 問題があればエラーメッセージ、問題が無ければ空文字を返す
-       * 人員不足や勤務時間の重複は保存できる確認事項なので、ここでは止めない
-       */
-      function validateShiftRowsOnClient(assignments, requirements) {
-        for (let i = 0; i < assignments.length; i++) {
-          const label = 'シフト割当' + (i + 1) + '行目：';
-          if (assignments[i].employeeId === '') {
-            return label + '従業員を選択してください';
-          }
-          if (assignments[i].position === '') {
-            return label + 'ポジションを選択してください';
-          }
-          if (assignments[i].startTime === '') {
-            return label + '出勤時刻を入力してください';
-          }
-          if (assignments[i].endTime === '') {
-            return label + '退勤時刻を入力してください';
-          }
-          // 'HH:mm' は桁が揃っているので、文字列のまま比較しても時刻の前後を判定できる
-          if (assignments[i].startTime >= assignments[i].endTime) {
-            return label + '出勤時刻は退勤時刻より前にしてください';
-          }
-        }
-
-        for (let r = 0; r < requirements.length; r++) {
-          const label = '必要人数条件' + (r + 1) + '行目：';
-          if (requirements[r].position === '') {
-            return label + 'ポジションを選択してください';
-          }
-          if (requirements[r].startTime === '') {
-            return label + '開始時刻を入力してください';
-          }
-          if (requirements[r].endTime === '') {
-            return label + '終了時刻を入力してください';
-          }
-          if (requirements[r].startTime >= requirements[r].endTime) {
-            return label + '開始時刻は終了時刻より前にしてください';
-          }
-          const requiredCount = Number(requirements[r].requiredCount);
-          if (!isFinite(requiredCount) || Math.floor(requiredCount) !== requiredCount || requiredCount < 1) {
-            return label + '必要人数は1以上の整数で入力してください';
-          }
-        }
-
-        return '';
-      }
-
-      /**
-       * 選択中の日のシフトをまとめて保存する
-       * 保存中はボタンを無効化し、保存が終わったら表示中の月を取り直して印を更新する
-       */
-      function submitShiftDay() {
-        if (isShiftSaving || shiftSelectedDate === null) {
-          return;
-        }
-
-        const assignments = collectShiftAssignments();
-        const requirements = collectShiftRequirements();
-        const errorMessage = validateShiftRowsOnClient(assignments, requirements);
-        if (errorMessage !== '') {
-          showShiftSaveStatus(errorMessage, true);
-          return;
-        }
-
-        isShiftSaving = true;
-        const saveBtn = document.getElementById('shift_save_btn');
-        saveBtn.disabled = true;
-        saveBtn.textContent = '保存中...';
-        showShiftSaveStatus('', false);
-
-        const savedDateKey = shiftSelectedDate;
-        const sessionId = loginSessionId;
-        google.script.run
-          .withSuccessHandler(function (result) {
-            if (!isSameLoginSession(sessionId)) {
-              return;
-            }
-            finishShiftSaving();
-            // 保存した日の割当・確認事項と、カレンダーの印（○／△！）を最新の内容に更新する
-            // 交代が済んだ枠の「交代が必要」の表示も、ここで描き直されて消える
-            if (shiftSelectedDate === savedDateKey) {
-              renderShiftDay(result);
-            }
-            showShiftSaveStatus(result.message, false);
-            loadShiftMonth(shiftYear, shiftMonth);
-          })
-          .withFailureHandler(function (error) {
-            if (!isSameLoginSession(sessionId)) {
-              return;
-            }
-            finishShiftSaving();
-            showShiftSaveStatus('エラー: ' + error.message, true);
-          })
-          .saveShiftDay(savedDateKey, assignments, requirements, authToken);
-      }
-
-      function finishShiftSaving() {
-        isShiftSaving = false;
-        const saveBtn = document.getElementById('shift_save_btn');
-        saveBtn.disabled = false;
-        saveBtn.textContent = 'この日のシフトを保存';
-      }
-
-      function hideShiftDetail() {
-        document.getElementById('shift_detail').style.display = 'none';
-        document.getElementById('shift_detail_body').style.display = 'none';
-        document.getElementById('shift_detail_warnings').innerHTML = '';
-        document.getElementById('shift_assignment_tbody').innerHTML = '';
-        document.getElementById('shift_requirement_tbody').innerHTML = '';
-        showShiftSaveStatus('', false);
-      }
-
-      /**
-       * 日付キー（'yyyy/MM/dd'）を「2026年9月2日（水）」のような表示用文字列にする
-       */
-      function formatShiftDateLabel(dateKey) {
-        const parts = dateKey.split('/');
-        const year = Number(parts[0]);
-        const month = Number(parts[1]);
-        const day = Number(parts[2]);
-        const weekday = SHIFT_WEEKDAY_LABELS[new Date(year, month - 1, day).getDay()];
-        return year + '年' + month + '月' + day + '日（' + weekday + '）';
-      }
-
-      /**
-       * カレンダーの上に出す一行メッセージ（読み込み中・エラー）を切り替える
-       */
       function showShiftMessage(message, isError) {
         const messageEl = document.getElementById('shift_message');
         messageEl.textContent = message;
@@ -2775,32 +2176,6 @@
           messageEl.classList.add('error');
         } else {
           messageEl.classList.remove('error');
-        }
-      }
-
-      /**
-       * 編集欄の代わりに出す一行メッセージ（読み込み中・エラー）を切り替える
-       */
-      function showShiftDetailMessage(message, isError) {
-        const messageEl = document.getElementById('shift_detail_message');
-        messageEl.textContent = message;
-        if (isError) {
-          messageEl.classList.add('error');
-        } else {
-          messageEl.classList.remove('error');
-        }
-      }
-
-      /**
-       * 保存ボタンの横に出す状態（保存中・完了・エラー）を切り替える
-       */
-      function showShiftSaveStatus(message, isError) {
-        const statusEl = document.getElementById('shift_save_status');
-        statusEl.textContent = message;
-        if (isError) {
-          statusEl.classList.add('error');
-        } else {
-          statusEl.classList.remove('error');
         }
       }
 

@@ -17,8 +17,6 @@
         <div class="employee-list">
           <div class="employee-list-header">
             <h3>従業員一覧</h3>
-            <input type="text" id="employee_search_input" class="employee-search-input"
-                   placeholder="従業員番号・氏名で検索" autocomplete="off" oninput="handleEmployeeSearchInput()">
           </div>
           <div class="employee-list-message" id="employee_list_message"></div>
           <ul id="employee_list"></ul>
@@ -27,12 +25,12 @@
           <div class="selected-emp-name" id="selected_emp_name"></div>
           <div class="current-time" id="current_time"></div>
           <div class="clock-buttons">
-            <button type="button" class="clock-btn clock-in" onclick="handleClockButtonClick('出勤')">出勤</button>
-            <button type="button" class="clock-btn clock-out" onclick="handleClockButtonClick('退勤')">退勤</button>
+            <button type="button" class="clock-btn clock-in" data-clock-type="出勤" disabled onclick="handleClockButtonClick('出勤')">出勤</button>
+            <button type="button" class="clock-btn clock-out" data-clock-type="退勤" disabled onclick="handleClockButtonClick('退勤')">退勤</button>
           </div>
           <div class="break-buttons">
-            <button type="button" class="break-btn break-start" onclick="handleClockButtonClick('休憩開始')">休憩開始</button>
-            <button type="button" class="break-btn break-end" onclick="handleClockButtonClick('休憩終了')">休憩終了</button>
+            <button type="button" class="break-btn break-start" data-clock-type="休憩開始" disabled onclick="handleClockButtonClick('休憩開始')">休憩開始</button>
+            <button type="button" class="break-btn break-end" data-clock-type="休憩終了" disabled onclick="handleClockButtonClick('休憩終了')">休憩終了</button>
           </div>
           <div id="record_message"></div>
           <div class="employee-cards-row">
@@ -196,56 +194,6 @@
             </div>
             <div class="shift-calendar" id="shift_calendar"></div>
 
-            <div class="shift-legend">
-              <span class="shift-legend-item"><span class="shift-mark shift-mark-ok">○</span>作成済み・問題なし</span>
-              <span class="shift-legend-item"><span class="shift-mark shift-mark-warning">△！</span>要確認</span>
-              <span class="shift-legend-item"><span class="shift-mark shift-mark-uncreated">—</span>未作成</span>
-            </div>
-
-            <div class="shift-detail" id="shift_detail" style="display:none;">
-              <h3 class="shift-detail-heading" id="shift_detail_heading"></h3>
-              <div class="attendance-message" id="shift_detail_message"></div>
-
-              <div id="shift_detail_body" style="display:none;">
-                <div class="shift-detail-warnings" id="shift_detail_warnings"></div>
-
-                <h4 class="shift-subheading">従業員のシフト割当</h4>
-                <table class="attendance-table shift-table">
-                  <thead>
-                    <tr>
-                      <th>従業員</th>
-                      <th>出勤時刻</th>
-                      <th>退勤時刻</th>
-                      <th>ポジション</th>
-                      <th>備考</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody id="shift_assignment_tbody"></tbody>
-                </table>
-                <button type="button" class="shift-add-btn" onclick="addShiftAssignmentRow()">従業員を追加</button>
-
-                <h4 class="shift-subheading">必要人数条件</h4>
-                <table class="attendance-table shift-table">
-                  <thead>
-                    <tr>
-                      <th>開始時刻</th>
-                      <th>終了時刻</th>
-                      <th>ポジション</th>
-                      <th>必要人数</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody id="shift_requirement_tbody"></tbody>
-                </table>
-                <button type="button" class="shift-add-btn" onclick="addShiftRequirementRow()">必要人数条件を追加</button>
-
-                <div class="shift-save-row">
-                  <button type="button" id="shift_save_btn" class="shift-save-btn" onclick="submitShiftDay()">この日のシフトを保存</button>
-                  <span class="shift-save-status" id="shift_save_status"></span>
-                </div>
-              </div>
-            </div>
           </div>
 
           <div id="section_order" class="manager-section" style="display:none;">

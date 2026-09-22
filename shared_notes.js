@@ -52,42 +52,34 @@ function getSharedNoteRecipientCandidates(empId, authToken) {
  * @param {Array} recipientIds 共有先の従業員番号の配列
  * @param {string} noteText 共有メモ本文
  * @param {string} authToken ログイントークン
- * @return {string} recordClock() が返す退勤メッセージ
+ * @return {Object} 退勤メッセージと保存後の打刻状態
  */
 function saveSharedNoteAndClockOut(empId, recipientIds, noteText, authToken) {
   requireLoggedIn_(authToken);
 
-  // 削除済み・名簿にない従業員の打刻を受け付けないのと同じ考え方で、送信者も確認する
-  const nameByEmpId = getActiveEmployeeNameMap();
-  const senderName = nameByEmpId[String(empId)];
-  if (!senderName) {
-    throw new Error('この従業員は選べません。画面を再読み込みしてください');
-  }
+  return recordClockWithValidation_(empId, '退勤', function (nameByEmpId) {
+    const senderName = nameByEmpId[String(empId)];
+    noteText = (noteText === null || noteText === undefined) ? '' : String(noteText).trim();
 
-  noteText = (noteText === null || noteText === undefined) ? '' : String(noteText).trim();
-
-  const uniqueRecipientIds = [];
-  const seen = {};
-  for (let i = 0; i < (recipientIds || []).length; i++) {
-    const recipientId = String(recipientIds[i]);
-    if (recipientId === String(empId) || seen[recipientId]) {
-      continue; // 本人・重複指定は無視する
+    const uniqueRecipientIds = [];
+    const seen = {};
+    for (let i = 0; i < (recipientIds || []).length; i++) {
+      const recipientId = String(recipientIds[i]);
+      if (recipientId === String(empId) || seen[recipientId]) {
+        continue; // 本人・重複指定は無視する
+      }
+      if (!nameByEmpId[recipientId]) {
+        continue; // 削除済み・無効な従業員は無視する
+      }
+      seen[recipientId] = true;
+      uniqueRecipientIds.push(recipientId);
     }
-    if (!nameByEmpId[recipientId]) {
-      continue; // 削除済み・無効な従業員は無視する
+
+    if (uniqueRecipientIds.length === 0 || noteText === '') {
+      throw new Error('共有先を1人以上選び、共有メモを入力してください');
     }
-    seen[recipientId] = true;
-    uniqueRecipientIds.push(recipientId);
-  }
-
-  if (uniqueRecipientIds.length === 0 || noteText === '') {
-    throw new Error('共有先を1人以上選び、共有メモを入力してください');
-  }
-
-  saveSharedNoteRows_(empId, senderName, uniqueRecipientIds, nameByEmpId, noteText);
-
-  // 共有メモの保存が終わってから、確認画面の「退勤」を押した時刻で退勤を記録する
-  return recordClock(empId, '退勤');
+    saveSharedNoteRows_(empId, senderName, uniqueRecipientIds, nameByEmpId, noteText);
+  });
 }
 
 function saveSharedNoteRows_(senderEmpId, senderName, recipientIds, nameByEmpId, noteText) {
