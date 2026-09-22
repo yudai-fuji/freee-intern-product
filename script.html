@@ -7,6 +7,10 @@
       let clockStateRequestId = 0;
       const pendingClockRequests = new Set();
       const CLOCK_TIME_ZONE = <?!= JSON.stringify(TIME_ZONE) ?>;
+      let clockPinContext = null;
+      let clockPinRequestId = 0;
+      let isClockPinSubmitting = false;
+      let sharedNotePinGrant = null;
 
       // 従業員画面の一覧に出す、有効な従業員の一覧（{ id, name, number } の配列）
       // 従業員画面と従業員編集で同じ有効な従業員一覧を使う
@@ -44,6 +48,13 @@
         document.getElementById('manager_password_input').addEventListener(
           'keydown', function (event) { if (event.key === 'Enter') {
             submitManagerLogin();}});
+
+        document.getElementById('clock_pin_input').addEventListener('keydown', function (event) {
+          if (event.key === 'Enter') { event.preventDefault(); submitClockPin(); }
+        });
+        document.getElementById('clock_pin_overlay').addEventListener('keydown', function (event) {
+          if (event.key === 'Escape') { event.preventDefault(); closeClockPinDialog(); }
+        });
 
         document.addEventListener('click', handleDocumentClickForSharedNoteDropdown);
 
@@ -98,7 +109,10 @@
        * @return {void} 戻り値なし
        */
       function handleScreenSwitchButtonClick() {
+        if (pendingClockRequests.size > 0 || isSharedNoteSubmitting) { return; }
         if (currentScreen === 'employee') {
+          closeClockPinDialog();
+          closeSharedNoteModal();
           openManagerLoginModal();
         } else {
           openScreenSwitchModal();
@@ -122,6 +136,7 @@
        */
       function closeManagerLoginModal() {
         document.getElementById('manager_login_overlay').style.display = 'none';
+        document.getElementById('manager_password_input').value = '';
       }
 
       /**
@@ -146,6 +161,7 @@
         // 先頭の 0 を保持するため、数値に変換せず文字列のまま渡す
         const password = passwordInput.value;
         const submitBtn = document.getElementById('manager_login_submit_btn');
+        if (submitBtn.disabled) { return; }
 
         if (password === '') {
           showManagerLoginError('パスワードを入力してください');
@@ -153,6 +169,7 @@
         }
 
         showManagerLoginError('');
+        passwordInput.value = '';
         submitBtn.disabled = true;
 
         google.script.run
@@ -262,6 +279,9 @@
        * @return {void} 戻り値なし
        */
       function closeAllModals() {
+        closeClockPinDialog();
+        closeSharedNoteModal();
+        document.getElementById('manager_password_input').value = '';
         const overlays = document.querySelectorAll('.modal-overlay');
         for (let i = 0; i < overlays.length; i++) {
           overlays[i].style.display = 'none';
@@ -290,6 +310,8 @@
        * @return {void} 戻り値なし
        */
       function resetManagerScreen() {
+        document.getElementById('manager_screen').classList.remove('skill-section-active');
+        resetManagerPasswordForm();
         const navItems = document.querySelectorAll('.manager-nav-item');
         for (let i = 0; i < navItems.length; i++) {
           navItems[i].classList.remove('selected');
@@ -367,6 +389,9 @@
         renderEmployeeList();
         if (document.getElementById('employee_delete_block').style.display !== 'none') {
           renderEmployeeDeleteList();
+        }
+        if (document.getElementById('employee_pin_block').style.display !== 'none') {
+          renderEmployeePinTargets();
         }
       }
 
@@ -455,6 +480,9 @@
        * @return {void} 戻り値なし
        */
       function selectEmployee(employee, item) {
+        if (isSharedNoteSubmitting) { return; }
+        closeClockPinDialog();
+        closeSharedNoteModal();
         selectedEmpId = String(employee.id);
         employeeClockState = null;
         clockStateRequestId++;
@@ -483,6 +511,8 @@
        * @return {void} 戻り値なし
        */
       function clearEmployeeSelection() {
+        closeClockPinDialog();
+        closeSharedNoteModal();
         selectedEmpId = null;
         employeeClockState = null;
         clockStateRequestId++;
@@ -554,9 +584,9 @@
       function renderClockButtons() {
         const buttons = document.querySelectorAll('[data-clock-type]');
         for (let i = 0; i < buttons.length; i++) {
-          buttons[i].disabled = sharedNoteEmpId !== null || !canRecordClock(buttons[i].dataset.clockType);
+          buttons[i].disabled = clockPinContext !== null || sharedNoteEmpId !== null || !canRecordClock(buttons[i].dataset.clockType);
         }
-        setSharedNoteButtonsDisabled(isSharedNoteSubmitting || sharedNoteEmpId !== selectedEmpId || !canRecordClock('退勤'));
+        setSharedNoteButtonsDisabled(clockPinContext !== null || isSharedNoteSubmitting || sharedNoteEmpId !== selectedEmpId || !canRecordClock('退勤'));
       }
 
       function applyEmployeeClockState(state) {
@@ -609,13 +639,97 @@
         return true;
       }
       function handleClockButtonClick(type) {
-        if (!canRecordClock(type) || sharedNoteEmpId !== null) { return; }
-        if (type === '退勤') {
-          openSharedNoteDialog();
+        if (!canRecordClock(type) || clockPinContext !== null || sharedNoteEmpId !== null) { return; }
+        openClockPinDialog(type);
+      }
+
+      function isValidEmployeePin(pin) {
+        return typeof pin === 'string' && pin.length === 6 && !/[^0-9]/.test(pin);
+      }
+
+      // resumeWithNoteを渡したときは、下書きを残したまま退勤だけを再認証する。
+      function openClockPinDialog(type, resumeWithNote) {
+        if (clockPinContext !== null || currentScreen !== 'employee' || !canRecordClock(type)) { return; }
+        clockPinContext = {
+          empId: selectedEmpId, type: type, sessionId: loginSessionId,
+          resumeWithNote: typeof resumeWithNote === 'boolean' ? resumeWithNote : null
+        };
+        clockPinRequestId++;
+        isClockPinSubmitting = false;
+        const employee = employeeListItems.find(function (item) { return String(item.id) === selectedEmpId; });
+        if (!employee) { closeClockPinDialog(); return; }
+        renderEmployeeNameBlock(document.getElementById('clock_pin_employee'), employee);
+        document.getElementById('clock_pin_title').textContent = type + '：PINの確認';
+        document.getElementById('clock_pin_input').value = '';
+        document.getElementById('clock_pin_error').textContent = '';
+        document.getElementById('clock_pin_submit_btn').disabled = false;
+        document.getElementById('clock_pin_overlay').style.display = 'flex';
+        document.getElementById('clock_pin_input').focus();
+        renderClockButtons();
+      }
+
+      function closeClockPinDialog() {
+        clockPinContext = null;
+        clockPinRequestId++;
+        isClockPinSubmitting = false;
+        document.getElementById('clock_pin_overlay').style.display = 'none';
+        document.getElementById('clock_pin_input').value = '';
+        document.getElementById('clock_pin_error').textContent = '';
+        document.getElementById('clock_pin_submit_btn').disabled = false;
+        renderClockButtons();
+      }
+
+      function handleClockPinOverlayClick(event) {
+        if (event.target === event.currentTarget) { closeClockPinDialog(); }
+      }
+
+      function submitClockPin() {
+        if (!clockPinContext || isClockPinSubmitting) { return; }
+        const context = clockPinContext;
+        const input = document.getElementById('clock_pin_input');
+        const pin = input.value;
+        input.value = '';
+        if (!isValidEmployeePin(pin)) {
+          document.getElementById('clock_pin_error').textContent = 'PINは半角数字6桁で入力してください';
+          input.focus();
           return;
         }
-        const empIdAtClick = selectedEmpId;
-        const sessionId = loginSessionId;
+        const requestId = ++clockPinRequestId;
+        isClockPinSubmitting = true;
+        document.getElementById('clock_pin_submit_btn').disabled = true;
+        document.getElementById('clock_pin_error').textContent = '';
+        google.script.run
+          .withSuccessHandler(function (grant) {
+            if (requestId !== clockPinRequestId || clockPinContext !== context ||
+                !isSameLoginSession(context.sessionId) || selectedEmpId !== context.empId) { return; }
+            input.value = '';
+            closeClockPinDialog();
+            if (!canRecordClock(context.type)) {
+              showRecordMessage('打刻状態が変わりました。状態を確認してからもう一度操作してください');
+              loadEmployeeClockState(context.empId, true);
+              return;
+            }
+            if (context.type === '退勤') {
+              sharedNotePinGrant = grant;
+              if (context.resumeWithNote === null) { openSharedNoteDialog(); }
+              else { submitSharedNoteClockOut(context.resumeWithNote); }
+            } else {
+              submitAuthenticatedClock(context.empId, context.type, grant.ticket, context.sessionId);
+            }
+          })
+          .withFailureHandler(function (error) {
+            if (requestId !== clockPinRequestId || clockPinContext !== context || !isSameLoginSession(context.sessionId)) { return; }
+            isClockPinSubmitting = false;
+            input.value = '';
+            document.getElementById('clock_pin_submit_btn').disabled = false;
+            document.getElementById('clock_pin_error').textContent = error.message;
+            input.focus();
+            loadEmployeeClockState(context.empId, true);
+          })
+          .authenticateClockPin(context.empId, context.type, pin, authToken);
+      }
+
+      function submitAuthenticatedClock(empIdAtClick, type, ticket, sessionId) {
         startClockSubmission(empIdAtClick);
         showRecordMessage('登録中...');
         google.script.run
@@ -629,7 +743,7 @@
           .withFailureHandler(function (error) {
             finishClockSubmission(empIdAtClick, sessionId, null, error);
           })
-          .recordClock(empIdAtClick, type);
+          .recordClock(empIdAtClick, type, ticket, authToken);
       }
 
       function showRecordMessage(message) {
@@ -1030,6 +1144,7 @@
        */
       function closeSharedNoteModal() {
         if (isSharedNoteSubmitting) { return; }
+        sharedNotePinGrant = null;
         document.getElementById('shared_note_overlay').style.display = 'none';
         document.getElementById('shared_note_text').value = '';
         document.getElementById('shared_note_recipient_list').innerHTML = '';
@@ -1052,7 +1167,7 @@
       }
 
       function submitSharedNoteClockOut(withNote) {
-        if (isSharedNoteSubmitting || sharedNoteEmpId !== selectedEmpId || !canRecordClock('退勤')) { return; }
+        if (clockPinContext !== null || isSharedNoteSubmitting || sharedNoteEmpId !== selectedEmpId || !canRecordClock('退勤')) { return; }
         const empId = sharedNoteEmpId;
         const sessionId = loginSessionId;
         const recipients = withNote ? getSharedNoteCheckedRecipients() : [];
@@ -1061,6 +1176,13 @@
           showSharedNoteConfirmError('共有先を1人以上選び、共有メモを入力してください');
           return;
         }
+        if (!sharedNotePinGrant || sharedNotePinGrant.expiresAt <= Date.now()) {
+          sharedNotePinGrant = null;
+          openClockPinDialog('退勤', withNote);
+          return;
+        }
+        const ticket = sharedNotePinGrant.ticket;
+        sharedNotePinGrant = null; // 送信後の再試行には新しいPIN認証が必要。
         isSharedNoteSubmitting = true;
         startClockSubmission(empId);
         showSharedNoteInputError('');
@@ -1087,9 +1209,9 @@
             finishClockSubmission(empId, sessionId, null, error);
           });
         if (withNote) {
-          runner.saveSharedNoteAndClockOut(empId, recipients.map(function (item) { return item.id; }), noteText, authToken);
+          runner.saveSharedNoteAndClockOut(empId, recipients.map(function (item) { return item.id; }), noteText, authToken, ticket);
         } else {
-          runner.recordClock(empId, '退勤');
+          runner.recordClock(empId, '退勤', ticket, authToken);
         }
       }
 
@@ -1098,30 +1220,39 @@
         document.getElementById('shared_note_confirm_submit_btn').disabled = disabled;
       }
 
-      // 店長画面：従業員編集（追加・削除）
+      // 店長画面：従業員編集（追加・削除・PIN変更）
       // 通信中に同じ操作を二重に送らないためのフラグ
       let isEmployeeEditSubmitting = false;
 
       // 削除しようとしている従業員。対象を選ぶまでは null
       let employeeDeleteTarget = null;
+      let employeePinRequestId = 0;
 
       /**
-       * 従業員編集を、追加・削除のどちらも選んでいない状態に戻す
-       * 見出しと2つのボタンだけが見えて、その下は空欄になる
+       * 従業員編集を、どの操作も選んでいない状態に戻す
        * @return {void} 戻り値なし
        */
       function resetEmployeeEditSection() {
-        isEmployeeEditSubmitting = false;
+        finishEmployeeAdding();
+        finishEmployeeDeleting();
         employeeDeleteTarget = null;
 
         document.getElementById('employee_add_mode_btn').classList.remove('selected');
         document.getElementById('employee_delete_mode_btn').classList.remove('selected');
+        document.getElementById('employee_pin_mode_btn').classList.remove('selected');
+        document.getElementById('employee_pin_block').style.display = 'none';
+        document.getElementById('employee_pin_target').innerHTML = '';
+        document.getElementById('employee_pin_target').disabled = false;
+        document.getElementById('employee_pin_submit_btn').disabled = false;
+        employeePinRequestId++;
+        clearEmployeePinInputs();
         document.getElementById('employee_add_block').style.display = 'none';
         document.getElementById('employee_delete_block').style.display = 'none';
         document.getElementById('employee_delete_confirm').style.display = 'none';
 
         document.getElementById('add_last_name').value = '';
         document.getElementById('add_first_name').value = '';
+        document.getElementById('add_employee_pin').value = '';
         document.getElementById('employee_delete_message').textContent = '';
         document.getElementById('employee_delete_list').innerHTML = '';
         showEmployeeEditStatus('add_employee_status', '', false);
@@ -1136,6 +1267,7 @@
         if (isEmployeeEditSubmitting) {
           return;
         }
+        resetEmployeeEditSection();
         document.getElementById('employee_add_mode_btn').classList.add('selected');
         document.getElementById('employee_delete_mode_btn').classList.remove('selected');
         document.getElementById('employee_delete_block').style.display = 'none';
@@ -1156,6 +1288,7 @@
         if (isEmployeeEditSubmitting) {
           return;
         }
+        resetEmployeeEditSection();
         document.getElementById('employee_delete_mode_btn').classList.add('selected');
         document.getElementById('employee_add_mode_btn').classList.remove('selected');
         document.getElementById('employee_add_block').style.display = 'none';
@@ -1319,10 +1452,10 @@
         const sessionId = loginSessionId;
         google.script.run
           .withSuccessHandler(function (result) {
-            finishEmployeeDeleting();
             if (!isSameLoginSession(sessionId)) {
               return;
             }
+            finishEmployeeDeleting();
             employeeDeleteTarget = null;
             document.getElementById('employee_delete_confirm').style.display = 'none';
             applyEmployeeList(result.employees); // 削除後の一覧に更新する
@@ -1330,10 +1463,10 @@
             showEmployeeEditStatus('employee_delete_status', result.message, false);
           })
           .withFailureHandler(function (error) {
-            finishEmployeeDeleting();
             if (!isSameLoginSession(sessionId)) {
               return;
             }
+            finishEmployeeDeleting();
             showEmployeeEditStatus('employee_delete_status', 'エラー: ' + error.message, true);
           })
           .deleteEmployee(employeeDeleteTarget.id, authToken);
@@ -1362,10 +1495,19 @@
 
         const lastName = document.getElementById('add_last_name').value.trim();
         const firstName = document.getElementById('add_first_name').value.trim();
+        const pinInput = document.getElementById('add_employee_pin');
+        const pin = pinInput.value;
         if (lastName === '' || firstName === '') {
           showEmployeeEditStatus('add_employee_status', '姓と名を入力してください', true);
           return;
         }
+
+        if (!isValidEmployeePin(pin)) {
+          pinInput.value = '';
+          showEmployeeEditStatus('add_employee_status', 'PINは半角数字6桁で入力してください', true);
+          return;
+        }
+        pinInput.value = '';
 
         isEmployeeEditSubmitting = true;
         const submitBtn = document.getElementById('add_employee_submit_btn');
@@ -1376,23 +1518,145 @@
         const sessionId = loginSessionId;
         google.script.run
           .withSuccessHandler(function (result) {
-            finishEmployeeAdding();
             if (!isSameLoginSession(sessionId)) {
               return;
             }
+            finishEmployeeAdding();
             document.getElementById('add_last_name').value = '';
             document.getElementById('add_first_name').value = '';
             showEmployeeEditStatus('add_employee_status', result.message, false);
             applyEmployeeList(result.employees); // 追加した従業員を一覧にも反映する
           })
           .withFailureHandler(function (error) {
-            finishEmployeeAdding();
             if (!isSameLoginSession(sessionId)) {
               return;
             }
+            finishEmployeeAdding();
             showEmployeeEditStatus('add_employee_status', 'エラー: ' + error.message, true);
           })
-          .addEmployee(lastName, firstName, authToken);
+          .addEmployee(lastName, firstName, pin, authToken);
+      }
+
+      function clearEmployeePinInputs() {
+        document.getElementById('employee_new_pin').value = '';
+        document.getElementById('employee_confirm_pin').value = '';
+        showEmployeeEditStatus('employee_pin_status', '', false);
+      }
+
+      function showEmployeePinForm() {
+        if (isEmployeeEditSubmitting) { return; }
+        resetEmployeeEditSection();
+        document.getElementById('employee_pin_mode_btn').classList.add('selected');
+        document.getElementById('employee_pin_block').style.display = 'block';
+        document.getElementById('employee_pin_submit_btn').disabled = true;
+        showEmployeeEditStatus('employee_pin_status', '読み込み中...', false);
+        loadEmployeeList(function (error) {
+          showEmployeeEditStatus('employee_pin_status', 'エラー: ' + error.message, true);
+        });
+      }
+
+      function renderEmployeePinTargets() {
+        const select = document.getElementById('employee_pin_target');
+        const selectedId = select.value;
+        select.innerHTML = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = '従業員を選択してください';
+        select.appendChild(placeholder);
+        employeeListItems.forEach(function (employee) {
+          const option = document.createElement('option');
+          option.value = String(employee.id);
+          option.textContent = employee.name + '（従業員番号：' + employee.number + '）';
+          select.appendChild(option);
+        });
+        select.value = employeeListItems.some(function (employee) { return String(employee.id) === selectedId; }) ? selectedId : '';
+        clearEmployeePinInputs();
+        document.getElementById('employee_pin_submit_btn').disabled = isEmployeeEditSubmitting || employeeListItems.length === 0;
+        if (employeeListItems.length === 0) { showEmployeeEditStatus('employee_pin_status', '従業員が登録されていません', false); }
+      }
+
+      function submitEmployeePinChange() {
+        if (isEmployeeEditSubmitting) { return; }
+        const target = document.getElementById('employee_pin_target');
+        const newPin = document.getElementById('employee_new_pin').value;
+        const confirmPin = document.getElementById('employee_confirm_pin').value;
+        clearEmployeePinInputs();
+        let error = '';
+        if (target.value === '') { error = '対象従業員を選択してください'; }
+        else if (!isValidEmployeePin(newPin) || !isValidEmployeePin(confirmPin)) { error = 'PINは半角数字6桁で入力してください'; }
+        else if (newPin !== confirmPin) { error = '新しいPINと確認欄が一致しません'; }
+        if (error) { showEmployeeEditStatus('employee_pin_status', error, true); return; }
+        const sessionId = loginSessionId;
+        const requestId = ++employeePinRequestId;
+        isEmployeeEditSubmitting = true;
+        target.disabled = true;
+        document.getElementById('employee_pin_submit_btn').disabled = true;
+        showEmployeeEditStatus('employee_pin_status', '変更中...', false);
+        function finish(message, isError) {
+          if (!isSameLoginSession(sessionId) || requestId !== employeePinRequestId) { return; }
+          isEmployeeEditSubmitting = false;
+          target.disabled = false;
+          document.getElementById('employee_pin_submit_btn').disabled = false;
+          clearEmployeePinInputs();
+          showEmployeeEditStatus('employee_pin_status', message, isError);
+        }
+        google.script.run
+          .withSuccessHandler(function (result) { finish(result.message, false); })
+          .withFailureHandler(function (failure) { finish('エラー: ' + failure.message, true); })
+          .changeEmployeePin(target.value, newPin, confirmPin, authToken);
+      }
+
+      let managerPasswordRequestId = 0;
+      let isManagerPasswordSubmitting = false;
+      const MANAGER_PASSWORD_MIN_LENGTH = <?!= JSON.stringify(MANAGER_PASSWORD_MIN_LENGTH) ?>;
+      const MANAGER_PASSWORD_MAX_LENGTH = <?!= JSON.stringify(MANAGER_PASSWORD_MAX_LENGTH) ?>;
+
+      function clearManagerPasswordInputs() {
+        ['current_manager_password', 'new_manager_password', 'confirm_manager_password'].forEach(function (id) {
+          document.getElementById(id).value = '';
+        });
+      }
+
+      function resetManagerPasswordForm() {
+        managerPasswordRequestId++;
+        isManagerPasswordSubmitting = false;
+        clearManagerPasswordInputs();
+        document.getElementById('manager_password_change_btn').disabled = false;
+        showEmployeeEditStatus('manager_password_change_status', '', false);
+      }
+
+      function isValidManagerPassword(password) {
+        return password.length >= MANAGER_PASSWORD_MIN_LENGTH && password.length <= MANAGER_PASSWORD_MAX_LENGTH && !/[^A-Za-z0-9]/.test(password);
+      }
+
+      function submitManagerPasswordChange() {
+        if (isManagerPasswordSubmitting) { return; }
+        const currentPassword = document.getElementById('current_manager_password').value;
+        const newPassword = document.getElementById('new_manager_password').value;
+        const confirmPassword = document.getElementById('confirm_manager_password').value;
+        clearManagerPasswordInputs();
+        let error = '';
+        if (currentPassword === '') { error = '現在のパスワードを入力してください'; }
+        else if (!isValidManagerPassword(newPassword) || !isValidManagerPassword(confirmPassword)) {
+          error = '新しいパスワードは半角英数字8〜64文字で入力してください（記号・空白は使用できません）';
+        } else if (newPassword !== confirmPassword) { error = '新しいパスワードと確認欄が一致しません'; }
+        if (error) { showEmployeeEditStatus('manager_password_change_status', error, true); return; }
+        const sessionId = loginSessionId;
+        const requestId = ++managerPasswordRequestId;
+        isManagerPasswordSubmitting = true;
+        document.getElementById('manager_password_change_btn').disabled = true;
+        showEmployeeEditStatus('manager_password_change_status', '変更中...', false);
+        function finish(message, isError) {
+          if (!isSameLoginSession(sessionId) || requestId !== managerPasswordRequestId) { return; }
+          isManagerPasswordSubmitting = false;
+          document.getElementById('manager_password_change_btn').disabled = false;
+          clearManagerPasswordInputs();
+          showEmployeeEditStatus('manager_password_change_status', message, isError);
+        }
+        google.script.run
+          .withSuccessHandler(function (result) { finish(result.message, false); })
+          .withFailureHandler(function (failure) { finish('エラー: ' + failure.message, true); })
+          .changeManagerPassword(currentPassword, newPassword, confirmPassword, authToken);
       }
 
       /**
@@ -1401,6 +1665,7 @@
        */
       function finishEmployeeAdding() {
         isEmployeeEditSubmitting = false;
+        document.getElementById('add_employee_pin').value = '';
         const submitBtn = document.getElementById('add_employee_submit_btn');
         submitBtn.disabled = false;
         submitBtn.textContent = '登録';
@@ -1428,6 +1693,9 @@
        * メニューを押すまでは何も表示しないので、ログイン直後のメイン領域は空欄のままになる
        */
       function showManagerSection(navItem) {
+        if (isEmployeeEditSubmitting || isManagerPasswordSubmitting) { return; }
+        resetManagerPasswordForm();
+        resetEmployeeEditSection();
         const navItems = document.querySelectorAll('.manager-nav-item');
         for (let i = 0; i < navItems.length; i++) {
           navItems[i].classList.remove('selected');
@@ -1440,9 +1708,9 @@
         }
 
         const sectionName = navItem.dataset.section;
+        document.getElementById('manager_screen').classList.toggle('skill-section-active', sectionName === 'skill');
         if (sectionName === 'employee_edit') {
           document.getElementById('section_employee_edit').style.display = 'block';
-          resetEmployeeEditSection(); // 開いた時点では追加・削除のどちらも選ばず、その下は空欄にする
         } else if (sectionName === 'dashboard') {
           document.getElementById('section_dashboard').style.display = 'block';
           loadTodayWork(); // 開くたびに最新の本日の業務設定を読み直す
@@ -1459,6 +1727,9 @@
           document.getElementById('section_order').style.display = 'block';
           changeOrderView('cart'); // 開いたときは必ず「発注する食材」から始める
           loadOrderBoard(); // 開くたびに最新の業者・食材・発注履歴を読み直す
+        } else if (sectionName === 'password_change') {
+          document.getElementById('section_password_change').style.display = 'block';
+          document.getElementById('current_manager_password').focus();
         }
       }
 
@@ -1695,12 +1966,14 @@
       }
 
       // スキル項目・評価値（config.js の SKILL_ITEMS / SKILL_LEVELS をそのまま埋め込み、二重管理しない）
-      // 評価は「未習得・習得中・習得済」の3つだけで、記号は画面にも保存先にも出てこない
+      // スライダーと保存値は同じF/B/A/Sの順序を使う。
       const SKILL_ITEMS = <?!= JSON.stringify(SKILL_ITEMS) ?>;
       const SKILL_LEVELS = <?!= JSON.stringify(SKILL_LEVELS) ?>;
+      const SKILL_LEVEL_LABELS = <?!= JSON.stringify(SKILL_LEVEL_LABELS) ?>;
 
       let skillMatrix = []; // サーバーから取得した、有効な従業員ごとのスキル情報
       let skillSelectedEmpId = null; // 右側に出している従業員（文字列にした従業員番号）
+      const pendingSkillSaves = new Map(); // 保存中の従業員のバーを変更・二重送信しない。
 
       /**
        * 従業員ごとのスキル情報をサーバーから取得する
@@ -1843,19 +2116,25 @@
 
         const itemsEl = document.getElementById('skill_detail_items');
         itemsEl.innerHTML = '';
+        const pendingValues = pendingSkillSaves.get(loginSessionId + ':' + employeeSkill.id);
+        const displayEmployee = pendingValues ? Object.assign({}, employeeSkill, { skills: {} }) : employeeSkill;
+        if (pendingValues) {
+          SKILL_ITEMS.forEach(function (item, i) { displayEmployee.skills[item] = pendingValues[i]; });
+        }
         for (let i = 0; i < SKILL_ITEMS.length; i++) {
-          itemsEl.appendChild(createSkillDetailItem(SKILL_ITEMS[i], employeeSkill));
+          itemsEl.appendChild(createSkillDetailItem(SKILL_ITEMS[i], displayEmployee));
         }
 
-        showSkillSaveStatus('', false);
-        document.getElementById('skill_save_btn').disabled = false;
+        itemsEl.querySelectorAll('.skill-rank-slider').forEach(function (slider) { slider.disabled = !!pendingValues; });
+        showSkillSaveStatus(pendingValues ? '保存中...' : '', false);
+        document.getElementById('skill_save_btn').disabled = !!pendingValues;
         emptyMessage.style.display = 'none';
         detail.style.display = 'block';
       }
 
       /**
-       * スキル1項目分の行（スキル名・評価のドロップダウン・最終更新日）を作る
-       * ドロップダウンを変えただけでは保存しない。保存ボタンを押したときにまとめて送る
+       * スキル1項目分の行（スキル名・4段階のバー・最終更新日）を作る
+       * バーを動かしただけでは保存せず、保存ボタンで6項目をまとめて送る
        * @param {string} item スキル名
        * @param {Object} employeeSkill { id, name, number, skills, updatedAt }
        * @return {Element} スキル1項目分の行
@@ -1869,22 +2148,45 @@
         nameEl.textContent = item;
         row.appendChild(nameEl);
 
-        const select = document.createElement('select');
-        for (let i = 0; i < SKILL_LEVELS.length; i++) {
-          const option = document.createElement('option');
-          option.value = SKILL_LEVELS[i];
-          option.textContent = SKILL_LEVELS[i];
-          select.appendChild(option);
+        const control = document.createElement('div');
+        control.className = 'skill-rank-control';
+        const labels = document.createElement('div');
+        labels.className = 'skill-rank-labels';
+        labels.setAttribute('aria-hidden', 'true');
+        SKILL_LEVELS.forEach(function (rank) {
+          const label = document.createElement('span');
+          label.textContent = rank;
+          labels.appendChild(label);
+        });
+        const slider = document.createElement('input');
+        slider.type = 'range';
+        slider.min = '0';
+        slider.max = '3';
+        slider.step = '1';
+        slider.className = 'skill-rank-slider';
+        slider.dataset.skillItem = item;
+        slider.setAttribute('aria-label', item + 'の評価');
+        slider.value = String(Math.max(0, SKILL_LEVELS.indexOf(employeeSkill.skills[item])));
+        const current = document.createElement('output');
+        current.className = 'skill-rank-current';
+        function updateRank() {
+          const index = Number(slider.value);
+          const rank = SKILL_LEVELS[index];
+          control.dataset.rank = rank;
+          slider.style.setProperty('--rank-progress', (index / 3 * 100) + '%');
+          slider.setAttribute('aria-valuetext', rank + '：' + SKILL_LEVEL_LABELS[rank]);
+          current.textContent = rank + '：' + SKILL_LEVEL_LABELS[rank];
+          Array.from(labels.children).forEach(function (label, i) { label.classList.toggle('selected', i === index); });
         }
-        // 想定外の値が届いても空欄にならないよう、選べる評価でなければ「未習得」に寄せる
-        select.value = (SKILL_LEVELS.indexOf(employeeSkill.skills[item]) !== -1) ?
-          employeeSkill.skills[item] : SKILL_LEVELS[0];
-        select.dataset.skillItem = item;
-        row.appendChild(select);
+        slider.addEventListener('input', updateRank);
+        updateRank();
+        control.appendChild(labels);
+        control.appendChild(slider);
+        control.appendChild(current);
+        row.appendChild(control);
 
         const dateLabel = document.createElement('div');
         dateLabel.className = 'skill-detail-item-updated-at';
-        dateLabel.dataset.skillItem = item;
         dateLabel.textContent = formatSkillUpdatedAtLabel(employeeSkill.updatedAt[item]);
         row.appendChild(dateLabel);
 
@@ -1917,12 +2219,16 @@
         if (employeeSkill === null) {
           return;
         }
+        const saveKey = loginSessionId + ':' + employeeSkill.id;
+        if (pendingSkillSaves.has(saveKey)) { return; }
 
-        const selects = document.getElementById('skill_detail_items').querySelectorAll('select');
+        const sliders = document.getElementById('skill_detail_items').querySelectorAll('.skill-rank-slider');
         const skillValues = [];
-        for (let i = 0; i < selects.length; i++) {
-          skillValues.push(selects[i].value);
+        for (let i = 0; i < sliders.length; i++) {
+          skillValues.push(SKILL_LEVELS[Number(sliders[i].value)]);
+          sliders[i].disabled = true;
         }
+        pendingSkillSaves.set(saveKey, skillValues);
 
         const saveBtn = document.getElementById('skill_save_btn');
         saveBtn.disabled = true;
@@ -1932,6 +2238,7 @@
         const savedEmpId = skillSelectedEmpId;
         google.script.run
           .withSuccessHandler(function (result) {
+            pendingSkillSaves.delete(saveKey);
             if (!isSameLoginSession(sessionId)) {
               return;
             }
@@ -1940,14 +2247,16 @@
               return; // 保存の間に別の従業員へ切り替わっていたら、いまの表示はそのままにする
             }
             saveBtn.disabled = false;
-            renderSkillDetailUpdatedAt(result.updatedAt);
+            renderSkillDetail();
             showSkillSaveStatus('保存しました', false);
           })
           .withFailureHandler(function (error) {
+            pendingSkillSaves.delete(saveKey);
             if (!isSameLoginSession(sessionId) || skillSelectedEmpId !== savedEmpId) {
               return;
             }
             saveBtn.disabled = false;
+            document.getElementById('skill_detail_items').querySelectorAll('.skill-rank-slider').forEach(function (slider) { slider.disabled = false; });
             showSkillSaveStatus('エラー: ' + error.message, true);
           })
           .saveEmployeeSkills(employeeSkill.id, skillValues, authToken);
@@ -1973,24 +2282,12 @@
       }
 
       /**
-       * 保存後、サーバーが返した最新の更新日で右側の「最終更新」だけを書き換える
-       * 評価が変わっていない項目はサーバー側でも更新日を動かしていないので、同じ日付が返る
-       * @param {Object} updatedAt サーバーが返した最新の更新日
-       * @return {void} 戻り値なし
-       */
-      function renderSkillDetailUpdatedAt(updatedAt) {
-        const dateLabels = document.querySelectorAll('#skill_detail_items .skill-detail-item-updated-at');
-        for (let i = 0; i < dateLabels.length; i++) {
-          dateLabels[i].textContent = formatSkillUpdatedAtLabel(updatedAt[dateLabels[i].dataset.skillItem]);
-        }
-      }
-
-      /**
        * スキル管理画面の表示を初期状態に戻す（ログインし直したときに前の内容を残さない）
        * @return {void} 戻り値なし
        */
       function resetSkillSection() {
         skillMatrix = [];
+        pendingSkillSaves.clear();
         skillSelectedEmpId = null;
         document.getElementById('skill_layout').style.display = 'none';
         document.getElementById('skill_employee_list').innerHTML = '';

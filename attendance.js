@@ -56,12 +56,13 @@ function readTodayClockState_(empId, sheet, now) {
   return result;
 }
 
-function recordClock(empId, type) {
-  return recordClockWithValidation_(empId, type);
+function recordClock(empId, type, ticket, authToken) {
+  return recordClockWithValidation_(empId, type, ticket, authToken);
 }
 
 // 通常打刻と共有メモ付き退勤で、状態の確認から保存まで同じロックを使う。
-function recordClockWithValidation_(empId, type, beforeRecord) {
+function recordClockWithValidation_(empId, type, ticket, authToken, beforeRecord) {
+  requireLoggedIn_(authToken);
   if (CLOCK_TYPES.indexOf(type) === -1) throw new Error('不正な打刻種別です');
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) {
@@ -75,6 +76,7 @@ function recordClockWithValidation_(empId, type, beforeRecord) {
     if (clockState.state === 'invalid') throw new Error(clockState.error);
     const next = nextClockState_(clockState.state, type);
     if (next === null) throw new Error('現在の打刻状態では「' + type + '」を記録できません。本日の打刻状態を確認してください');
+    consumeClockPinTicket_(empId, type, ticket, authToken, now);
 
     // 状態検証後にメモを保存する。保存に失敗した場合は打刻を行わない。
     if (beforeRecord) {

@@ -69,8 +69,8 @@
     list-style: none;
     padding: 0;
     margin: 0;
-    max-height: 590px;
-    overflow-y: scroll;
+    max-height: calc(100vh - 210px);
+    overflow-y: auto;
     scrollbar-gutter: stable;
   }
   .employee-item {
@@ -134,13 +134,13 @@
   .clock-in {
     background-color: #43a047;
   }
-  .clock-in:hover {
+  .clock-in:not(:disabled):hover {
     background-color: #388e3c;
   }
   .clock-out {
     background-color: #e53935;
   }
-  .clock-out:hover {
+  .clock-out:not(:disabled):hover {
     background-color: #d32f2f;
   }
   .break-buttons {
@@ -152,20 +152,35 @@
   .break-btn {
     font-size: 15px;
     padding: 8px 22px;
-    border: 1px solid #ccc;
+    border: 1px solid transparent;
     border-radius: 8px;
     cursor: pointer;
-    background-color: #f5f5f5;
-    color: #555;
+    color: #183b1b;
   }
-  .break-btn:hover {
-    background-color: #e8e8e8;
+  .break-start {
+    background-color: #a5d6a7;
+    border-color: #81c784;
   }
-  .break-btn:active {
-    background-color: #dcdcdc;
+  .break-start:not(:disabled):hover {
+    background-color: #81c784;
+  }
+  .break-start:not(:disabled):active {
+    background-color: #66bb6a;
+  }
+  .break-end {
+    background-color: #ef9a9a;
+    border-color: #e57373;
+    color: #681c1c;
+  }
+  .break-end:not(:disabled):hover {
+    background-color: #e57373;
+  }
+  .break-end:not(:disabled):active {
+    background-color: #ef5350;
   }
   .clock-btn:disabled,
   .clock-btn:disabled:hover,
+  .clock-btn:disabled:active,
   .break-btn:disabled,
   .break-btn:disabled:hover,
   .break-btn:disabled:active {
@@ -226,6 +241,7 @@
   /* 店長画面：従業員編集 */
   .employee-edit-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 16px;
     margin-top: 20px;
   }
@@ -576,10 +592,10 @@
   .skill-detail-header .employee-number-text {
     font-size: 15px;
   }
-  /* スキル名・ドロップダウン・最終更新日を1行に並べ、余白を広めにとって見やすくする */
+  /* スキル名・4段階バー・最終更新日 */
   .skill-detail-item {
     display: grid;
-    grid-template-columns: 1fr 160px 120px;
+    grid-template-columns: 120px minmax(160px, 1fr);
     align-items: center;
     gap: 16px;
     padding: 18px 4px;
@@ -588,20 +604,97 @@
   .skill-detail-item-name {
     font-size: 20px;
   }
-  .skill-detail-item select {
-    width: 100%;
-    font-size: 17px;
-    padding: 8px 10px;
-    border: 1px solid #ccc;
-    border-radius: 6px;
-    box-sizing: border-box;
-  }
-  /* 更新日は評価より控えめにして、ドロップダウンの邪魔にならないようにする */
+  /* 更新日はバーの下に控えめに表示する */
   .skill-detail-item-updated-at {
+    grid-column: 2;
     font-size: 12px;
     color: #999;
     text-align: right;
     white-space: nowrap;
+  }
+  #section_skill .skill-layout {
+    grid-template-columns: 220px minmax(300px, 1fr) 160px;
+    gap: 28px;
+    max-width: 1220px;
+  }
+  .skill-section-active .manager-main { min-width: 0; }
+  #section_skill [data-rank="F"] { --rank-color: #757575; }
+  #section_skill [data-rank="B"] { --rank-color: #1e3a5f; }
+  #section_skill [data-rank="A"] { --rank-color: #e53935; }
+  #section_skill [data-rank="S"] { --rank-color: #43a047; }
+  .skill-rank-control { min-width: 0; }
+  .skill-rank-labels {
+    display: flex;
+    justify-content: space-between;
+    padding: 0 3px;
+    color: #888;
+  }
+  .skill-rank-labels .selected { color: var(--rank-color); font-weight: bold; }
+  .skill-rank-current {
+    display: block;
+    margin-top: 5px;
+    color: var(--rank-color);
+    font-size: 15px;
+    font-weight: bold;
+  }
+  .skill-rank-slider {
+    appearance: none;
+    -webkit-appearance: none;
+    display: block;
+    width: 100%;
+    height: 8px;
+    border-radius: 4px;
+    margin: 12px 0;
+    cursor: pointer;
+    background: linear-gradient(to right, var(--rank-color) 0%, var(--rank-color) var(--rank-progress), #ddd var(--rank-progress), #ddd 100%);
+  }
+  .skill-rank-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid #fff;
+    background: var(--rank-color);
+    box-shadow: 0 0 0 1px var(--rank-color);
+  }
+  .skill-rank-slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid #fff;
+    background: var(--rank-color);
+    box-shadow: 0 0 0 1px var(--rank-color);
+  }
+  .skill-rank-slider:focus-visible { outline: 2px solid var(--rank-color); outline-offset: 7px; }
+  .skill-rank-slider:disabled { cursor: not-allowed; opacity: 0.65; }
+  .skill-legend {
+    padding: 18px;
+    background: #fafafa;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+  }
+  .skill-legend h3 { font-size: 18px; margin: 0 0 16px; }
+  .skill-legend-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; white-space: nowrap; }
+  .skill-rank-badge { color: var(--rank-color); font-size: 22px; font-weight: bold; }
+  .skill-legend p { color: #666; font-size: 12px; line-height: 1.7; margin: 16px 0 0; }
+  .clock-pin-overlay { z-index: 1200; }
+  .clock-pin-employee { margin-bottom: 20px; }
+  .clock-pin-close { background: transparent; border: 0; }
+  @media (max-width: 1250px) {
+    #section_skill .skill-layout { grid-template-columns: 180px minmax(0, 1fr); gap: 24px; }
+    #section_skill .skill-legend { grid-column: 2; }
+    #section_skill .skill-detail-item { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+    #section_skill .skill-detail-item-updated-at { grid-column: 1; }
+  }
+  @media (max-width: 900px) {
+    .skill-section-active .manager-layout { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+    .skill-section-active .manager-sidebar { display: flex; flex-wrap: wrap; gap: 8px; }
+    .skill-section-active .manager-nav-item { margin: 0; font-size: 15px; padding: 10px; }
+  }
+  @media (max-width: 600px) {
+    #section_skill .skill-layout { grid-template-columns: minmax(0, 1fr); }
+    #section_skill .skill-legend { grid-column: 1; }
+    #section_skill .skill-employee-list ul { max-height: 220px; }
   }
   .skill-detail-actions {
     display: flex;

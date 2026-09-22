@@ -26,11 +26,10 @@ function getDefaultSkills() {
 }
 
 /**
- * シートから読んだ評価値を、3段階の文字列（未習得／習得中／習得済）に直す
- * 一括変換をまだ実行していないシートでも画面が記号のままにならないよう、
- * 読み取りのたびに記号を読み替える。表にない値は「未習得」として扱う
+ * シートから読んだ旧評価もF/B/A/Sへ読み替える。
+ * 表にない値はFとして扱い、Sは自動生成しない。
  * @param {*} rawValue スキル管理シートの評価列に入っている値
- * @return {string} 3段階の評価文字列
+ * @return {string} F/B/A/Sの評価文字列
  */
 function normalizeSkillLevel_(rawValue) {
   const text = String(rawValue === null || rawValue === undefined ? '' : rawValue).trim();
@@ -44,7 +43,7 @@ function normalizeSkillLevel_(rawValue) {
 }
 
 /**
- * スキルの対応表（{ 接客: '習得済', ... }）を、SKILL_ITEMS の並び順の配列にする
+ * スキルの対応表（{ 接客: 'A', ... }）を、SKILL_ITEMS の並び順の配列にする
  * @param {Object} skills スキル名をキーにした評価の対応表
  * @return {Array} SKILL_ITEMS と同じ並びの評価の配列
  */
@@ -161,14 +160,17 @@ function findSkillRowByEmpId(sheet, empId) {
 
 function saveEmployeeSkills(empId, skillValues, authToken) {
   requireManagerRole_(authToken);
+  return withAppLock_(function () { return saveEmployeeSkills_(empId, skillValues); });
+}
 
+function saveEmployeeSkills_(empId, skillValues) {
   // 有効な従業員だけを編集対象にする（削除済みの人のスキル記録は残すが、書き換えはしない）
   const nameByEmpId = getActiveEmployeeNameMap();
   const empName = nameByEmpId[String(empId)];
   if (!empName) {
     throw new Error('この従業員は選べません。画面を開き直してください（従業員番号 ' + empId + '）');
   }
-  if (!skillValues || skillValues.length !== SKILL_ITEMS.length) {
+  if (!Array.isArray(skillValues) || skillValues.length !== SKILL_ITEMS.length) {
     throw new Error('スキルの項目数が不正です');
   }
   for (let i = 0; i < skillValues.length; i++) {
@@ -187,7 +189,7 @@ function saveEmployeeSkills(empId, skillValues, authToken) {
   sheet.getRange(targetRow, 2).setValue(empName);
 
   // 既存行の場合のみ、現在の評価・更新日を読んで変更の有無を判定する
-  // 新規行の場合は、画面の初期値と同じ「未習得」を現在の評価とみなして判定する
+  // 新規行の場合は、画面の初期値と同じFを現在の評価とみなして判定する
   const currentRowValues = isNewRow ? null : sheet.getRange(targetRow, 3, 1, SKILL_ITEMS.length * 2).getValues()[0];
   const today = new Date();
   const updatedAt = {};
@@ -197,8 +199,7 @@ function saveEmployeeSkills(empId, skillValues, authToken) {
     const newValue = skillValues[s];
     const currentRaw = isNewRow ? SKILL_LEVEL_DEFAULT : currentRowValues[evalCol - 3]; // 評価列の配列添字（列3=添字0基準）
     const currentDate = isNewRow ? null : currentRowValues[evalCol - 3 + 1];
-    // 記号のまま残っている行は「○ と 習得済」を同じ評価として比べる。
-    // 記号を文字列に置き換えただけでは評価が変わったことにならないので、更新日は動かさない
+    // 旧表記の○・習得済とAは同じ評価として比較し、表記変更だけでは更新日を動かさない。
     const isChanged = (normalizeSkillLevel_(currentRaw) !== newValue);
 
     // 評価自体は、新規行のときと、シートの文字列が新しい書き方と違うときに書き込む
@@ -224,14 +225,15 @@ function saveEmployeeSkills(empId, skillValues, authToken) {
 }
 
 /**
- * 「習得済」になっているスキルの数を数える
+ * 習得済みとして扱うA・Sの数を数える（B・Fは含めない）
  * @param {Array} skillValues SKILL_ITEMS と同じ並びの評価の配列
  * @return {number} 習得済の数（0〜6）
  */
 function countMasteredSkills_(skillValues) {
   let masteredCount = 0;
   for (let i = 0; i < skillValues.length; i++) {
-    if (normalizeSkillLevel_(skillValues[i]) === SKILL_LEVEL_MASTERED) {
+    const level = normalizeSkillLevel_(skillValues[i]);
+    if (level === SKILL_LEVEL_MASTERED || level === SKILL_LEVEL_EXPERT) {
       masteredCount++;
     }
   }
@@ -309,16 +311,15 @@ function migrateSkillSheetToDatedColumns() {
 }
 
 // ここから下は一括変換・再計算のための関数
-// Apps Script エディタから手で1回実行する用途で、画面からは呼び出していない
+// 初回起動の移行から呼ぶ。Apps Scriptエディタから再実行することもできる。
 // どちらも何度実行しても結果が変わらない（変換済みの文字列や、すでに到達した手当は壊さない）
 
 /**
- * スキル管理シートに残っている記号の評価（× △ ○ ◎）を、3段階の文字列へ一括で変換する
- * × → 未習得 ／ △ → 習得中 ／ ○ → 習得済 ／ ◎ → 習得済
+ * スキル管理シートの旧評価をF/B/Aへ一括変換する（Sは自動生成しない）。
+ * 未習得・× → F ／ 習得中・△ → B ／ 習得済・○・◎ → A
  *
- * ・すでに「未習得」「習得中」「習得済」になっている値はそのまま残す
- * ・空欄はそのまま残す（まだ評価していない項目を「未習得」にはしない）
- * ・記号でも3段階でもない値は書き換えず、人が確認できるように残す
+ * ・すでにF/B/A/Sになっている値と空欄はそのまま残す
+ * ・対応表にない値は書き換えず、人が確認できるように残す
  * ・書き込むのは評価列だけなので、更新日列の日付は一切変わらない
  *
  * 変換のあと、その内容にあわせてスキル手当も計算し直す（recalcSkillAllowances）
@@ -344,7 +345,7 @@ function migrateSkillRatingsToText() {
       const rawValue = evalValues[r][0];
       const text = String(rawValue === null || rawValue === undefined ? '' : rawValue).trim();
       if (text === '' || SKILL_LEVELS.indexOf(text) !== -1) {
-        continue; // 空欄と、すでに3段階の文字列になっている値は触らない
+        continue; // 空欄と変換済みの評価は触らない
       }
       if (!Object.prototype.hasOwnProperty.call(SKILL_LEGACY_LEVEL_MAP, text)) {
         unknownCount++; // 想定外の値は勝手に書き換えない
@@ -363,7 +364,7 @@ function migrateSkillRatingsToText() {
   const allowanceMessage = recalcSkillAllowances();
   const unknownMessage = (unknownCount === 0) ? '' :
     '（判定できない値 ' + unknownCount + '件はそのまま残しました）';
-  return '記号の評価を ' + convertedCount + '件 変換しました' + unknownMessage + ' / ' + allowanceMessage;
+  return '旧スキル評価を ' + convertedCount + '件 F/B/Aへ変換しました' + unknownMessage + ' / ' + allowanceMessage;
 }
 
 /**
@@ -380,7 +381,7 @@ function recalcSkillAllowances() {
     return 'スキル手当を更新する従業員がいません';
   }
 
-  const skillMapByEmpId = getEmployeeSkillMap(); // 記号のままでも3段階に読み替えて返ってくる
+  const skillMapByEmpId = getEmployeeSkillMap(); // 旧評価もF/B/Aへ読み替えて返す
   const empIdValues = sheet.getRange(2, EMPLOYEE_COL_ID, lastRow - 1, 1).getValues();
   const allowanceRange = sheet.getRange(2, columns.column, lastRow - 1, 1);
   const allowanceValues = allowanceRange.getValues();

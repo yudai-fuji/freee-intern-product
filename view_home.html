@@ -56,6 +56,7 @@
           <li class="manager-nav-item" data-section="skill">スキル管理</li>
           <li class="manager-nav-item" data-section="shift">シフト</li>
           <li class="manager-nav-item" data-section="order">発注管理</li>
+          <li class="manager-nav-item" data-section="password_change">パスワード変更</li>
         </ul>
         <div class="manager-main">
           <div id="section_employee_edit" class="manager-section" style="display:none;">
@@ -66,6 +67,8 @@
                       onclick="showEmployeeAddForm()">従業員の追加</button>
               <button type="button" id="employee_delete_mode_btn" class="employee-edit-mode-btn"
                       onclick="showEmployeeDeleteList()">従業員の削除</button>
+              <button type="button" id="employee_pin_mode_btn" class="employee-edit-mode-btn"
+                      onclick="showEmployeePinForm()">PIN変更</button>
             </div>
 
             <div id="employee_add_block" class="employee-edit-block" style="display:none;">
@@ -74,10 +77,26 @@
               <input type="text" id="add_last_name" class="employee-edit-input">
               <label class="employee-edit-label">名</label>
               <input type="text" id="add_first_name" class="employee-edit-input">
+              <label class="employee-edit-label" for="add_employee_pin">打刻PIN（半角数字6桁）</label>
+              <input type="password" id="add_employee_pin" class="employee-edit-input" inputmode="numeric" autocomplete="new-password">
               <div class="employee-edit-buttons">
                 <button type="button" id="add_employee_submit_btn" class="employee-edit-submit-btn"
                         onclick="submitAddEmployee()">登録</button>
                 <span class="employee-edit-status" id="add_employee_status"></span>
+              </div>
+            </div>
+
+            <div id="employee_pin_block" class="employee-edit-block" style="display:none;">
+              <h3 class="employee-edit-subheading">従業員PINの変更</h3>
+              <label class="employee-edit-label" for="employee_pin_target">対象従業員</label>
+              <select id="employee_pin_target" class="employee-edit-input" onchange="clearEmployeePinInputs()"></select>
+              <label class="employee-edit-label" for="employee_new_pin">新しいPIN（半角数字6桁）</label>
+              <input type="password" id="employee_new_pin" class="employee-edit-input" inputmode="numeric" autocomplete="new-password">
+              <label class="employee-edit-label" for="employee_confirm_pin">新しいPIN（確認）</label>
+              <input type="password" id="employee_confirm_pin" class="employee-edit-input" inputmode="numeric" autocomplete="new-password">
+              <div class="employee-edit-buttons">
+                <button type="button" id="employee_pin_submit_btn" class="employee-edit-submit-btn" onclick="submitEmployeePinChange()">変更</button>
+                <span class="employee-edit-status" id="employee_pin_status" role="status"></span>
               </div>
             </div>
 
@@ -99,6 +118,23 @@
                   <button type="button" id="employee_delete_submit_btn" class="employee-edit-delete-btn"
                           onclick="submitDeleteEmployee()">削除する</button>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="section_password_change" class="manager-section" style="display:none;">
+            <h2 class="manager-heading">パスワード変更</h2>
+            <div class="employee-edit-block">
+              <div class="employee-edit-note">新しいパスワードは半角英数字8〜64文字です。記号・空白は使用できません。</div>
+              <label class="employee-edit-label" for="current_manager_password">現在のパスワード</label>
+              <input type="password" id="current_manager_password" class="employee-edit-input" autocomplete="current-password">
+              <label class="employee-edit-label" for="new_manager_password">新しいパスワード</label>
+              <input type="password" id="new_manager_password" class="employee-edit-input" autocomplete="new-password">
+              <label class="employee-edit-label" for="confirm_manager_password">新しいパスワード（確認）</label>
+              <input type="password" id="confirm_manager_password" class="employee-edit-input" autocomplete="new-password">
+              <div class="employee-edit-buttons">
+                <button type="button" id="manager_password_change_btn" class="employee-edit-submit-btn" onclick="submitManagerPasswordChange()">変更</button>
+                <span class="employee-edit-status" id="manager_password_change_status" role="status"></span>
               </div>
             </div>
           </div>
@@ -150,7 +186,7 @@
             <h2 class="manager-heading">従業員スキル管理</h2>
             <div class="attendance-message" id="skill_message"></div>
 
-            <!-- 左に従業員一覧、右に選んだ1人のスキルだけを大きく出す -->
+            <!-- 従業員一覧・選択した人のスキル・固定の評価基準 -->
             <div class="skill-layout" id="skill_layout" style="display:none;">
               <div class="skill-employee-list">
                 <h3 class="skill-employee-list-heading">従業員一覧</h3>
@@ -170,6 +206,13 @@
                   </div>
                 </div>
               </div>
+              <aside class="skill-legend" aria-labelledby="skill_legend_heading">
+                <h3 id="skill_legend_heading">評価基準</h3>
+                <? for (var rankIndex = SKILL_LEVELS.length - 1; rankIndex >= 0; rankIndex--) { var rank = SKILL_LEVELS[rankIndex]; ?>
+                  <div class="skill-legend-row" data-rank="<?= rank ?>"><span class="skill-rank-badge"><?= rank ?></span><span><?= SKILL_LEVEL_LABELS[rank] ?></span></div>
+                <? } ?>
+                <p>Sは店長判断による熟練評価です。</p>
+              </aside>
             </div>
           </div>
 
@@ -270,6 +313,23 @@
               </div>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="clock_pin_overlay" class="modal-overlay clock-pin-overlay" onclick="handleClockPinOverlayClick(event)">
+      <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="clock_pin_title">
+        <div class="modal-header">
+          <span class="modal-title" id="clock_pin_title">打刻PINの確認</span>
+          <button type="button" class="modal-close clock-pin-close" aria-label="閉じる" onclick="closeClockPinDialog()">×</button>
+        </div>
+        <div id="clock_pin_employee" class="clock-pin-employee"></div>
+        <label class="modal-label" for="clock_pin_input">打刻PIN（半角数字6桁）</label>
+        <input type="password" id="clock_pin_input" class="modal-input" inputmode="numeric" autocomplete="off">
+        <div id="clock_pin_error" class="modal-error" role="alert"></div>
+        <div class="modal-footer">
+          <button type="button" class="modal-cancel-btn" onclick="closeClockPinDialog()">キャンセル</button>
+          <button type="button" id="clock_pin_submit_btn" class="modal-submit-btn" onclick="submitClockPin()">認証</button>
         </div>
       </div>
     </div>

@@ -7,17 +7,95 @@
  * @return {Object} 成功なら { success: true, role: 役割名, token: ログイントークン }、失敗なら { success: false, message: 文言 }
  */
 function login(passcode) {
-  const inputText = (passcode === null || passcode === undefined) ? '' : String(passcode).trim();
-  const role = LOGIN_PASSCODES[inputText];
-  if (!role) {
-    return { 'success': false, 'message': 'パスコードが違います' };
+  ensureAppDataMigration_();
+  if (typeof passcode !== 'string' || passcode !== PropertiesService.getScriptProperties().getProperty(MANAGER_PASSWORD_PROPERTY)) {
+    return { 'success': false, 'message': 'パスワードが違います' };
   }
-  return { 'success': true, 'role': role, 'token': issueAuthToken_(role) };
+  return { 'success': true, 'role': ROLE_MANAGER, 'token': issueAuthToken_(ROLE_MANAGER) };
 }
 
 // 従業員用のトークンを発行
 function createEmployeeSession() {
+  ensureAppDataMigration_();
   return { 'success': true, 'role': ROLE_EMPLOYEE, 'token': issueAuthToken_(ROLE_EMPLOYEE)};
+}
+
+// 更新版の初回起動でのみ移行。途中で失敗した場合は次回起動で再試行する。
+function ensureAppDataMigration_() {
+  const properties = PropertiesService.getScriptProperties();
+  if (properties.getProperty(APP_DATA_MIGRATION_PROPERTY) === 'done') return;
+  withAppLock_(function () {
+    if (properties.getProperty(APP_DATA_MIGRATION_PROPERTY) === 'done') return;
+    migrateEmployeePins_();
+    if (properties.getProperty(MANAGER_PASSWORD_PROPERTY) === null) {
+      properties.setProperty(MANAGER_PASSWORD_PROPERTY, MANAGER_PASSWORD_DEFAULT);
+    }
+    migrateSkillRatingsToText();
+    SpreadsheetApp.flush();
+    properties.setProperty(APP_DATA_MIGRATION_PROPERTY, 'done');
+  });
+}
+
+function requireValidEmployeePin_(pin) {
+  if (typeof pin !== 'string' || pin.length !== 6 || /[^0-9]/.test(pin)) {
+    throw new Error('PINは半角数字6桁で入力してください');
+  }
+}
+
+function requireValidManagerPassword_(password) {
+  if (typeof password !== 'string' || password.length < MANAGER_PASSWORD_MIN_LENGTH ||
+      password.length > MANAGER_PASSWORD_MAX_LENGTH || /[^A-Za-z0-9]/.test(password)) {
+    throw new Error('新しいパスワードは半角英数字8〜64文字で入力してください（記号・空白は使用できません）');
+  }
+}
+
+function changeManagerPassword(currentPassword, newPassword, confirmPassword, authToken) {
+  requireManagerRole_(authToken);
+  requireValidManagerPassword_(newPassword);
+  requireValidManagerPassword_(confirmPassword);
+  if (newPassword !== confirmPassword) throw new Error('新しいパスワードと確認欄が一致しません');
+  return withAppLock_(function () {
+    const properties = PropertiesService.getScriptProperties();
+    if (typeof currentPassword !== 'string' || currentPassword !== properties.getProperty(MANAGER_PASSWORD_PROPERTY)) {
+      throw new Error('現在のパスワードが違います');
+    }
+    properties.setProperty(MANAGER_PASSWORD_PROPERTY, newPassword);
+    return { message: 'パスワードを変更しました' };
+  });
+}
+
+// PINそのものは画面へ返さず、今回の打刻だけに使える認証結果を返す。
+function authenticateClockPin(empId, type, pin, authToken) {
+  requireLoggedIn_(authToken);
+  requireValidEmployeePin_(pin);
+  if (CLOCK_TYPES.indexOf(type) === -1) throw new Error('不正な打刻種別です');
+  return withAppLock_(function () {
+    // readEmployeePin_でも有効な従業員かを確認する。
+    if (readEmployeePin_(empId) !== pin) throw new Error('PINが違います');
+    const now = new Date();
+    const state = readTodayClockState_(empId, getSheet(SHEET_NAMES.TIME_CLOCKS), now);
+    if (state.state === 'invalid') throw new Error(state.error);
+    if (nextClockState_(state.state, type) === null) throw new Error('現在の打刻状態では「' + type + '」を記録できません');
+    const ticket = Utilities.getUuid();
+    const expiresAt = now.getTime() + CLOCK_PIN_TICKET_TTL_SECONDS * 1000;
+    CacheService.getScriptCache().put(CLOCK_PIN_TICKET_PREFIX + ticket, JSON.stringify({
+      employeeId: String(empId), type: type, date: state.date, authToken: authToken, expiresAt: expiresAt
+    }), CLOCK_PIN_TICKET_TTL_SECONDS);
+    return { ticket: ticket, expiresAt: expiresAt };
+  });
+}
+
+// 打刻のロック内で呼ぶ。認証結果を他の従業員・操作・日付・セッションに使い回せない。
+function consumeClockPinTicket_(empId, type, ticket, authToken, now) {
+  requireLoggedIn_(authToken);
+  const cache = CacheService.getScriptCache();
+  const raw = typeof ticket === 'string' && ticket !== '' ? cache.get(CLOCK_PIN_TICKET_PREFIX + ticket) : null;
+  const grant = raw ? JSON.parse(raw) : null;
+  if (!grant || grant.employeeId !== String(empId) || grant.type !== type || grant.authToken !== authToken ||
+      grant.date !== Utilities.formatDate(now, TIME_ZONE, 'yyyy/MM/dd') || grant.expiresAt <= now.getTime()) {
+    throw new Error('PIN認証が無効または期限切れです。PINを再入力してください');
+  }
+  cache.remove(CLOCK_PIN_TICKET_PREFIX + ticket);
 }
 
 /**

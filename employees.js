@@ -174,16 +174,67 @@ function findEmployeeRow_(rows, empId) {
   return null;
 }
 
+// PINは名簿の末尾に文字列として保存する。従業員一覧の戻り値には含めない。
+function ensureEmployeePinColumn_() {
+  const sheet = ensureEmployeeStatusColumns_().sheet;
+  const lastColumn = sheet.getLastColumn();
+  const header = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+  for (let i = 0; i < header.length; i++) {
+    if (String(header[i]).trim() === EMPLOYEE_PIN_HEADER) return { sheet: sheet, column: i + 1 };
+  }
+  const column = lastColumn + 1;
+  if (column > sheet.getMaxColumns()) sheet.insertColumnsAfter(sheet.getMaxColumns(), column - sheet.getMaxColumns());
+  sheet.getRange(1, column).setValue(EMPLOYEE_PIN_HEADER);
+  return { sheet: sheet, column: column };
+}
+
+function migrateEmployeePins_() {
+  const columns = ensureEmployeePinColumn_();
+  const rows = readEmployeeRows_();
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].name === '') continue;
+    const cell = columns.sheet.getRange(rows[i].rowNumber, columns.column);
+    if (cell.getValue() === '') cell.setNumberFormat('@').setValue(EMPLOYEE_PIN_DEFAULT);
+  }
+}
+
+function readEmployeePin_(empId) {
+  const row = findEmployeeRow_(readEmployeeRows_(), empId);
+  if (!row || row.isDeleted || row.name === '') throw new Error('この従業員は選べません');
+  const columns = ensureEmployeePinColumn_();
+  return String(columns.sheet.getRange(row.rowNumber, columns.column).getValue());
+}
+
+function changeEmployeePin(empId, newPin, confirmPin, authToken) {
+  requireManagerRole_(authToken);
+  requireValidEmployeePin_(newPin);
+  requireValidEmployeePin_(confirmPin);
+  if (newPin !== confirmPin) throw new Error('新しいPINと確認欄が一致しません');
+  return withAppLock_(function () {
+    const row = findEmployeeRow_(readEmployeeRows_(), empId);
+    if (!row || row.isDeleted || row.name === '') throw new Error('この従業員は選べません。対象を選び直してください');
+    const columns = ensureEmployeePinColumn_();
+    columns.sheet.getRange(row.rowNumber, columns.column).setNumberFormat('@').setValue(newPin);
+    return { message: row.name + 'のPINを変更しました' };
+  });
+}
+
 /**
  * 従業員を追加する（店長だけが実行できる）
  * 氏名がまだ入っていない番号の行に書き込む。削除済みの行は飛ばすので、番号が別の人に使い回されない
  * @param {string} lastName 姓
  * @param {string} firstName 名
+ * @param {string} pin 打刻用の半角数字6桁
  * @param {string} authToken ログイントークン
  * @return {Object} { message: 画面に出す文言, employees: 追加後の有効な従業員一覧 }
  */
-function addEmployee(lastName, firstName, authToken) {
+function addEmployee(lastName, firstName, pin, authToken) {
   requireManagerRole_(authToken);
+  requireValidEmployeePin_(pin);
+  return withAppLock_(function () { return addEmployee_(lastName, firstName, pin); });
+}
+
+function addEmployee_(lastName, firstName, pin) {
 
   // .trim() で文字列に含まれる余分な空白を削除する
   lastName = String(lastName === null || lastName === undefined ? '' : lastName).trim();
@@ -209,6 +260,8 @@ function addEmployee(lastName, firstName, authToken) {
 
   const fullName = lastName + ' ' + firstName;
   const partTimeMark = '○'; // 〇のUnicode
+  const pinColumn = ensureEmployeePinColumn_();
+  pinColumn.sheet.getRange(targetRow.rowNumber, pinColumn.column).setNumberFormat('@').setValue(pin);
   columns.sheet.getRange(targetRow.rowNumber, EMPLOYEE_COL_NAME).setValue(fullName);
   columns.sheet.getRange(targetRow.rowNumber, EMPLOYEE_COL_PART_TIME_MARK).setValue(partTimeMark);
   columns.sheet.getRange(targetRow.rowNumber, columns.statusColumn).setValue(EMPLOYEE_STATUS_ACTIVE);

@@ -52,12 +52,13 @@ function getSharedNoteRecipientCandidates(empId, authToken) {
  * @param {Array} recipientIds 共有先の従業員番号の配列
  * @param {string} noteText 共有メモ本文
  * @param {string} authToken ログイントークン
+ * @param {string} ticket 退勤用のPIN認証チケット
  * @return {Object} 退勤メッセージと保存後の打刻状態
  */
-function saveSharedNoteAndClockOut(empId, recipientIds, noteText, authToken) {
+function saveSharedNoteAndClockOut(empId, recipientIds, noteText, authToken, ticket) {
   requireLoggedIn_(authToken);
 
-  return recordClockWithValidation_(empId, '退勤', function (nameByEmpId) {
+  return recordClockWithValidation_(empId, '退勤', ticket, authToken, function (nameByEmpId) {
     const senderName = nameByEmpId[String(empId)];
     noteText = (noteText === null || noteText === undefined) ? '' : String(noteText).trim();
 

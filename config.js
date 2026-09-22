@@ -34,20 +34,24 @@ const SKILL_SHEET_HEADER = [
   '締め作業評価', '更新日'
 ];
 
-// スキル評価は記号（◎○△×）をやめ、そのまま読める3段階の文字列でシートに保存する
-const SKILL_LEVEL_NOT_YET = '未習得';
-const SKILL_LEVEL_LEARNING = '習得中';
-const SKILL_LEVEL_MASTERED = '習得済';
+// 評価は左から F → B → A → S。Sは店長が手動で設定する熟練評価。
+const SKILL_LEVEL_NOT_YET = 'F';
+const SKILL_LEVEL_LEARNING = 'B';
+const SKILL_LEVEL_MASTERED = 'A';
+const SKILL_LEVEL_EXPERT = 'S';
 
-// 画面のドロップダウンにもこの順番で並べる（上から順に習得が進む）
-const SKILL_LEVELS = [SKILL_LEVEL_NOT_YET, SKILL_LEVEL_LEARNING, SKILL_LEVEL_MASTERED];
+const SKILL_LEVELS = [SKILL_LEVEL_NOT_YET, SKILL_LEVEL_LEARNING, SKILL_LEVEL_MASTERED, SKILL_LEVEL_EXPERT];
+const SKILL_LEVEL_LABELS = { F: '未経験', B: '習得中', A: '習得済み', S: '熟練' };
 
 // まだ一度も評価していない項目の既定値
 const SKILL_LEVEL_DEFAULT = SKILL_LEVEL_NOT_YET;
 
-// 記号で保存されていた既存データの読み替え表。◎と○はどちらも「習得済」にまとめる
+// 旧評価の読み替え表。◎と○もAへ移し、Sは自動生成しない。
 // 手入力で入りやすい別字体の丸（〇・◯）も同じ扱いにして、変換のとりこぼしを防ぐ
 const SKILL_LEGACY_LEVEL_MAP = {
+  '未習得': SKILL_LEVEL_NOT_YET,
+  '習得中': SKILL_LEVEL_LEARNING,
+  '習得済': SKILL_LEVEL_MASTERED,
   '×': SKILL_LEVEL_NOT_YET,
   '✕': SKILL_LEVEL_NOT_YET,
   '△': SKILL_LEVEL_LEARNING,
@@ -61,7 +65,7 @@ const SKILL_LEGACY_LEVEL_MAP = {
 // 状態・削除日時と同じく、見出しが見つからないときだけ名簿の右端に足す
 const EMPLOYEE_SKILL_ALLOWANCE_HEADER = 'スキル手当';
 
-// スキル手当の段階。「習得済」の数がこの数に達したら、その金額まで手当を上げる
+// スキル手当の段階。AまたはSの数がこの数に達したら、その金額まで手当を上げる
 // 100円は「4個到達の +50円」と「6個到達のさらに +50円」を合計した金額
 const SKILL_ALLOWANCE_TIERS = [
   { 'masteredCount': 4, 'amount': 50 },
@@ -159,10 +163,16 @@ const INGREDIENT_DEFAULT_MASTERS = [
 const ROLE_EMPLOYEE = '従業員';
 const ROLE_MANAGER = '店長';
 
-// パスコードと役割の対応。先頭の 0 を保持するため、キーは文字列として扱う
-const LOGIN_PASSCODES = {
-  '0': ROLE_MANAGER
-};
+// 初期値は未設定時だけ保存する。変更後はScript Propertiesの値を使う。
+const MANAGER_PASSWORD_PROPERTY = 'manager_password';
+const MANAGER_PASSWORD_DEFAULT = '00000000';
+const MANAGER_PASSWORD_MIN_LENGTH = 8;
+const MANAGER_PASSWORD_MAX_LENGTH = 64;
+const EMPLOYEE_PIN_HEADER = '打刻PIN';
+const EMPLOYEE_PIN_DEFAULT = '000000';
+const APP_DATA_MIGRATION_PROPERTY = 'pin_and_skill_ranks_v1';
+const CLOCK_PIN_TICKET_PREFIX = 'clock_pin_';
+const CLOCK_PIN_TICKET_TTL_SECONDS = 600;
 
 // ログイントークンをキャッシュに保存するときのキーの接頭辞
 const AUTH_TOKEN_CACHE_PREFIX = 'auth_token_';
