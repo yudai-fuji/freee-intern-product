@@ -938,8 +938,10 @@
     white-space: pre-wrap;
     word-break: break-word;
   }
-  /* 店長画面：シフト作成 */
-  .shift-month-switch {
+  /* 店長画面：シフト確認・シフト編集 */
+  .shift-section-active .manager-main { min-width: 0; }
+  .shift-month-switch,
+  .shift-week-switch {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -947,7 +949,8 @@
     max-width: 960px;
     margin: 24px auto 0;
   }
-  .shift-month-btn {
+  .shift-month-btn,
+  .shift-week-btn {
     padding: 6px 20px;
     font-size: 20px;
     line-height: 1.2;
@@ -956,11 +959,14 @@
     border: 1px solid #ccc;
     border-radius: 8px;
     cursor: pointer;
+    font-family: inherit;
   }
-  .shift-month-btn:hover {
+  .shift-month-btn:hover,
+  .shift-week-btn:hover {
     background-color: #dcdcdc;
   }
-  .shift-month-btn:disabled {
+  .shift-month-btn:disabled,
+  .shift-week-btn:disabled {
     color: #999;
     cursor: not-allowed;
   }
@@ -977,6 +983,18 @@
     margin-right: auto;
     text-align: center;
   }
+  .shift-legend {
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 16px;
+    max-width: 960px;
+    margin: 16px auto 8px;
+    font-size: 13px;
+    color: #666;
+  }
+  .shift-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+  .shift-legend-swatch { width: 16px; height: 16px; border: 1px solid #ccc; border-radius: 3px; }
   /* 曜日見出しとカレンダー本体は同じ列幅・同じ最大幅にして、列を縦に揃える */
   .shift-weekdays,
   .shift-calendar {
@@ -1023,8 +1041,22 @@
     text-align: left;
     cursor: pointer;
   }
-  .shift-day-cell { background-color: #f5f5f5; }
-  .shift-day-cell.monday { background-color: #fdeaea; }
+  .shift-day-cell.status-uncreated,
+  .shift-legend-swatch.status-uncreated { background-color: #f5f5f5; }
+  /* 作成済みと判定結果は分けておく。問題なし・不足は判定処理の追加時に利用する。 */
+  .shift-day-cell.status-created,
+  .shift-legend-swatch.status-created { background-color: #eef3fb; }
+  .shift-day-cell.status-ok { background-color: #eaf5eb; }
+  .shift-day-cell.status-shortage { background-color: #fdeaea; }
+  .shift-calendar .shift-closed,
+  .shift-week-table .shift-closed,
+  .shift-legend-swatch.shift-closed {
+    color: #777;
+    background-color: #eee;
+    background-image: repeating-linear-gradient(135deg, transparent, transparent 6px, rgba(110, 110, 110, 0.08) 6px, rgba(110, 110, 110, 0.08) 8px);
+  }
+  .shift-day-status,
+  .shift-closed-label { font-size: 12px; line-height: 1.5; }
   .shift-day-cell:hover {
     box-shadow: inset 0 0 0 1px #3f6fd1;
   }
@@ -1051,13 +1083,157 @@
     color: #fff;
     font-weight: bold;
   }
+  .shift-date-detail {
+    box-sizing: border-box;
+    max-width: 960px;
+    margin: 24px auto 0;
+    padding: 20px;
+    font-size: 15px;
+    line-height: 1.7;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+  }
+  .shift-detail-heading { margin: 0 0 12px; font-size: 19px; }
+  .shift-detail-message { margin: 0; color: #666; }
+  .shift-detail-list { margin: 0; padding: 0; list-style: none; }
+  .shift-detail-row { display: flex; flex-wrap: wrap; gap: 8px 24px; padding: 8px 0; border-bottom: 1px solid #eee; }
+  .shift-detail-row:last-child { border-bottom: none; }
+  .shift-detail-name { min-width: 140px; font-weight: bold; }
+  .shift-detail-time { color: #666; font-variant-numeric: tabular-nums; }
+  .shift-week-switch { max-width: none; gap: 16px; }
+  .shift-week-btn { font-size: 16px; padding: 8px 16px; white-space: nowrap; }
+  .shift-week-label { font-size: 20px; font-weight: bold; text-align: center; font-variant-numeric: tabular-nums; }
+  .shift-edit-message { margin: 16px 0; }
+  .shift-editor-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 200px;
+    gap: 20px;
+    align-items: start;
+    margin-top: 20px;
+  }
+  .shift-table-scroll {
+    min-width: 0;
+    max-height: 68vh;
+    overflow: auto;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+  }
+  .shift-week-table {
+    width: 100%;
+    min-width: 820px;
+    table-layout: fixed;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+  }
+  .shift-week-table th,
+  .shift-week-table td {
+    box-sizing: border-box;
+    padding: 4px;
+    border-right: 1px solid #ddd;
+    border-bottom: 1px solid #ddd;
+    text-align: center;
+    vertical-align: middle;
+  }
+  .shift-week-table tr > :last-child { border-right: none; }
+  .shift-week-table tbody tr:last-child > * { border-bottom: none; }
+  .shift-week-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    height: 52px;
+    background-color: #f0f4fa;
+  }
+  .shift-week-table tr > :first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    width: 150px;
+    padding: 8px 10px;
+    text-align: left;
+    background-color: #fff;
+    overflow-wrap: anywhere;
+  }
+  .shift-week-table thead tr > :first-child { z-index: 3; background-color: #f0f4fa; }
+  .shift-week-table .shift-closed { cursor: default; }
+  .shift-week-table .shift-closed-label { display: block; font-weight: normal; }
+  .shift-employee-id { display: block; margin-top: 2px; font-size: 11px; font-weight: normal; color: #777; }
+  .shift-edit-cell {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 2px;
+    width: 100%;
+    min-height: 46px;
+    padding: 5px 3px;
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.4;
+    color: #333;
+    background-color: #fff;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .shift-edit-cell:hover { background-color: #f0f4fa; border-color: #9db3dc; }
+  .shift-edit-cell:focus-visible,
+  .shift-mode-btn:focus-visible,
+  .shift-register-btn:focus-visible { outline: 2px solid #3f6fd1; outline-offset: 2px; }
+  .shift-edit-cell.is-draft { background-color: #e6efff; border-color: #3f6fd1; color: #234f96; }
+  .shift-edit-cell.is-deleting { background-color: #edf0f5; border: 1px dashed #67778e; color: #566478; }
+  .shift-edit-cell.is-deleting .shift-cell-label { text-decoration: line-through; }
+  .shift-cell-label { font-weight: bold; }
+  .shift-cell-time { font-size: 11px; }
+  .shift-cell-state { font-size: 11px; font-weight: bold; }
+  .shift-edit-cell:disabled { cursor: not-allowed; }
+  .shift-edit-panel { padding: 16px; background-color: #fafafa; border: 1px solid #ddd; border-radius: 8px; }
+  .shift-edit-panel h3 { margin: 0 0 12px; font-size: 18px; }
+  .shift-edit-help { margin: 0 0 14px; font-size: 12px; color: #666; line-height: 1.7; }
+  .shift-mode-list { display: flex; flex-direction: column; gap: 8px; }
+  .shift-mode-btn {
+    width: 100%;
+    padding: 9px 10px;
+    font-family: inherit;
+    font-size: 15px;
+    color: #333;
+    background-color: #fff;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .shift-mode-btn span { display: block; margin-top: 2px; font-size: 11px; }
+  .shift-mode-btn:hover { background-color: #f0f4fa; }
+  .shift-mode-btn.selected,
+  .shift-mode-btn[aria-pressed="true"] { background-color: #3f6fd1; border-color: #3f6fd1; color: #fff; }
+  .shift-mode-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  .shift-time-inputs { margin-top: 16px; }
+  .shift-time-inputs label { display: block; margin: 10px 0 4px; font-size: 13px; }
+  .shift-time-inputs input { box-sizing: border-box; width: 100%; padding: 8px; font-family: inherit; font-size: 16px; border: 1px solid #ccc; border-radius: 6px; }
+  .shift-draft-summary { margin: 18px 0 10px; color: #234f96; font-size: 14px; font-weight: bold; }
+  .shift-register-btn { width: 100%; padding: 12px 16px; font-family: inherit; font-size: 17px; background-color: #3f6fd1; color: #fff; border: none; border-radius: 8px; cursor: pointer; }
+  .shift-register-btn:hover { background-color: #35609c; }
+  .shift-register-btn:disabled { background-color: #9db3dc; cursor: not-allowed; }
   /* 狭い画面でも曜日と日付の7列を維持する */
   @media (max-width: 900px) {
+    .shift-section-active .manager-layout { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+    .shift-section-active .manager-sidebar { display: flex; flex-wrap: wrap; gap: 8px; }
+    .shift-section-active .manager-nav-item { margin: 0; padding: 10px; font-size: 15px; }
     .shift-day-cell,
     .shift-day-empty {
       min-height: 74px;
       padding: 6px 4px;
     }
+  }
+  @media (max-width: 600px) {
+    .shift-editor-layout { grid-template-columns: minmax(0, 1fr); }
+    .shift-edit-panel { grid-row: 1; }
+    .shift-mode-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .shift-week-switch { flex-wrap: wrap; gap: 10px; }
+    .shift-week-label { flex: 1 0 100%; order: -1; font-size: 17px; }
+    .shift-day-status { font-size: 10px; }
+    .shift-date-detail { padding: 14px; }
   }
   /* 店長画面：発注管理で使うボタン */
   .ingredient-action-btn {

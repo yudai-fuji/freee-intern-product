@@ -54,7 +54,8 @@
           <li class="manager-nav-item" data-section="dashboard">ダッシュボード</li>
           <li class="manager-nav-item" data-section="attendance">勤怠管理</li>
           <li class="manager-nav-item" data-section="skill">スキル管理</li>
-          <li class="manager-nav-item" data-section="shift">シフト</li>
+          <li class="manager-nav-item" data-section="shift_confirm">シフト確認</li>
+          <li class="manager-nav-item" data-section="shift_edit">シフト編集</li>
           <li class="manager-nav-item" data-section="order">発注管理</li>
           <li class="manager-nav-item" data-section="password_change">パスワード変更</li>
         </ul>
@@ -216,15 +217,21 @@
             </div>
           </div>
 
-          <div id="section_shift" class="manager-section" style="display:none;">
-            <h2 class="manager-heading">シフト作成</h2>
+          <div id="section_shift_confirm" class="manager-section" style="display:none;">
+            <h2 class="manager-heading">シフト確認</h2>
 
             <div class="shift-month-switch">
               <button type="button" id="shift_prev_btn" class="shift-month-btn" onclick="changeShiftMonth(-1)" aria-label="前の月">‹</button>
               <span class="shift-month-label" id="shift_month_label" aria-live="polite"></span>
               <button type="button" id="shift_next_btn" class="shift-month-btn" onclick="changeShiftMonth(1)" aria-label="次の月">›</button>
             </div>
-            <div class="attendance-message shift-message" id="shift_message"></div>
+            <div class="attendance-message shift-message" id="shift_message" role="status"></div>
+
+            <div class="shift-legend" aria-label="シフトの状態">
+              <span><span class="shift-legend-swatch status-uncreated" aria-hidden="true"></span>未作成</span>
+              <span><span class="shift-legend-swatch status-created" aria-hidden="true"></span>作成済み</span>
+              <span><span class="shift-legend-swatch shift-closed" aria-hidden="true"></span>定休日</span>
+            </div>
 
             <div class="shift-weekdays">
               <span class="shift-weekday sunday">日</span>
@@ -236,7 +243,47 @@
               <span class="shift-weekday saturday">土</span>
             </div>
             <div class="shift-calendar" id="shift_calendar"></div>
+            <div class="shift-date-detail" id="shift_date_detail" aria-live="polite">
+              日付を選択すると、その日のシフトを確認できます。
+            </div>
+          </div>
 
+          <div id="section_shift_edit" class="manager-section" style="display:none;">
+            <h2 class="manager-heading">シフト編集</h2>
+
+            <div class="shift-week-switch">
+              <button type="button" id="shift_week_prev_btn" class="shift-week-btn" onclick="changeShiftWeek(-1)">‹ 前週</button>
+              <span class="shift-week-label" id="shift_week_label" aria-live="polite"></span>
+              <button type="button" id="shift_week_next_btn" class="shift-week-btn" onclick="changeShiftWeek(1)">次週 ›</button>
+            </div>
+            <div class="attendance-message shift-edit-message" id="shift_edit_message" role="status"></div>
+
+            <div class="shift-editor-layout">
+              <div class="shift-table-scroll" tabindex="0" role="region" aria-label="従業員ごとの週間シフト表">
+                <table class="shift-week-table" id="shift_week_table"></table>
+              </div>
+
+              <aside class="shift-edit-panel" aria-labelledby="shift_edit_panel_heading">
+                <h3 id="shift_edit_panel_heading">編集モード</h3>
+                <p class="shift-edit-help">モードを選び、変更するセルをクリックしてください。もう一度クリックすると、そのセルの下書きを解除します。</p>
+                <div class="shift-mode-list" role="group" aria-label="編集モードの選択">
+                  <button type="button" class="shift-mode-btn" data-shift-mode="lunch" aria-pressed="false" onclick="setShiftEditMode('lunch')">ランチ<span>11:30～15:00</span></button>
+                  <button type="button" class="shift-mode-btn" data-shift-mode="dinner" aria-pressed="false" onclick="setShiftEditMode('dinner')">ディナー<span>17:00～22:00</span></button>
+                  <button type="button" class="shift-mode-btn" data-shift-mode="all" aria-pressed="false" onclick="setShiftEditMode('all')">オール<span>時間・休憩は未確定</span></button>
+                  <button type="button" class="shift-mode-btn" data-shift-mode="custom" aria-pressed="false" onclick="setShiftEditMode('custom')">時間編集</button>
+                  <button type="button" class="shift-mode-btn" data-shift-mode="delete" aria-pressed="false" onclick="setShiftEditMode('delete')">削除</button>
+                </div>
+                <div class="shift-time-inputs" id="shift_time_inputs" style="display:none;">
+                  <label for="shift_start_time">開始時刻</label>
+                  <input type="time" id="shift_start_time" step="60">
+                  <label for="shift_end_time">終了時刻</label>
+                  <input type="time" id="shift_end_time" step="60">
+                </div>
+                <div class="shift-draft-summary" id="shift_draft_count" aria-live="polite">未登録の変更：0件</div>
+                <p class="shift-edit-help">別の週の下書きも保持されます。登録すると、すべての週の変更を保存します。</p>
+                <button type="button" id="shift_register_btn" class="shift-register-btn" onclick="registerShiftDrafts()" disabled>登録</button>
+              </aside>
+            </div>
           </div>
 
           <div id="section_order" class="manager-section" style="display:none;">
@@ -347,6 +394,18 @@
           <button type="button" class="modal-cancel-btn" onclick="closeManagerLoginModal()">キャンセル</button>
           <button type="button" id="manager_login_submit_btn" class="modal-submit-btn"
                   onclick="submitManagerLogin()">認証</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="shift_discard_overlay" class="modal-overlay" onkeydown="handleShiftDiscardKeydown(event)"
+         onclick="if (event.target === event.currentTarget) closeShiftDiscardDialog()">
+      <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="shift_discard_title" aria-describedby="shift_discard_message">
+        <div class="modal-header"><span class="modal-title" id="shift_discard_title">未登録の変更</span></div>
+        <div class="confirm-modal-text" id="shift_discard_message">未登録の変更があります。変更を破棄して移動しますか？</div>
+        <div class="modal-footer">
+          <button type="button" id="shift_discard_cancel_btn" class="modal-cancel-btn" onclick="closeShiftDiscardDialog()">キャンセル</button>
+          <button type="button" id="shift_discard_confirm_btn" class="modal-submit-btn" onclick="confirmShiftDiscard()">破棄して移動</button>
         </div>
       </div>
     </div>
