@@ -26,10 +26,10 @@ function getDefaultSkills() {
 }
 
 /**
- * シートから読んだ旧評価もF/B/A/Sへ読み替える。
- * 表にない値はFとして扱い、Sは自動生成しない。
+ * シートから読んだ旧評価もF/B/Aへ読み替える。
+ * 表にない値はFとして扱う。
  * @param {*} rawValue スキル管理シートの評価列に入っている値
- * @return {string} F/B/A/Sの評価文字列
+ * @return {string} F/B/Aの評価文字列
  */
 function normalizeSkillLevel_(rawValue) {
   const text = String(rawValue === null || rawValue === undefined ? '' : rawValue).trim();
@@ -225,7 +225,7 @@ function saveEmployeeSkills_(empId, skillValues) {
 }
 
 /**
- * 習得済みとして扱うA・Sの数を数える（B・Fは含めない）
+ * 習得済みとして扱うAの数を数える（B・Fは含めない）
  * @param {Array} skillValues SKILL_ITEMS と同じ並びの評価の配列
  * @return {number} 習得済の数（0〜6）
  */
@@ -233,7 +233,7 @@ function countMasteredSkills_(skillValues) {
   let masteredCount = 0;
   for (let i = 0; i < skillValues.length; i++) {
     const level = normalizeSkillLevel_(skillValues[i]);
-    if (level === SKILL_LEVEL_MASTERED || level === SKILL_LEVEL_EXPERT) {
+    if (level === SKILL_LEVEL_MASTERED) {
       masteredCount++;
     }
   }
@@ -315,10 +315,10 @@ function migrateSkillSheetToDatedColumns() {
 // どちらも何度実行しても結果が変わらない（変換済みの文字列や、すでに到達した手当は壊さない）
 
 /**
- * スキル管理シートの旧評価をF/B/Aへ一括変換する（Sは自動生成しない）。
+ * スキル管理シートの旧評価をF/B/Aへ一括変換する。
  * 未習得・× → F ／ 習得中・△ → B ／ 習得済・○・◎ → A
  *
- * ・すでにF/B/A/Sになっている値と空欄はそのまま残す
+ * ・すでにF/B/Aになっている値と空欄はそのまま残す
  * ・対応表にない値は書き換えず、人が確認できるように残す
  * ・書き込むのは評価列だけなので、更新日列の日付は一切変わらない
  *
@@ -382,7 +382,7 @@ function recalcSkillAllowances() {
   }
 
   const skillMapByEmpId = getEmployeeSkillMap(); // 旧評価もF/B/Aへ読み替えて返す
-  const empIdValues = sheet.getRange(2, EMPLOYEE_COL_ID, lastRow - 1, 1).getValues();
+  const empIdValues = sheet.getRange(2, getEmployeeIdentityColumns_(sheet).id, lastRow - 1, 1).getValues();
   const allowanceRange = sheet.getRange(2, columns.column, lastRow - 1, 1);
   const allowanceValues = allowanceRange.getValues();
 

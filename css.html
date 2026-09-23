@@ -239,11 +239,19 @@
     margin: 0;
   }
   /* 店長画面：従業員編集 */
+  .employee-section-active .manager-main,
+  .employee-edit-content { min-width: 0; }
+  .employee-edit-layout {
+    display: grid;
+    grid-template-columns: 180px minmax(0, 1fr);
+    align-items: start;
+    gap: 24px;
+    margin-top: 24px;
+  }
   .employee-edit-actions {
     display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-    margin-top: 20px;
+    flex-direction: column;
+    gap: 10px;
   }
   .employee-edit-mode-btn {
     padding: 12px 24px;
@@ -264,6 +272,33 @@
   .employee-edit-block {
     max-width: 560px;
     margin-top: 24px;
+  }
+  #section_employee_edit .employee-edit-block { margin-top: 0; }
+  #section_employee_edit #employee_directory_block { max-width: none; }
+  .employee-directory-scroll { overflow-x: auto; }
+  .employee-directory-table {
+    width: 100%;
+    min-width: 780px;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  .employee-directory-table th,
+  .employee-directory-table td {
+    padding: 12px;
+    border-bottom: 1px solid #e2e6ec;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .employee-directory-table th { background: #f5f7fa; color: #4b5563; }
+  .employee-directory-table td:nth-child(2) { text-align: left; font-weight: 600; }
+  .employee-directory-table td:last-child { text-align: right; }
+  @media (max-width: 900px) {
+    .employee-section-active .manager-layout { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+    .employee-section-active .manager-sidebar { display: flex; flex-wrap: wrap; gap: 8px; }
+    .employee-section-active .manager-nav-item { margin: 0; padding: 10px; font-size: 15px; }
+  }
+  @media (max-width: 600px) {
+    .employee-edit-layout { grid-template-columns: minmax(0, 1fr); gap: 20px; }
   }
   .employee-edit-subheading {
     font-size: 20px;
@@ -582,46 +617,77 @@
     padding-top: 40px;
   }
   .skill-detail-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 12px;
+    align-items: center;
     padding-bottom: 16px;
     border-bottom: 1px solid #ccc;
   }
+  #skill_detail_name { display: contents; }
   .skill-detail-header .employee-name-text {
+    grid-column: 1;
+    grid-row: 1;
+    overflow-wrap: anywhere;
     font-size: 28px;
     font-weight: bold;
   }
   .skill-detail-header .employee-number-text {
+    grid-column: 1 / -1;
+    grid-row: 2;
     font-size: 15px;
   }
-  /* スキル名・4段階バー・最終更新日 */
-  .skill-detail-item {
+  /* スキル名・3段階バー・最終更新日 */
+  #section_skill .skill-detail-item {
     display: grid;
     grid-template-columns: 120px minmax(160px, 1fr);
     align-items: center;
-    gap: 16px;
-    padding: 10px 4px;
+    gap: 4px 16px;
+    padding: 6px 4px;
     border-bottom: 1px solid #eee;
   }
   .skill-detail-item-name {
     font-size: 20px;
   }
   /* 更新日はバーの下に控えめに表示する */
-  .skill-detail-item-updated-at {
+  #section_skill .skill-detail-item-updated-at {
     grid-column: 2;
     font-size: 12px;
-    color: #999;
+    color: #666;
     text-align: right;
     white-space: nowrap;
   }
   #section_skill .skill-layout {
     grid-template-columns: 220px minmax(300px, 1fr) 160px;
-    gap: 28px;
+    gap: 100px;
     max-width: 1220px;
+  }
+  #skill_message:empty { display: none; }
+  @media (min-width: 1251px) {
+    #section_skill {
+      position: relative;
+      --skill-detail-header-height: calc(28px * 1.5 + 4px + 15px * 1.5 + 16px + 1px);
+    }
+    #section_skill > .manager-heading {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 248px;
+    }
+    #skill_message:not(:empty) { padding-top: 48px; }
+    #section_skill .skill-layout { margin-top: 0; }
+    #section_skill .skill-employee-list { padding-top: 88px; }
+    #section_skill .skill-detail-header {
+      box-sizing: border-box;
+      min-height: var(--skill-detail-header-height);
+      line-height: 1.5;
+    }
+    #section_skill .skill-legend { margin-top: calc(var(--skill-detail-header-height) - 1px); }
   }
   .skill-section-active .manager-main { min-width: 0; }
   #section_skill [data-rank="F"] { --rank-color: #8faddf; }
   #section_skill [data-rank="B"] { --rank-color: #587fc5; }
   #section_skill [data-rank="A"] { --rank-color: #234f96; }
-  #section_skill [data-rank="S"] { --rank-color: #c69214; }
   .skill-rank-control { min-width: 0; }
   .skill-rank-labels {
     display: flex;
@@ -666,7 +732,7 @@
     box-shadow: 0 0 0 1px var(--rank-color);
   }
   .skill-rank-slider:focus-visible { outline: 2px solid var(--rank-color); outline-offset: 7px; }
-  .skill-rank-slider:disabled { cursor: not-allowed; opacity: 0.65; }
+  .skill-rank-slider:disabled { cursor: not-allowed; }
   .skill-legend {
     padding: 18px;
     background: #fafafa;
@@ -676,14 +742,13 @@
   .skill-legend h3 { font-size: 18px; margin: 0 0 16px; }
   .skill-legend-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; white-space: nowrap; }
   .skill-rank-badge { color: var(--rank-color); font-size: 22px; font-weight: bold; }
-  .skill-legend p { color: #666; font-size: 12px; line-height: 1.7; margin: 16px 0 0; }
   .clock-pin-overlay { z-index: 1200; }
   .clock-pin-employee { margin-bottom: 20px; }
   .clock-pin-close { background: transparent; border: 0; }
   @media (max-width: 1250px) {
     #section_skill .skill-layout { grid-template-columns: 180px minmax(0, 1fr); gap: 24px; }
     #section_skill .skill-legend { grid-column: 2; }
-    #section_skill .skill-detail-item { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+    #section_skill .skill-detail-item { grid-template-columns: minmax(0, 1fr); gap: 4px; }
     #section_skill .skill-detail-item-updated-at { grid-column: 1; }
   }
   @media (max-width: 900px) {
@@ -697,16 +762,19 @@
     #section_skill .skill-employee-list ul { max-height: 220px; }
   }
   .skill-detail-actions {
+    grid-column: 2;
+    grid-row: 1;
     display: flex;
     align-items: center;
-    margin-top: 24px;
+    gap: 8px;
   }
+  .skill-detail-actions button { padding: 8px 16px; font-size: 16px; line-height: 1.5; }
+  .skill-detail-actions .modal-cancel-btn { background-color: #fff; }
+  .skill-detail-actions .modal-cancel-btn:hover { background-color: #f0f0f0; }
   .skill-save-btn {
-    padding: 10px 28px;
-    font-size: 17px;
     background-color: #3f6fd1;
     color: #fff;
-    border: none;
+    border: 1px solid transparent;
     border-radius: 8px;
     cursor: pointer;
   }
@@ -718,10 +786,11 @@
     cursor: not-allowed;
   }
   .skill-save-status {
-    margin-left: 14px;
+    grid-column: 1 / -1;
     font-size: 15px;
     color: #43a047;
   }
+  .skill-save-status:empty { display: none; }
   .skill-save-status.error {
     color: #e53935;
   }
@@ -983,6 +1052,21 @@
     margin-right: auto;
     text-align: center;
   }
+  .shift-message:empty { display: none; }
+  .shift-calendar-card {
+    box-sizing: border-box;
+    max-width: 960px;
+    margin: 24px auto 0;
+    padding: 24px;
+    border: 1px solid #e2e5e9;
+    border-radius: 10px;
+    background-color: #fff;
+  }
+  .shift-calendar-card .shift-month-switch { margin: 0; gap: 12px; }
+  .shift-calendar-card .shift-month-label { min-width: 0; font-size: 22px; }
+  .shift-calendar-card .shift-month-btn { padding: 6px 14px; }
+  .shift-calendar-card .shift-weekdays,
+  .shift-calendar-card .shift-calendar { grid-template-columns: repeat(7, minmax(0, 1fr)); }
   .shift-legend {
     display: flex;
     justify-content: flex-end;
@@ -1045,9 +1129,27 @@
   .shift-legend-swatch.status-uncreated { background-color: #f5f5f5; }
   /* 作成済みと判定結果は分けておく。問題なし・不足は判定処理の追加時に利用する。 */
   .shift-day-cell.status-created,
-  .shift-legend-swatch.status-created { background-color: #eef3fb; }
+  .shift-legend-swatch.status-created { background-color: #d6e6fa; }
   .shift-day-cell.status-ok { background-color: #eaf5eb; }
-  .shift-day-cell.status-shortage { background-color: #fdeaea; }
+  .shift-day-cell.status-shortage,
+  .shift-legend-swatch.status-shortage { background-color: #fdeaea; }
+  .shift-excess-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background-color: #ffe08a;
+    color: #765000;
+    font-weight: bold;
+  }
+  .shift-day-cell .shift-excess-mark {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+  }
   .shift-calendar .shift-closed,
   .shift-week-table .shift-closed,
   .shift-legend-swatch.shift-closed {
@@ -1083,23 +1185,77 @@
     color: #fff;
     font-weight: bold;
   }
+  #section_shift_confirm .shift-day-cell.status-created,
+  #section_shift_confirm .shift-legend-swatch.status-created { background-color: #e7ebf0; }
+  #section_shift_confirm .shift-day-cell.status-shortage,
+  #section_shift_confirm .shift-legend-swatch.status-shortage { background-color: #fdeaea; }
+  #section_shift_confirm .shift-day-cell:hover { box-shadow: inset 0 0 0 1px #667085; }
+  #section_shift_confirm .shift-day-cell.selected { box-shadow: inset 0 0 0 2px #667085; }
+  #section_shift_confirm .shift-day-cell.today .shift-day-number { background-color: #4b5563; }
+  #section_shift_confirm .shift-weekday { color: #667085; font-size: 14px; }
+  #section_shift_confirm .shift-excess-mark { width: 18px; height: 18px; font-size: 13px; }
   .shift-date-detail {
     box-sizing: border-box;
     max-width: 960px;
     margin: 24px auto 0;
-    padding: 20px;
     font-size: 15px;
-    line-height: 1.7;
-    border: 1px solid #ccc;
-    border-radius: 8px;
+    line-height: 1.8;
+    color: #1d2d4d;
+    overflow-wrap: anywhere;
   }
-  .shift-detail-heading { margin: 0 0 12px; font-size: 19px; }
+  .shift-detail-heading { margin: 0 0 14px; font-size: 28px; line-height: 1.4; font-weight: bold; }
   .shift-detail-message { margin: 0; color: #666; }
-  .shift-detail-list { margin: 0; padding: 0; list-style: none; }
-  .shift-detail-row { display: flex; flex-wrap: wrap; gap: 8px 24px; padding: 8px 0; border-bottom: 1px solid #eee; }
-  .shift-detail-row:last-child { border-bottom: none; }
-  .shift-detail-name { min-width: 140px; font-weight: bold; }
-  .shift-detail-time { color: #666; font-variant-numeric: tabular-nums; }
+  .shift-detail-name { font-weight: bold; }
+  .shift-detail-time { color: #667085; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .shift-detail-section { margin-top: 18px; padding: 20px 22px; border: 1px solid #dce5f1; border-radius: 12px; background-color: #fbfcff; }
+  .shift-detail-section[data-section="staffing"] { border-color: #f5cdcf; background-color: #fff5f5; }
+  .shift-detail-section[data-section="skills"] { border-color: #cfe2f7; background-color: #f6fbff; }
+  .shift-detail-section[data-section="education"] { border-color: #cce8e1; background-color: #f5fcfa; }
+  .shift-detail-section[data-section="consultation"] { border-color: #f0dfb9; background-color: #fffcf5; }
+  .shift-detail-section h4 { margin: 0 0 4px; font-size: 19px; line-height: 1.5; font-weight: bold; }
+  .shift-detail-section h5 { margin: 18px 0 10px; font-size: 17px; font-weight: bold; }
+  .shift-detail-section p { margin: 6px 0; }
+  .shift-detail-section .shift-detail-description { margin: 0 0 14px; color: #6b7e9d; font-size: 13px; line-height: 1.7; }
+  .shift-detail-table-scroll { overflow-x: auto; }
+  .shift-detail-table { width: 100%; min-width: 380px; border-collapse: collapse; text-align: left; }
+  .shift-detail-table th,
+  .shift-detail-table td { padding: 10px 18px; border-bottom: 1px solid #e5ebf3; vertical-align: middle; text-align: left; }
+  .shift-detail-table thead th { padding-top: 6px; padding-bottom: 6px; background-color: #f2f5f9; color: #536684; font-size: 13px; font-weight: bold; }
+  .shift-detail-table .shift-detail-name { font-size: 17px; }
+  .shift-detail-table tbody tr:last-child > * { border-bottom: none; }
+  .shift-detail-table .shift-detail-time { white-space: nowrap; font-size: 15px; color: #425572; }
+  .shift-detail-tag { display: inline-block; padding: 2px 14px; border-radius: 10px; background-color: #e4efff; color: #244c88; font-size: 14px; white-space: nowrap; }
+  .shift-detail-tag[data-work-type="all"] { background-color: #e0f3eb; color: #245b51; }
+  .shift-detail-tag[data-work-type="dinner"] { background-color: #ebebfa; color: #4e4f80; }
+  .shift-detail-tag[data-work-type="custom"],
+  .shift-detail-tag[data-work-type="unavailable"] { background-color: #edf0f5; color: #536177; }
+  .shift-detail-warning { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 10px 16px; border: 1px solid #f8d8da; border-radius: 9px; background-color: #ffeded; color: #be343a; }
+  .shift-warning-period { padding: 1px 14px; border: 1px solid #f5d1d3; border-radius: 10px; font-weight: bold; }
+  .shift-detail-warning strong { font-size: 21px; }
+  .shift-skill-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+  .shift-skill-group + .shift-skill-group { border-left: 1px solid #dce7f1; padding-left: 20px; }
+  .shift-skill-group:only-child { grid-column: 1 / -1; }
+  .shift-skill-group h5 { margin: 0 0 10px; }
+  .shift-skill-group ul { margin: 0; padding: 12px 16px 12px 32px; border-radius: 10px; background-color: #fff1f2; }
+  .shift-skill-group li + li { margin-top: 6px; }
+  .shift-education-list { margin: 0; padding: 0; list-style: none; }
+  .shift-education-list li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 16px; margin-top: 6px; padding: 10px 14px; border: 1px solid #deecea; border-radius: 9px; background-color: #fff; }
+  .shift-education-pair { display: grid; grid-template-columns: minmax(0, 1fr) 24px minmax(0, 1fr); align-items: center; gap: 10px; text-align: center; }
+  .shift-education-teacher,
+  .shift-education-learner { padding: 3px 8px; border-radius: 8px; background-color: #e4efff; font-size: 14px; }
+  .shift-education-learner { background-color: #e2f5ed; }
+  .shift-education-arrow { color: #328b82; font-size: 20px; }
+  .shift-education-skills { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-left: 16px; border-left: 1px solid #dde7ec; }
+  .shift-education-skills .shift-detail-note { margin-right: 4px; }
+  .shift-detail-note { color: #667085; font-size: 13px; }
+  .shift-candidate-list { margin: 8px 0 0; padding: 0; list-style: none; counter-reset: shift-candidate; border: 1px solid #edf0f3; border-radius: 10px; background-color: #fff; overflow: hidden; }
+  .shift-candidate-list li { display: grid; grid-template-columns: 32px minmax(100px, 0.85fr) minmax(0, 1.6fr) minmax(175px, 1fr); gap: 6px 14px; align-items: center; padding: 14px; border-bottom: 1px solid #edf0f3; counter-increment: shift-candidate; }
+  .shift-candidate-list li:last-child { border-bottom: none; }
+  .shift-candidate-list li::before { content: counter(shift-candidate); grid-column: 1; grid-row: 1; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; font-weight: bold; color: #536177; background-color: #eef0f3; }
+  .shift-candidate-list .shift-detail-name { grid-column: 2; grid-row: 1; }
+  .shift-candidate-list .shift-candidate-skills { grid-column: 3; grid-row: 1; font-size: 14px; margin: 0; padding-left: 14px; border-left: 1px solid #dce3ed; }
+  .shift-candidate-list .shift-detail-time { grid-column: 4; grid-row: 1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; padding-left: 14px; border-left: 1px solid #dce3ed; font-size: 12px; }
+  .shift-candidate-list .shift-detail-time strong { font-size: 15px; color: #243651; }
   .shift-week-switch { max-width: none; gap: 16px; }
   .shift-week-btn { font-size: 16px; padding: 8px 16px; white-space: nowrap; }
   .shift-week-label { font-size: 20px; font-weight: bold; text-align: center; font-variant-numeric: tabular-nums; }
@@ -1181,22 +1337,24 @@
   .shift-edit-cell:focus-visible,
   .shift-mode-btn:focus-visible,
   .shift-register-btn:focus-visible { outline: 2px solid #3f6fd1; outline-offset: 2px; }
-  .shift-edit-cell.is-draft { background-color: #e6efff; border-color: #3f6fd1; color: #234f96; }
+  .shift-edit-cell.shift-color-lunch { background-color: #fff0d9; }
+  .shift-edit-cell.shift-color-dinner { background-color: #e0edff; }
+  .shift-edit-cell.shift-color-all { background-color: #e1f2e3; }
+  .shift-edit-cell.shift-color-unavailable { background-color: #fdeaea; }
+  .shift-edit-cell.is-draft { border-color: #3f6fd1; color: #234f96; }
   .shift-edit-cell.is-deleting { background-color: #edf0f5; border: 1px dashed #67778e; color: #566478; }
-  .shift-edit-cell.is-deleting .shift-cell-label { text-decoration: line-through; }
   .shift-cell-label { font-weight: bold; }
   .shift-cell-time { font-size: 11px; }
-  .shift-cell-state { font-size: 11px; font-weight: bold; }
   .shift-edit-cell:disabled { cursor: not-allowed; }
   .shift-edit-panel { padding: 16px; background-color: #fafafa; border: 1px solid #ddd; border-radius: 8px; }
   .shift-edit-panel h3 { margin: 0 0 12px; font-size: 18px; }
-  .shift-edit-help { margin: 0 0 14px; font-size: 12px; color: #666; line-height: 1.7; }
   .shift-mode-list { display: flex; flex-direction: column; gap: 8px; }
   .shift-mode-btn {
     width: 100%;
     padding: 9px 10px;
     font-family: inherit;
     font-size: 15px;
+    text-align: center;
     color: #333;
     background-color: #fff;
     border: 1px solid #ccc;
@@ -1205,16 +1363,56 @@
   }
   .shift-mode-btn span { display: block; margin-top: 2px; font-size: 11px; }
   .shift-mode-btn:hover { background-color: #f0f4fa; }
+  .shift-mode-btn[data-shift-mode="lunch"] { --shift-mode-color: #a6530b; }
+  .shift-mode-btn[data-shift-mode="dinner"] { --shift-mode-color: #3f6fd1; }
+  .shift-mode-btn[data-shift-mode="all"] { --shift-mode-color: #287a40; }
+  .shift-mode-btn[data-shift-mode="custom"] { --shift-mode-color: #7952b3; }
+  .shift-mode-btn[data-shift-mode="unavailable"] { --shift-mode-color: #b65d16; }
+  .shift-mode-btn[data-shift-mode="delete"] { --shift-mode-color: #c23838; }
   .shift-mode-btn.selected,
-  .shift-mode-btn[aria-pressed="true"] { background-color: #3f6fd1; border-color: #3f6fd1; color: #fff; }
+  .shift-mode-btn[aria-pressed="true"] { background-color: var(--shift-mode-color); border-color: var(--shift-mode-color); color: #fff; }
   .shift-mode-btn:disabled { opacity: 0.6; cursor: not-allowed; }
   .shift-time-inputs { margin-top: 16px; }
-  .shift-time-inputs label { display: block; margin: 10px 0 4px; font-size: 13px; }
-  .shift-time-inputs input { box-sizing: border-box; width: 100%; padding: 8px; font-family: inherit; font-size: 16px; border: 1px solid #ccc; border-radius: 6px; }
-  .shift-draft-summary { margin: 18px 0 10px; color: #234f96; font-size: 14px; font-weight: bold; }
-  .shift-register-btn { width: 100%; padding: 12px 16px; font-family: inherit; font-size: 17px; background-color: #3f6fd1; color: #fff; border: none; border-radius: 8px; cursor: pointer; }
-  .shift-register-btn:hover { background-color: #35609c; }
-  .shift-register-btn:disabled { background-color: #9db3dc; cursor: not-allowed; }
+  .shift-time-row {margin-top: 10px}
+  .shift-time-label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 13px;
+  }
+  .shift-time-select-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .shift-time-select-group select {
+    box-sizing: border-box;
+    flex: 1;
+    min-width: 0;
+    padding: 8px;
+    font-family: inherit;
+    font-size: 16px;
+    background-color: #fff;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+  }
+  .shift-time-separator {
+    font-size: 18px;
+    font-weight: bold;
+  }
+  .shift-register-btn {
+    width: 100%;
+    margin-top: 16px;
+    padding: 12px 16px;
+    font-family: inherit;
+    font-size: 17px;
+    background-color: #374151;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .shift-register-btn:hover { background-color: #1f2937; }
+  .shift-register-btn:disabled { background-color: #9ca3af; cursor: not-allowed; }
   /* 狭い画面でも曜日と日付の7列を維持する */
   @media (max-width: 900px) {
     .shift-section-active .manager-layout { grid-template-columns: minmax(0, 1fr); gap: 24px; }
@@ -1233,7 +1431,20 @@
     .shift-week-switch { flex-wrap: wrap; gap: 10px; }
     .shift-week-label { flex: 1 0 100%; order: -1; font-size: 17px; }
     .shift-day-status { font-size: 10px; }
-    .shift-date-detail { padding: 14px; }
+    .shift-calendar-card,
+    .shift-detail-section { padding: 14px; }
+    .shift-calendar-card .shift-month-label { font-size: 18px; }
+    .shift-calendar-card .shift-legend { gap: 8px 12px; font-size: 12px; }
+    .shift-calendar-card .shift-day-number { width: 24px; height: 24px; font-size: 15px; }
+    .shift-skill-columns { grid-template-columns: minmax(0, 1fr); }
+    .shift-detail-heading { font-size: 23px; }
+    .shift-skill-group + .shift-skill-group { border-left: none; padding-left: 0; }
+    .shift-education-list li { grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 10px; }
+    .shift-education-skills { padding-left: 0; border-left: none; }
+    .shift-candidate-list li { grid-template-columns: 32px minmax(0, 1fr); align-items: start; }
+    .shift-candidate-list li::before { grid-row: 1 / 4; }
+    .shift-candidate-list .shift-candidate-skills { grid-column: 2; grid-row: 2; padding-left: 0; border-left: none; }
+    .shift-candidate-list .shift-detail-time { grid-column: 2; grid-row: 3; padding-left: 0; border-left: none; }
   }
   /* 店長画面：発注管理で使うボタン */
   .ingredient-action-btn {

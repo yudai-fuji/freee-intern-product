@@ -49,6 +49,25 @@ function ensureEmployeeStatusColumns_() {
   return { 'sheet': sheet, 'statusColumn': statusColumn, 'deletedAtColumn': deletedAtColumn };
 }
 
+function getEmployeeIdentityColumns_(sheet) {
+  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function (value) {
+    return String(value).trim();
+  });
+  function findColumn(names, fallback) {
+    const index = header.findIndex(function (title) { return names.indexOf(title) !== -1; });
+    return index === -1 ? fallback : index + 1;
+  }
+  const id = findColumn(['従業員番号', '従業員ID'], EMPLOYEE_COL_ID);
+  const name = findColumn(['氏名'], EMPLOYEE_COL_NAME);
+  // 旧名簿の並びは維持し、列が移動した場合は見出しを優先する。
+  return {
+    id: id,
+    name: name,
+    partTimeMark: findColumn(['雇用区分', '雇用区分の印'],
+      id === EMPLOYEE_COL_ID && name === EMPLOYEE_COL_NAME ? EMPLOYEE_COL_PART_TIME_MARK : 0)
+  };
+}
+
 /**
  * 従業員名簿の全行を、削除済みかどうかも含めて読み取る
  * 一覧・氏名の対応表・追加・削除は、すべてこの関数が読んだ内容をもとに判断する
@@ -63,10 +82,11 @@ function readEmployeeRows_() {
     return rows; // 見出し行しかない
   }
 
-  const width = Math.max(columns.statusColumn, columns.deletedAtColumn);
+  const identity = getEmployeeIdentityColumns_(sheet);
+  const width = sheet.getLastColumn();
   const values = sheet.getRange(2, 1, lastRow - 1, width).getValues();
   for (let i = 0; i < values.length; i++) {
-    const empId = values[i][EMPLOYEE_COL_ID - 1];
+    const empId = values[i][identity.id - 1];
     if (empId === '') {
       continue; // 従業員番号が無い行はそもそも使わない
     }
@@ -74,7 +94,7 @@ function readEmployeeRows_() {
     const status = String(values[i][columns.statusColumn - 1] || '').trim();
     rows.push({
       'id': empId,
-      'name': String(values[i][EMPLOYEE_COL_NAME - 1] || '').trim(),
+      'name': String(values[i][identity.name - 1] || '').trim(),
       'rowNumber': i + 2, // 見出し行の分だけ、シート上の行番号は配列の添字より2大きい
       'isDeleted': (status === EMPLOYEE_STATUS_DELETED)
     });
@@ -126,6 +146,23 @@ function getEmployees() {
 function getActiveEmployeeList(authToken) {
   requireLoggedIn_(authToken);
   return getEmployees();
+}
+
+function getEmployeeDirectory(authToken) {
+  requireManagerRole_(authToken);
+  const employees = getEmployees();
+  const skillMap = getEmployeeSkillMap();
+  const rateMap = getEmployeeRateMap();
+  return employees.map(function (employee) {
+    const rate = rateMap[String(employee.id)];
+    return {
+      id: employee.id,
+      number: employee.number,
+      name: employee.name,
+      skills: skillMap[String(employee.id)] || getDefaultSkills(),
+      hourlyWage: rate.base + rate.skillAllowance
+    };
+  });
 }
 
 /**
@@ -221,7 +258,7 @@ function changeEmployeePin(empId, newPin, confirmPin, authToken) {
 
 /**
  * 従業員を追加する（店長だけが実行できる）
- * 氏名がまだ入っていない番号の行に書き込む。削除済みの行は飛ばすので、番号が別の人に使い回されない
+ * 削除済み・未使用の番号も含む最大番号の次を、新しい行へ登録する。
  * @param {string} lastName 姓
  * @param {string} firstName 名
  * @param {string} pin 打刻用の半角数字6桁
@@ -246,28 +283,33 @@ function addEmployee_(lastName, firstName, pin) {
   const columns = ensureEmployeeStatusColumns_();
   const rows = readEmployeeRows_();
 
-  // 「従業員番号があり、氏名が空欄で、削除済みでない」行だけを追加先にする
-  let targetRow = null;
+  let maxId = 0;
   for (let i = 0; i < rows.length; i++) {
-    if (rows[i].name === '' && !rows[i].isDeleted) {
-      targetRow = rows[i];
-      break;
-    }
+    const value = String(rows[i].id).trim();
+    if (/^[0-9]+$/.test(value)) maxId = Math.max(maxId, Number(value));
   }
-  if (targetRow === null) {
-    throw new Error('空いている従業員番号がありません');
-  }
+  const employeeId = maxId + 1;
+  if (!Number.isSafeInteger(employeeId)) throw new Error('従業員番号の上限に達しました');
 
   const fullName = lastName + ' ' + firstName;
-  const partTimeMark = '○'; // 〇のUnicode
   const pinColumn = ensureEmployeePinColumn_();
-  pinColumn.sheet.getRange(targetRow.rowNumber, pinColumn.column).setNumberFormat('@').setValue(pin);
-  columns.sheet.getRange(targetRow.rowNumber, EMPLOYEE_COL_NAME).setValue(fullName);
-  columns.sheet.getRange(targetRow.rowNumber, EMPLOYEE_COL_PART_TIME_MARK).setValue(partTimeMark);
-  columns.sheet.getRange(targetRow.rowNumber, columns.statusColumn).setValue(EMPLOYEE_STATUS_ACTIVE);
+  const allowanceColumn = ensureEmployeeSkillAllowanceColumn_();
+  const sheet = columns.sheet;
+  const identity = getEmployeeIdentityColumns_(sheet);
+  const rowNumber = sheet.getLastRow() + 1;
+  if (rowNumber > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), 1);
+  const values = new Array(sheet.getLastColumn()).fill('');
+  values[identity.id - 1] = employeeId;
+  values[identity.name - 1] = fullName;
+  if (identity.partTimeMark) values[identity.partTimeMark - 1] = '○';
+  values[columns.statusColumn - 1] = EMPLOYEE_STATUS_ACTIVE;
+  values[pinColumn.column - 1] = pin;
+  values[allowanceColumn.column - 1] = SKILL_ALLOWANCE_DEFAULT;
+  sheet.getRange(rowNumber, pinColumn.column).setNumberFormat('@');
+  sheet.getRange(rowNumber, 1, 1, values.length).setValues([values]);
 
   return {
-    'message': fullName + ' を追加しました（従業員番号 : ' + formatEmployeeNumber(targetRow.id) + '）',
+    'message': fullName + ' を追加しました（従業員番号 : ' + formatEmployeeNumber(employeeId) + '）',
     'employees': getEmployees()
   };
 }
@@ -390,7 +432,7 @@ function getEmployeeSkillAllowanceMap() {
     return allowanceByEmpId; // 見出し行しかない
   }
 
-  const empIdValues = sheet.getRange(2, EMPLOYEE_COL_ID, lastRow - 1, 1).getValues();
+  const empIdValues = sheet.getRange(2, getEmployeeIdentityColumns_(sheet).id, lastRow - 1, 1).getValues();
   const allowanceValues = sheet.getRange(2, columns.column, lastRow - 1, 1).getValues();
   for (let i = 0; i < empIdValues.length; i++) {
     if (empIdValues[i][0] === '') {

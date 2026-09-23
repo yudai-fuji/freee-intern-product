@@ -11,6 +11,7 @@ const SHIFT_HEADER_ALIASES = {
   endTime: ['終了時刻', '退勤時刻']
 };
 const SHIFT_TIME_PATTERN = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
+const SHIFT_CUSTOM_TIME_PATTERN = /^(1[1-9]|2[0-2]):[0-5][0-9]$/;
 
 /** 月の保存済みシフトを返す。氏名は削除済み従業員についても表示できる。 */
 function getShiftMonth(year, month, authToken) {
@@ -25,14 +26,18 @@ function getShiftMonth(year, month, authToken) {
     throw new Error('表示する年月が不正です: ' + year + '年' + month + '月');
   }
   const prefix = String(targetYear) + '-' + ('0' + targetMonth).slice(-2) + '-';
+  const skillMap = getEmployeeSkillMap();
   const employees = readEmployeeRows_().filter(function (row) { return row.name !== ''; }).map(function (row) {
-    return { id: String(row.id), name: row.name, number: formatEmployeeNumber(row.id) };
+    return { id: String(row.id), name: row.name, number: formatEmployeeNumber(row.id),
+      isDeleted: row.isDeleted, skills: skillMap[String(row.id)] || getDefaultSkills() };
   });
   return {
     year: targetYear,
     month: targetMonth,
     today: today,
     employees: employees,
+    holidays: Object.keys(getHolidayDateSet()).map(function (date) { return date.replace(/\//g, '-'); })
+      .filter(function (date) { return date.indexOf(prefix) === 0; }),
     shifts: readShiftStore_().records.filter(function (record) {
       return record.date.indexOf(prefix) === 0;
     }).map(shiftPublicRecord_)
@@ -137,14 +142,16 @@ function validateShiftChanges_(changes) {
       result.startTime = '17:00';
       result.endTime = '22:00';
     } else if (change.workType === 'all') {
-      // オールの勤務時間・休憩時間は未確定。時刻を推測して保存しない。
+      result.startTime = '11:30';
+      result.endTime = '22:00';
+    } else if (change.workType === 'unavailable') {
       result.startTime = '';
       result.endTime = '';
     } else if (change.workType === 'custom') {
       if (typeof change.startTime !== 'string' || typeof change.endTime !== 'string' ||
-          !SHIFT_TIME_PATTERN.test(change.startTime) || !SHIFT_TIME_PATTERN.test(change.endTime) ||
+          !SHIFT_CUSTOM_TIME_PATTERN.test(change.startTime) || !SHIFT_CUSTOM_TIME_PATTERN.test(change.endTime) ||
           change.startTime >= change.endTime) {
-        throw new Error('時間編集は開始・終了をHH:mmで指定し、終了を開始より後にしてください（日をまたぐ勤務は未対応です）');
+        throw new Error('時間を指定する場合は、開始・終了をHH:mmで指定し、終了を開始より後にしてください');
       }
       result.startTime = change.startTime;
       result.endTime = change.endTime;
@@ -188,9 +195,9 @@ function readShiftStore_() {
       throw new Error('シフトシートの' + (index + 1) + '行目の従業員IDまたは日付を確認してください（既存データは変更していません）');
     }
     let workType = store.columns.workType ? String(raw[store.columns.workType - 1]).trim() : '';
-    const legacyTypes = { 'ランチ': 'lunch', 'ディナー': 'dinner', 'オール': 'all', '時間編集': 'custom' };
+    const legacyTypes = { 'ランチ': 'lunch', 'ディナー': 'dinner', 'オール': 'all', '時間編集': 'custom', '出勤不可': 'unavailable' };
     workType = legacyTypes[workType] || workType || 'custom';
-    if (['lunch', 'dinner', 'all', 'custom'].indexOf(workType) === -1) {
+    if (['lunch', 'dinner', 'all', 'custom', 'unavailable'].indexOf(workType) === -1) {
       throw new Error('シフトシートの' + (index + 1) + '行目の勤務区分を確認してください（既存データは変更していません）');
     }
     const record = {

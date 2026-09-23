@@ -204,7 +204,7 @@ function buildAttendances(targetDate) {
     const id = empIds[j];
     const summary = summaryByEmpId[String(id)];
     const actualMinutes = calcActualWorkingMinutes(summary.clockInAt, summary.clockOutAt, summary.breakMinutes);
-    const rate = rateByEmpId[String(id)] || { 'base': 0, 'holidayBonus': 0, 'skillAllowance': 0 };
+    const rate = rateByEmpId[String(id)] || { 'base': BASE_HOURLY_WAGE, 'holidayBonus': HOLIDAY_HOURLY_BONUS, 'skillAllowance': SKILL_ALLOWANCE_DEFAULT };
 
     attendances.push({
       'name': nameByEmpId[String(id)] || ('従業員番号 ' + id),
@@ -267,23 +267,14 @@ function calcActualWorkingMinutes(clockInAt, clockOutAt, breakMinutes) {
 }
 
 function getEmployeeRateMap() {
-  const empSheet = getSheet(SHEET_NAMES.EMPLOYEES);
-  const lastRow = empSheet.getLastRow();
   const rateByEmpId = {};
-  if (lastRow < 2) {
-    return rateByEmpId;
-  }
-  // スキル手当は名簿の右側に足した列にあるので、基本時給・休日加給とは別に読み取る
   const skillAllowanceByEmpId = getEmployeeSkillAllowanceMap();
-  const empValues = empSheet.getRange(2, 1, lastRow - 1, 5).getValues(); // A:従業員番号 ... D:基本時給 E:休日加給
-  for (let i = 0; i < empValues.length; i++) {
-    const empId = empValues[i][0];
-    if (empId === '') {
-      continue;
-    }
+  const employees = readEmployeeRows_();
+  for (let i = 0; i < employees.length; i++) {
+    const empId = employees[i].id;
     rateByEmpId[String(empId)] = {
-      'base': Number(empValues[i][3]) || 0,
-      'holidayBonus': Number(empValues[i][4]) || 0,
+      'base': BASE_HOURLY_WAGE,
+      'holidayBonus': HOLIDAY_HOURLY_BONUS,
       'skillAllowance': skillAllowanceByEmpId[String(empId)] || SKILL_ALLOWANCE_DEFAULT
     };
   }
