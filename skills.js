@@ -163,9 +163,8 @@ function saveEmployeeSkills(empId, skillValues, authToken) {
   return withAppLock_(function () { return saveEmployeeSkills_(empId, skillValues); });
 }
 
-function saveEmployeeSkills_(empId, skillValues) {
+function validateEmployeeSkills_(empId, skillValues, nameByEmpId) {
   // 有効な従業員だけを編集対象にする（削除済みの人のスキル記録は残すが、書き換えはしない）
-  const nameByEmpId = getActiveEmployeeNameMap();
   const empName = nameByEmpId[String(empId)];
   if (!empName) {
     throw new Error('この従業員は選べません。画面を開き直してください（従業員番号 ' + empId + '）');
@@ -179,6 +178,65 @@ function saveEmployeeSkills_(empId, skillValues) {
     }
   }
 
+  return empName;
+}
+
+/** 全件を先に検証し、既存の評価・更新日・手当更新を同じロック内で実行する。 */
+function saveEmployeeSkillsBatch(changes, authToken) {
+  requireManagerRole_(authToken);
+  return withAppLock_(function () {
+    if (!Array.isArray(changes) || changes.length === 0) { throw new Error('保存する変更がありません'); }
+    const names = getActiveEmployeeNameMap();
+    const seen = new Set();
+    changes.forEach(function (change) {
+      if (!change || seen.has(String(change.empId))) { throw new Error('従業員の指定が不正です'); }
+      validateEmployeeSkills_(change.empId, change.skillValues, names);
+      seen.add(String(change.empId));
+    });
+
+    const sheet = getSkillSheet();
+    const allowance = ensureEmployeeSkillAllowanceColumn_();
+    const employees = readEmployeeRows_();
+    let nextRow = sheet.getLastRow() + 1;
+    const backups = [];
+    function remember(range) {
+      const values = range.getValues();
+      const formulas = range.getFormulas();
+      backups.push({ range: range, values: values.map(function (row, r) {
+        return row.map(function (value, c) { return formulas[r][c] || value; });
+      }) });
+    }
+    changes.forEach(function (change) {
+      const existingRow = findSkillRowByEmpId(sheet, change.empId);
+      const targetRow = existingRow === -1 ? nextRow++ : existingRow;
+      if (targetRow > sheet.getMaxRows()) { sheet.insertRowsAfter(sheet.getMaxRows(), targetRow - sheet.getMaxRows()); }
+      remember(sheet.getRange(targetRow, 1, 1, SKILL_SHEET_HEADER.length));
+      const employee = findEmployeeRow_(employees, change.empId);
+      if (!employee) { throw new Error('従業員が見つかりません'); }
+      remember(allowance.sheet.getRange(employee.rowNumber, allowance.column));
+    });
+
+    try {
+      const saved = changes.map(function (change) {
+        const result = saveEmployeeSkills_(change.empId, change.skillValues);
+        return { empId: change.empId, skillValues: change.skillValues, updatedAt: result.updatedAt };
+      });
+      SpreadsheetApp.flush();
+      return { employees: saved, message: saved.length + '人分の変更を保存しました' };
+    } catch (error) {
+      // 途中失敗で評価だけ・手当だけが変わらないよう、対象範囲を元に戻す。
+      let restoreFailed = false;
+      backups.forEach(function (backup) {
+        try { backup.range.setValues(backup.values); } catch (restoreError) { restoreFailed = true; }
+      });
+      try { SpreadsheetApp.flush(); } catch (restoreError) { restoreFailed = true; }
+      throw new Error(error.message + (restoreFailed ? '（復元できなかった可能性があります。保存済みデータを確認してください）' : ''));
+    }
+  });
+}
+
+function saveEmployeeSkills_(empId, skillValues) {
+  const empName = validateEmployeeSkills_(empId, skillValues, getActiveEmployeeNameMap());
   const sheet = getSkillSheet();
   let targetRow = findSkillRowByEmpId(sheet, empId);
   const isNewRow = (targetRow === -1);

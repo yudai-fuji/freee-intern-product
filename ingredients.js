@@ -330,6 +330,13 @@ function normalizeIngredientSupplierNote_(value) {
   }).filter(function (line) { return line.trim() !== ''; }).join('\n');
 }
 
+/** IDを変えず、旧業者名を現在の名称へ揃える。 */
+function normalizeOrderSupplierName_(name) {
+  if (name === '○○青果') { return 'freee青果'; }
+  if (name === '△△食品') { return 'freee食品'; }
+  return name;
+}
+
 /** 業者と発注条件を読み込む。 */
 function getIngredientSuppliers() {
   const sheet = ensureIngredientSupplierSheet();
@@ -343,7 +350,7 @@ function getIngredientSuppliers() {
     const leadTimeText = values['納品リードタイム日数'];
     suppliers.push({
       'id': values['業者ID'],
-      'name': values['業者名'],
+      'name': normalizeOrderSupplierName_(values['業者名']),
       'deadlineTime': values['受注締切時刻'],
       'orderDays': parseIngredientWeekdayList(values['受注営業日']),
       'shipDays': parseIngredientWeekdayList(values['出荷営業日']),
@@ -573,6 +580,7 @@ function buildIngredientSupplierPlan(supplier, now) {
       'orderDate': formatIngredientDateWithWeekday(orderDate),
       'deadline': formatIngredientDateWithWeekday(orderDate) + ' ' + supplier.deadlineTime,
       'deliveryDate': formatIngredientDateWithWeekday(deliveryDate),
+      'deliveryDateKey': formatIngredientDate(deliveryDate),
       'closedWeekdayText': buildIngredientClosedWeekdayText(supplier),
       'text': '次に納品できるのは ' + formatIngredientDateWithWeekday(deliveryDate) +
         ' です。この分の発注締切は ' + formatIngredientDateWithWeekday(orderDate) + ' ' + supplier.deadlineTime + ' です'

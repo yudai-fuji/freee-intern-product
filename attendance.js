@@ -32,28 +32,8 @@ function nextClockState_(state, type) {
 
 function readTodayClockState_(empId, sheet, now) {
   const date = Utilities.formatDate(now, TIME_ZONE, 'yyyy/MM/dd');
-  const result = { employeeId: String(empId), date: date, state: 'not_clocked_in', allowedTypes: [] };
-  const lastRow = sheet.getLastRow();
-  const rows = lastRow < 2 ? [] : sheet.getRange(2, 1, lastRow - 1, 3).getValues();
-  const events = [];
-  for (let i = 0; i < rows.length; i++) {
-    const time = rows[i][2];
-    if (String(rows[i][0]) !== String(empId) || !(time instanceof Date) || isNaN(time.getTime())) continue;
-    if (Utilities.formatDate(time, TIME_ZONE, 'yyyy/MM/dd') !== date) continue;
-    events.push({ type: rows[i][1], time: time.getTime(), row: i + 2 });
-  }
-  events.sort(function (a, b) { return a.time - b.time || a.row - b.row; });
-  for (let i = 0; i < events.length; i++) {
-    const next = nextClockState_(result.state, events[i].type);
-    if (next === null) {
-      result.state = 'invalid';
-      result.error = '本日の打刻履歴の順序が不正です（' + events[i].row + '行目）。店長に確認してください';
-      return result;
-    }
-    result.state = next;
-  }
-  result.allowedTypes = allowedClockTypes_(result.state);
-  return result;
+  const events = readAttendanceEvents_(sheet, date).filter(function (event) { return String(event.employeeId) === String(empId); });
+  return Object.assign({ employeeId: String(empId), date: date }, getClockStateFromEvents_(events));
 }
 
 function recordClock(empId, type, ticket, authToken) {
@@ -104,6 +84,8 @@ function resetClockRecords() {
   //対象の範囲をすべて削除
   if (lastRow >= 2) {
     sheet.getRange(2, 1, lastRow - 1, 3).clearContent();
+    const adjustmentColumn = getAttendanceAdjustmentColumn_(sheet, false);
+    if (adjustmentColumn) { sheet.getRange(2, adjustmentColumn, lastRow - 1, 1).clearContent(); }
   }
 }
 
@@ -125,101 +107,37 @@ function getTodayAttendances(authToken) {
 
   return {
     'date': dateLabel,
+    'dateKey': today,
     'attendances': buildAttendances(today)
   };
 }
 
 function buildAttendances(targetDate) {
-  
-  const timeClocksSheet = getSheet(SHEET_NAMES.TIME_CLOCKS);
-  const lastRow = timeClocksSheet.getLastRow();
-
-  //ヘッダーしかないので空の配列を返す
-  if (lastRow < 2) {
-    return [];
-  }
-
-  //[Id,種別,日付]の二次元配列を返す
-  const clockValues = timeClocksSheet.getRange(2, 1, lastRow - 1, 3).getValues();
-
-  const eventsByEmpId = {}; 
-  const empIds = []; 
-
-  
-
-  for (let i = 0; i < clockValues.length; i++) {
-    const empId = clockValues[i][0];
-    const type = clockValues[i][1];
-    const clockedAt = clockValues[i][2];
-
-    //instanceofはこの変数の値はDateオブジェクトか？
-    if (empId === '' || !(clockedAt instanceof Date)) {
-      continue;
-    }
-
-    //まあ丁寧すぎるチェック
-    if (Utilities.formatDate(clockedAt, TIME_ZONE, 'yyyy/MM/dd') !== targetDate) {
-      continue; 
-    }
-
-    if (!eventsByEmpId[String(empId)]) {
-
-      //{1: [],...}
-      eventsByEmpId[String(empId)] = [];
-
-      //重複なしで、その日に打刻が存在した従業員番号の配列を作成
-      empIds.push(empId);
-    }
-    eventsByEmpId[String(empId)].push({ 'type': type, 'time': clockedAt });
-  }
-
-  const summaryByEmpId = {}; 
-
-  for (let e = 0; e < empIds.length; e++) {
-    summaryByEmpId[String(empIds[e])] = summarizeDayEvents(eventsByEmpId[String(empIds[e])]);
-  }
-
-  //functionは比較関数。empIdsの中身から2つとって大きさを比較。returnが正ならb a、負ならa bの順にする。
-  empIds.sort(function (a, b) {
-    const aClockInAt = summaryByEmpId[String(a)].clockInAt;
-    const bClockInAt = summaryByEmpId[String(b)].clockInAt;
-    if (aClockInAt === null && bClockInAt === null) {
-      return 0;
-    }
-    if (aClockInAt === null) {
-      return 1;
-    }
-    if (bClockInAt === null) {
-      return -1;
-    }
-    return aClockInAt.getTime() - bClockInAt.getTime();
+  const eventsByEmpId = new Map();
+  readAttendanceEvents_(getSheet(SHEET_NAMES.TIME_CLOCKS), targetDate).forEach(function (event) {
+    const id = String(event.employeeId);
+    if (!eventsByEmpId.has(id)) { eventsByEmpId.set(id, []); }
+    eventsByEmpId.get(id).push(event);
   });
-
-  const nameByEmpId = getEmployeeNameMap();
-  const rateByEmpId = getEmployeeRateMap();
-  const isHolidayRate = isHolidayDate(targetDate);
-
-  const attendances = [];
-  for (let j = 0; j < empIds.length; j++) {
-    const id = empIds[j];
-    const summary = summaryByEmpId[String(id)];
-    const actualMinutes = calcActualWorkingMinutes(summary.clockInAt, summary.clockOutAt, summary.breakMinutes);
-    const rate = rateByEmpId[String(id)] || { 'base': BASE_HOURLY_WAGE, 'holidayBonus': HOLIDAY_HOURLY_BONUS, 'skillAllowance': SKILL_ALLOWANCE_DEFAULT };
-
-    attendances.push({
-      'name': nameByEmpId[String(id)] || ('従業員番号 ' + id),
-      'clockIn': formatClockTime(summary.clockInAt),
-      'clockOut': formatClockTime(summary.clockOutAt),
-      'breakTime': formatBreakTime(summary.breakMinutes, summary.breakOngoing),
-      'workingTime': formatMinutesLabel(actualMinutes),
-      'estimatedWage': formatEstimatedWage(actualMinutes, rate, isHolidayRate)
-    });
-  }
-  return attendances;
+  // 両方とも未打刻の従業員も行を表示し、店長が出退勤を入力できるようにする。
+  getEmployees().forEach(function (employee) {
+    if (!eventsByEmpId.has(String(employee.id))) { eventsByEmpId.set(String(employee.id), []); }
+  });
+  const names = getEmployeeNameMap();
+  const rates = getEmployeeRateMap();
+  const holiday = isHolidayDate(targetDate);
+  return Array.from(eventsByEmpId, function (entry) {
+    const id = entry[0];
+    const rate = rates[id] || { base: BASE_HOURLY_WAGE, holidayBonus: HOLIDAY_HOURLY_BONUS, skillAllowance: SKILL_ALLOWANCE_DEFAULT };
+    return buildAttendanceView_(id, targetDate, entry[1], names[id], rate, holiday);
+  }).sort(function (a, b) {
+    return (a.clockInInput || '99:99').localeCompare(b.clockInInput || '99:99') ||
+      a.id.localeCompare(b.id, 'ja', { numeric: true });
+  });
 }
 
 function summarizeDayEvents(events) {
-  events.sort(function (a, b) { return a.time.getTime() - b.time.getTime(); });
+  events.sort(compareClockEvents_);
 
   let clockInAt = null;
   let clockOutAt = null;
@@ -229,6 +147,7 @@ function summarizeDayEvents(events) {
   for (let i = 0; i < events.length; i++) {
     const ev = events[i];
     if (ev.type === '出勤') {
+      breakMinutes += ev.breakAdjustment || 0;
       if (clockInAt === null) {
         clockInAt = ev.time;
       }
@@ -351,4 +270,184 @@ function formatEstimatedWage(actualMinutes, rate, isHolidayRate) {
   const hourlyRate = rate.base + (isHolidayRate ? rate.holidayBonus : 0) + (rate.skillAllowance || 0);
   const wage = Math.floor(actualMinutes / 60 * hourlyRate);
   return wage.toLocaleString('ja-JP') + '円';
+}
+
+
+/** 時刻が同じ場合も出勤→休憩→退勤の順で扱う（分単位の修正に対応）。 */
+function compareClockEvents_(a, b) {
+  const priority = function (type) { return type === '出勤' ? -1 : type === '退勤' ? 1 : 0; };
+  return a.time.getTime() - b.time.getTime() || priority(a.type) - priority(b.type) ||
+    (a.rowNumber || 0) - (b.rowNumber || 0);
+}
+
+function getAttendanceAdjustmentColumn_(sheet, create) {
+  const width = Math.max(3, sheet.getLastColumn());
+  const header = sheet.getRange(1, 1, 1, width).getValues()[0];
+  const index = header.indexOf(ATTENDANCE_BREAK_ADJUSTMENT_HEADER);
+  if (index !== -1) { return index + 1; }
+  if (!create) { return 0; }
+  const column = width + 1;
+  if (column > sheet.getMaxColumns()) { sheet.insertColumnsAfter(sheet.getMaxColumns(), column - sheet.getMaxColumns()); }
+  sheet.getRange(1, column).setValue(ATTENDANCE_BREAK_ADJUSTMENT_HEADER);
+  return column;
+}
+
+/** 既存の3列を維持し、追加列がない旧データの休憩補正は0分として読む。 */
+function readAttendanceEvents_(sheet, dateKey) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) { return []; }
+  const adjustmentColumn = getAttendanceAdjustmentColumn_(sheet, false);
+  return sheet.getRange(2, 1, lastRow - 1, Math.max(3, adjustmentColumn)).getValues()
+    .map(function (row, index) {
+      return { employeeId: row[0], type: row[1], time: row[2], rowNumber: index + 2,
+        breakAdjustment: adjustmentColumn ? Number(row[adjustmentColumn - 1]) || 0 : 0 };
+    }).filter(function (event) {
+      return event.employeeId !== '' && event.time instanceof Date && !isNaN(event.time.getTime()) &&
+        Utilities.formatDate(event.time, TIME_ZONE, 'yyyy/MM/dd') === dateKey;
+    });
+}
+
+function getAttendanceRevision_(events) {
+  return JSON.stringify(events.map(function (event) {
+    return [event.rowNumber, event.type, event.time.getTime(), event.breakAdjustment];
+  }));
+}
+
+function getClockStateFromEvents_(events) {
+  let state = 'not_clocked_in';
+  const ordered = events.slice().sort(compareClockEvents_);
+  for (let i = 0; i < ordered.length; i++) {
+    const next = nextClockState_(state, ordered[i].type);
+    if (next === null) {
+      return { state: 'invalid', allowedTypes: [],
+        error: '打刻履歴の順序が不正です。出勤・退勤と休憩の時刻を確認してください（' + ordered[i].rowNumber + '行目）' };
+    }
+    state = next;
+  }
+  return { state: state, allowedTypes: allowedClockTypes_(state) };
+}
+
+function buildAttendanceView_(id, dateKey, events, name, rate, holiday) {
+  const summary = summarizeDayEvents(events.slice());
+  const actualMinutes = calcActualWorkingMinutes(summary.clockInAt, summary.clockOutAt, summary.breakMinutes);
+  return {
+    id: String(id), dateKey: dateKey, name: name || ('従業員番号 ' + id),
+    clockIn: formatClockTime(summary.clockInAt), clockOut: formatClockTime(summary.clockOutAt),
+    clockInInput: summary.clockInAt ? formatClockTime(summary.clockInAt) : '',
+    clockOutInput: summary.clockOutAt ? formatClockTime(summary.clockOutAt) : '',
+    breakMinutes: summary.breakMinutes, breakOngoing: summary.breakOngoing,
+    breakTime: formatBreakTime(summary.breakMinutes, summary.breakOngoing),
+    workingTime: formatMinutesLabel(actualMinutes),
+    estimatedWage: formatEstimatedWage(actualMinutes, rate, holiday),
+    revision: getAttendanceRevision_(events)
+  };
+}
+
+function parseAttendanceTime_(value, dateKey, original, label) {
+  if (value === '') { return null; }
+  if (typeof value !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) {
+    throw new Error(label + 'は時:分の形式で入力してください');
+  }
+  // 未変更の時刻は秒も保持し、保存だけで労働時間が変わらないようにする。
+  if (original && formatClockTime(original) === value) { return original; }
+  const date = Utilities.parseDate(dateKey + ' ' + value, TIME_ZONE, 'yyyy/MM/dd HH:mm');
+  if (Utilities.formatDate(date, TIME_ZONE, 'yyyy/MM/dd HH:mm') !== dateKey + ' ' + value) {
+    throw new Error(label + 'が不正です');
+  }
+  return date;
+}
+
+/** 店長の行編集。通常打刻と同じロックで競合を確認し、対象従業員・対象日だけを書き換える。 */
+function saveAttendance(input, authToken) {
+  requireManagerRole_(authToken);
+  const payload = input || {};
+  return withAppLock_(function () {
+    const dateKey = payload.dateKey;
+    if (typeof dateKey !== 'string' || !/^\d{4}\/\d{2}\/\d{2}$/.test(dateKey)) { throw new Error('対象日が不正です'); }
+    const sheet = getSheet(SHEET_NAMES.TIME_CLOCKS);
+    const events = readAttendanceEvents_(sheet, dateKey).filter(function (event) {
+      return String(event.employeeId) === String(payload.id);
+    });
+    const names = getEmployeeNameMap();
+    const activeNames = getActiveEmployeeNameMap();
+    if (!Object.prototype.hasOwnProperty.call(names, String(payload.id)) ||
+        (!activeNames[String(payload.id)] && events.length === 0)) { throw new Error('この従業員の勤怠は編集できません'); }
+    if (typeof payload.revision !== 'string' || payload.revision !== getAttendanceRevision_(events)) {
+      throw new Error('編集中に打刻が更新されました。キャンセルして勤怠管理を開き直してください');
+    }
+    const original = summarizeDayEvents(events.slice());
+    const clockIn = parseAttendanceTime_(payload.clockIn, dateKey, original.clockInAt, '出勤時刻');
+    const clockOut = parseAttendanceTime_(payload.clockOut, dateKey, original.clockOutAt, '退勤時刻');
+    const breakText = String(payload.breakMinutes === undefined || payload.breakMinutes === null ? '' : payload.breakMinutes).trim();
+    if (!/^\d+$/.test(breakText) || !Number.isSafeInteger(Number(breakText)) || Number(breakText) > 1439) {
+      throw new Error('休憩時間は0〜1439の整数（分）で入力してください');
+    }
+    const breakMinutes = Number(breakText);
+    if (!clockIn) { throw new Error('出勤時刻を入力してください'); }
+    if (clockOut && clockOut.getTime() < clockIn.getTime()) { throw new Error('退勤時刻は出勤時刻以降にしてください'); }
+    const endOfDay = Utilities.parseDate(dateKey + ' 23:59', TIME_ZONE, 'yyyy/MM/dd HH:mm');
+    endOfDay.setSeconds(59, 999);
+    const maxBreak = Math.floor(((clockOut || endOfDay).getTime() - clockIn.getTime()) / 60000);
+    if (breakMinutes > maxBreak) { throw new Error('休憩時間が勤務時間を超えています'); }
+
+    let nextRow = sheet.getLastRow() + 1;
+    const clockIns = events.filter(function (event) { return event.type === '出勤'; }).sort(compareClockEvents_);
+    const clockOuts = events.filter(function (event) { return event.type === '退勤'; }).sort(compareClockEvents_);
+    const edited = events.filter(function (event) { return event.type !== '出勤' && event.type !== '退勤'; })
+      .map(function (event) { return Object.assign({}, event); });
+    const inEvent = { employeeId: payload.id, type: '出勤', time: clockIn,
+      rowNumber: clockIns.length ? clockIns[0].rowNumber : nextRow++, breakAdjustment: 0 };
+    edited.push(inEvent);
+    if (clockOut) {
+      // 休憩中の退勤漏れを修正した場合は、その退勤時刻で休憩も終了させる。
+      if (original.breakOngoing) {
+        edited.push({ employeeId: payload.id, type: '休憩終了', time: clockOut, rowNumber: nextRow++, breakAdjustment: 0 });
+      }
+      edited.push({ employeeId: payload.id, type: '退勤', time: clockOut,
+        rowNumber: clockOuts.length ? clockOuts[clockOuts.length - 1].rowNumber : nextRow++, breakAdjustment: 0 });
+    }
+    const state = getClockStateFromEvents_(edited);
+    if (state.state === 'invalid') { throw new Error(state.error); }
+    const rawSummary = summarizeDayEvents(edited.slice());
+    inEvent.breakAdjustment = breakMinutes - rawSummary.breakMinutes;
+    const rate = getEmployeeRateMap()[String(payload.id)] ||
+      { base: BASE_HOURLY_WAGE, holidayBonus: HOLIDAY_HOURLY_BONUS, skillAllowance: SKILL_ALLOWANCE_DEFAULT };
+    const result = buildAttendanceView_(payload.id, dateKey, edited.slice().sort(function (a, b) { return a.rowNumber - b.rowNumber; }),
+      names[String(payload.id)], rate, isHolidayDate(dateKey));
+    writeAttendanceEvents_(sheet, events, edited);
+    return { attendance: result };
+  });
+}
+
+function writeAttendanceEvents_(sheet, original, edited) {
+  const adjustmentColumn = getAttendanceAdjustmentColumn_(sheet, true);
+  const byRow = new Map();
+  original.forEach(function (event) { byRow.set(event.rowNumber, null); });
+  edited.forEach(function (event) { byRow.set(event.rowNumber, event); });
+  const lastRow = Math.max.apply(null, Array.from(byRow.keys()));
+  if (lastRow > sheet.getMaxRows()) { sheet.insertRowsAfter(sheet.getMaxRows(), lastRow - sheet.getMaxRows()); }
+  const writes = [];
+  byRow.forEach(function (event, rowNumber) {
+    const values = event ? [event.employeeId, event.type, event.time] : ['', '', ''];
+    const adjustment = event ? event.breakAdjustment : '';
+    [[sheet.getRange(rowNumber, 1, 1, 3), [values]],
+      [sheet.getRange(rowNumber, adjustmentColumn), [[adjustment]]]].forEach(function (entry) {
+      const before = entry[0].getValues();
+      if (JSON.stringify(before) === JSON.stringify(entry[1])) { return; }
+      const formulas = entry[0].getFormulas();
+      const restore = before.map(function (row, r) { return row.map(function (value, c) { return formulas[r][c] || value; }); });
+      writes.push({ range: entry[0], values: entry[1], before: restore });
+    });
+  });
+  try {
+    writes.forEach(function (write) { write.range.setValues(write.values); });
+    SpreadsheetApp.flush();
+  } catch (error) {
+    let restoreFailed = false;
+    writes.forEach(function (write) {
+      try { write.range.setValues(write.before); } catch (restoreError) { restoreFailed = true; }
+    });
+    try { SpreadsheetApp.flush(); } catch (restoreError) { restoreFailed = true; }
+    throw new Error(error.message + (restoreFailed ? '（復元できなかった可能性があります。打刻履歴を確認してください）' : ''));
+  }
 }

@@ -177,10 +177,10 @@
           <div id="section_attendance" class="manager-section" style="display:none;">
             <div class="manager-section-header">
               <h2 class="manager-heading">勤怠管理</h2>
-              <button type="button" id="attendance_reload_btn" class="attendance-reload-btn" onclick="loadAttendances()">更新</button>
             </div>
             <div class="attendance-date" id="attendance_date"></div>
             <div class="attendance-message" id="attendance_message"></div>
+            <div class="attendance-table-scroll" role="region" aria-label="勤怠一覧" tabindex="0">
             <table class="attendance-table" id="attendance_table" style="display:none;">
               <thead>
                 <tr>
@@ -190,10 +190,12 @@
                   <th>休憩</th>
                   <th>実労働時間</th>
                   <th>概算給与</th>
+                  <th>操作</th>
                 </tr>
               </thead>
               <tbody id="attendance_tbody"></tbody>
             </table>
+            </div>
           </div>
 
           <div id="section_skill" class="manager-section" style="display:none;">
@@ -215,8 +217,8 @@
                     <div id="skill_detail_name"></div>
                     <div class="skill-detail-actions">
                       <button type="button" id="skill_edit_btn" class="modal-cancel-btn" onclick="startSkillEdit()">編集</button>
-                      <button type="button" id="skill_back_btn" class="modal-cancel-btn" onclick="cancelSkillEdit()" hidden>戻る</button>
-                      <button type="button" id="skill_save_btn" class="skill-save-btn" onclick="saveSelectedEmployeeSkills()" hidden>保存</button>
+                      <button type="button" id="skill_back_btn" class="modal-cancel-btn" onclick="cancelSkillEdit()" hidden>キャンセル</button>
+                      <button type="button" id="skill_save_btn" class="skill-save-btn" onclick="saveSelectedEmployeeSkills()" hidden>変更を保存</button>
                     </div>
                     <span class="skill-save-status" id="skill_save_status"></span>
                   </div>
@@ -245,8 +247,9 @@
               <button type="button" id="shift_next_btn" class="shift-month-btn" onclick="changeShiftMonth(1)" aria-label="次の月">›</button>
             </div>
             <div class="shift-legend" aria-label="シフトの状態">
+              <span>上：ランチ／下：ディナー</span>
               <span><span class="shift-legend-swatch status-uncreated" aria-hidden="true"></span>未作成</span>
-              <span><span class="shift-legend-swatch status-created" aria-hidden="true"></span>作成済み</span>
+              <span><span class="shift-legend-swatch status-created" aria-hidden="true"></span>必要人数以上</span>
               <span><span class="shift-legend-swatch status-shortage" aria-hidden="true"></span>人数不足</span>
               <span><span class="shift-excess-mark" aria-hidden="true">!</span>人数超過</span>
               <span><span class="shift-legend-swatch shift-closed" aria-hidden="true"></span>定休日</span>
@@ -322,17 +325,9 @@
               <h2 class="manager-heading">発注管理</h2>
             </div>
 
-            <!-- <div class="order-view-picker" id="order_view_picker">
-              <label class="order-view-label" for="order_view_select">表示項目</label>
-              <select id="order_view_select" class="order-view-select" onchange="changeOrderView(this.value)">
-                <option value="cart">発注する食材</option>
-                <option value="history">発注履歴</option>
-                <option value="vendor">業者詳細</option>
-              </select>
-            </div> -->
-
             <div class="order-view-tabs" id="order_view_picker">
               <button type="button" id="order_view_btn_cart" class="order-view-tab selected" onclick="changeOrderView('cart')">発注する食材</button>
+              <button type="button" id="order_view_btn_upcoming" class="order-view-tab" onclick="changeOrderView('upcoming')">入荷予定</button>
               <button type="button" id="order_view_btn_history" class="order-view-tab" onclick="changeOrderView('history')">発注履歴</button>
               <button type="button" id="order_view_btn_vendor" class="order-view-tab" onclick="changeOrderView('vendor')">業者詳細</button>
             </div>
@@ -357,21 +352,22 @@
                   <h3 class="order-view-heading">発注内容確認</h3>
                   <button type="button" class="ingredient-action-btn ingredient-action-sub" onclick="changeOrderView('cart')">発注する食材に戻る</button>
                 </div>
-                <div class="order-confirm-inputs">
-                  <div class="order-confirm-input">
-                    <label class="modal-label" for="order_delivery_date">納品希望日（任意）</label>
-                    <input type="date" id="order_delivery_date" class="modal-input" onchange="refreshOrderConfirm()">
-                  </div>
-                  <div class="order-confirm-input">
-                    <label class="modal-label" for="order_extra_note">連絡事項（任意・すべての業者に入ります）</label>
-                    <input type="text" id="order_extra_note" class="modal-input" maxlength="200" onchange="refreshOrderConfirm()">
-                  </div>
-                </div>
                 <div class="attendance-message" id="order_confirm_message"></div>
                 <div class="order-confirm-list" id="order_confirm_list"></div>
                 <div class="order-send-footer" id="order_send_footer" style="display:none;">
                   <button type="button" id="order_send_btn" class="order-send-btn" onclick="submitOrderMails()">発注する</button>
                   <span class="order-send-status" id="order_send_status"></span>
+                </div>
+              </div>
+
+              <div id="order_view_upcoming" class="order-view" style="display:none;">
+                <h3 class="order-view-heading">入荷予定</h3>
+                <div class="attendance-message" id="order_upcoming_message"></div>
+                <div id="order_upcoming_scroll" class="order-upcoming-scroll" tabindex="0" role="region" aria-label="入荷予定一覧">
+                  <table class="attendance-table order-upcoming-table">
+                    <thead><tr><th scope="col">食材</th><th scope="col">発注日時</th><th scope="col">個数・単位</th><th scope="col">入荷予定日</th><th scope="col">業者</th></tr></thead>
+                    <tbody id="order_upcoming_tbody"></tbody>
+                  </table>
                 </div>
               </div>
 
@@ -433,10 +429,12 @@
          onclick="if (event.target === event.currentTarget) closeSkillDiscardDialog()">
       <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="skill_discard_title" aria-describedby="skill_discard_message">
         <div class="modal-header"><span class="modal-title" id="skill_discard_title">未保存の変更</span></div>
-        <div class="confirm-modal-text" id="skill_discard_message">未保存の変更があります。変更を破棄して従業員を切り替えますか？</div>
+        <div class="confirm-modal-text" id="skill_discard_message">変更が保存されていません</div>
+        <div class="modal-error" id="skill_discard_status" role="status"></div>
         <div class="modal-footer">
           <button type="button" id="skill_discard_cancel_btn" class="modal-cancel-btn" onclick="closeSkillDiscardDialog()">キャンセル</button>
-          <button type="button" id="skill_discard_confirm_btn" class="modal-submit-btn" onclick="confirmSkillDiscard()">OK</button>
+          <button type="button" id="skill_discard_confirm_btn" class="modal-submit-btn" onclick="confirmSkillDiscard()">保存せず移動</button>
+          <button type="button" id="skill_discard_save_btn" class="modal-submit-btn" onclick="saveSkillsAndLeave()">保存して移動</button>
         </div>
       </div>
     </div>

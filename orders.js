@@ -73,7 +73,8 @@ function buildOrderBoard_() {
     'maxQuantity': ORDER_MAX_QUANTITY,
     'vendors': vendors,
     'items': items,
-    'history': buildOrderHistory_(orders, supplierById)
+    'history': buildOrderHistory_(orders, supplierById),
+    'upcoming': buildOrderUpcoming_(orders, supplierById, now)
   };
 }
 
@@ -82,7 +83,6 @@ function buildOrderBoard_() {
  * 未登録の項目は推測せず、画面側で「未登録」と出せるよう空文字のまま渡す
  */
 function buildOrderVendorView_(supplier, now) {
-  const rules = buildOrderMailRules_(supplier.orderNote);
   return {
     'id': supplier.id,
     'name': supplier.name,
@@ -94,12 +94,6 @@ function buildOrderVendorView_(supplier, now) {
     // 発注締切は業者マスタに登録した「受注締切時刻」と「受注営業日」をそのまま使う
     'deadlineText': buildOrderDeadlineText_(supplier),
     'leadTimeText': buildOrderLeadTimeText_(supplier),
-    'deliveryDaysText': formatIngredientWeekdayList(supplier.deliveryDays),
-    'mainItems': supplier.mainItems,
-    'orderNote': supplier.orderNote,
-    'note': supplier.note,
-    'mailToText': resolveOrderRecipient_(supplier),
-    'appliedRuleTexts': rules.appliedRuleTexts,
     'planText': buildIngredientSupplierPlan(supplier, now).text
   };
 }
@@ -197,9 +191,30 @@ function buildOrderHistory_(orders, supplierById) {
   return groups.slice(0, ORDER_HISTORY_LIMIT);
 }
 
-/**
- * 発注日時（yyyy/MM/dd HH:mm）を一覧用の短い表示（9/16 21:05）にする
- */
+/** 履歴を削除せず、当日以降の入荷予定を食材ごとに取り出す。 */
+function buildOrderUpcoming_(orders, supplierById, now) {
+  const today = formatIngredientDate(now);
+  return orders.map(function (order) {
+    const supplier = supplierById[order.supplierId];
+    const expectedDate = order.expectedDate || resolveOrderExpectedDate_(supplier, parseIngredientDateTime(order.orderedAt));
+    const parsed = parseIngredientDate(expectedDate.replace(/-/g, '/'));
+    return {
+      id: order.id, name: order.name, orderedAt: order.orderedAt,
+      quantityText: formatIngredientQuantity(order.quantity) + order.unit,
+      expectedDate: parsed ? formatIngredientDate(parsed) : '',
+      vendorId: order.supplierId,
+      vendorName: supplier ? supplier.name : (order.supplierId || '業者未設定'),
+      status: order.status
+    };
+  }).filter(function (order) {
+    return (!order.expectedDate || order.expectedDate >= today) &&
+      ['入荷済み', '入荷済', 'キャンセル', '取消', '取消済み'].indexOf(order.status) === -1;
+  }).sort(function (a, b) {
+    return (a.expectedDate || '9999').localeCompare(b.expectedDate || '9999') || b.orderedAt.localeCompare(a.orderedAt);
+  });
+}
+
+/** 発注日時（yyyy/MM/dd HH:mm）を一覧用の短い表示（9/16 21:05）にする。 */
 function formatOrderHistoryLabel_(orderedAt) {
   const date = parseIngredientDateTime(orderedAt);
   if (!date) {
@@ -209,53 +224,6 @@ function formatOrderHistoryLabel_(orderedAt) {
 }
 
 // ここから下はメールの組み立て
-
-/**
- * 業者の「発注時の注意事項」から、メールの作り方の決まりを読み取る
- * 決まった言葉が書かれていればその形に合わせ、書かれていなければ何もしない（勝手な書式は足さない）
- * @param {string} orderNote 発注時の注意事項
- * @return {Object} { includeDeliveryDate, storeNameInSubject, extraTexts, appliedRuleTexts }
- */
-function buildOrderMailRules_(orderNote) {
-  const rules = {
-    'includeDeliveryDate': false,
-    'storeNameInSubject': false,
-    'extraTexts': [],
-    'appliedRuleTexts': []
-  };
-  const text = normalizeIngredientText(orderNote);
-  if (text === '') {
-    return rules;
-  }
-
-  const lines = text.split(/\r\n|\r|\n/);
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (line === '') {
-      continue;
-    }
-    // 「本文追記：〜」と書かれた行は、その文章をそのまま本文に入れる
-    const extraPrefix = ORDER_MAIL_EXTRA_TEXT_PREFIX.replace(/[：:]\s*$/, '');
-    if (line.indexOf(extraPrefix) === 0) {
-      const extra = line.substring(extraPrefix.length).replace(/^[：:]\s*/, '').trim();
-      if (extra !== '') {
-        rules.extraTexts.push(extra);
-        rules.appliedRuleTexts.push('本文に「' + extra + '」を入れます');
-      }
-      continue;
-    }
-    if (line.indexOf(ORDER_MAIL_RULE_KEYWORDS.DELIVERY_DATE) !== -1) {
-      rules.includeDeliveryDate = true;
-      rules.appliedRuleTexts.push('本文に納品希望日を入れます');
-    }
-    if (line.indexOf(ORDER_MAIL_RULE_KEYWORDS.SUBJECT_STORE_NAME) !== -1 &&
-        line.indexOf(ORDER_MAIL_RULE_KEYWORDS.STORE_NAME) !== -1) {
-      rules.storeNameInSubject = true;
-      rules.appliedRuleTexts.push('件名に店舗名を入れます');
-    }
-  }
-  return rules;
-}
 
 /**
  * 画面から届いた発注内容を確かめ、食材マスタの内容で組み立て直す
@@ -314,15 +282,11 @@ function normalizeOrderItems_(items) {
  * 発注内容を業者ごとにまとめ、業者ごとのメール（件名・本文・宛先）を組み立てる
  * 確認画面の表示にも送信にも同じこの関数を使うので、確認した内容とそのまま同じメールが送られる
  * @param {Array<Object>} items [{ ingredientId, quantity }] の配列
- * @param {string} deliveryDate 納品希望日（未入力なら空文字）
- * @param {string} note 連絡事項（未入力なら空文字）
  * @param {Date} now 現在日時
  * @return {Array<Object>} 業者ごとの発注メールの配列
  */
-function buildOrderDrafts_(items, deliveryDate, note, now) {
+function buildOrderDrafts_(items, now) {
   const normalized = normalizeOrderItems_(items);
-  const requestedDate = normalizeIngredientDateInput(deliveryDate, '納品希望日');
-  const noteText = normalizeIngredientText(note);
 
   const drafts = [];
   const draftByVendorId = {};
@@ -333,11 +297,8 @@ function buildOrderDrafts_(items, deliveryDate, note, now) {
       draftByVendorId[vendorId] = {
         'vendorId': vendorId,
         'vendorName': line.supplier.name,
-        'supplier': line.supplier,
-        'rules': buildOrderMailRules_(line.supplier.orderNote),
         'to': resolveOrderRecipient_(line.supplier),
         'vendorEmail': line.supplier.email,
-        'orderNote': line.supplier.orderNote,
         'lines': []
       };
       drafts.push(draftByVendorId[vendorId]);
@@ -353,14 +314,10 @@ function buildOrderDrafts_(items, deliveryDate, note, now) {
 
   for (let i = 0; i < drafts.length; i++) {
     const draft = drafts[i];
-    draft.subject = buildOrderMailSubject_(draft.rules, now);
-    draft.body = buildOrderMailBody_(draft, requestedDate, noteText);
-    draft.appliedRuleTexts = draft.rules.appliedRuleTexts;
+    draft.subject = buildOrderMailSubject_(now);
+    draft.body = buildOrderMailBody_(draft);
     draft.canSend = (draft.to !== '');
     draft.sendBlockReason = draft.canSend ? '' : (draft.vendorName + ' のメールアドレスが未登録です');
-    draft.deliveryDate = requestedDate;
-    delete draft.supplier; // 画面へはメールの内容だけを渡す
-    delete draft.rules;
   }
   return drafts;
 }
@@ -368,16 +325,15 @@ function buildOrderDrafts_(items, deliveryDate, note, now) {
 /**
  * 件名を作る（例：9月16日 発注依頼）
  */
-function buildOrderMailSubject_(rules, now) {
-  const base = (now.getMonth() + 1) + '月' + now.getDate() + '日 発注依頼';
-  return rules.storeNameInSubject ? '【' + ORDER_STORE_NAME + '】' + base : base;
+function buildOrderMailSubject_(now) {
+  return (now.getMonth() + 1) + '月' + now.getDate() + '日 発注依頼';
 }
 
 /**
  * 本文を作る
  * 業者名・商品・数量は登録された内容から組み立て、利用者に文章を入力させない
  */
-function buildOrderMailBody_(draft, deliveryDate, noteText) {
+function buildOrderMailBody_(draft) {
   const parts = [];
   parts.push(draft.vendorName + ' 御中');
   parts.push('');
@@ -385,28 +341,11 @@ function buildOrderMailBody_(draft, deliveryDate, noteText) {
   parts.push('以下の商品をお願いいたします。');
   parts.push('');
 
-  if (draft.rules.includeDeliveryDate) {
-    parts.push('納品希望日：' + (deliveryDate === '' ? '指定なし（通常の納品日でお願いいたします）' : deliveryDate));
-    parts.push('');
-  }
-
   for (let i = 0; i < draft.lines.length; i++) {
     const line = draft.lines[i];
     parts.push(line.name + ' ' + line.quantityText);
   }
   parts.push('');
-
-  if (noteText !== '') {
-    parts.push('【連絡事項】');
-    parts.push(noteText);
-    parts.push('');
-  }
-  for (let i = 0; i < draft.rules.extraTexts.length; i++) {
-    parts.push(draft.rules.extraTexts[i]);
-  }
-  if (draft.rules.extraTexts.length > 0) {
-    parts.push('');
-  }
 
   parts.push('よろしくお願いいたします。');
   parts.push('');
@@ -419,13 +358,13 @@ function buildOrderMailBody_(draft, deliveryDate, noteText) {
 
 /**
  * 発注内容確認の画面に出す内容を作る（メールはまだ送らない）
- * @param {Object} input { authToken, items, deliveryDate, note }
+ * @param {Object} input { authToken, items }
  * @return {Object} { drafts: 業者ごとの発注メール, vendorCount: 業者数 }
  */
 function getOrderDrafts(input) {
   const payload = input || {};
   requireManagerRole_(payload.authToken);
-  const drafts = buildOrderDrafts_(payload.items, payload.deliveryDate, payload.note, new Date());
+  const drafts = buildOrderDrafts_(payload.items, new Date());
   return { 'drafts': drafts, 'vendorCount': drafts.length };
 }
 
@@ -434,7 +373,7 @@ function getOrderDrafts(input) {
 /**
  * 発注メールを業者ごとに送り、送れた分を発注履歴として保存する
  * 途中の業者で失敗しても、送信できた業者の記録は残す（同じ内容を二重に送らないため）
- * @param {Object} input { authToken, operationKey, items, deliveryDate, note }
+ * @param {Object} input { authToken, operationKey, items }
  * @return {Object} { message, detail, board }
  */
 function sendOrderMails(input) {
@@ -442,7 +381,7 @@ function sendOrderMails(input) {
   requireManagerRole_(payload.authToken);
   return runOrderOperation_(payload.operationKey, '発注メール送信', function () {
     const now = new Date();
-    const drafts = buildOrderDrafts_(payload.items, payload.deliveryDate, payload.note, now);
+    const drafts = buildOrderDrafts_(payload.items, now);
     const actor = resolveOrderActor_();
     const orderedAt = formatIngredientDateTime(now);
     const suppliers = getIngredientSuppliers();
@@ -514,11 +453,11 @@ function sendOrderMail_(draft) {
 
 /**
  * 送信できた1業者分を食材発注シートへ追記する（食材1つにつき1行）
- * 入荷予定日は、納品希望日があればその日、無ければ業者の発注条件から求めた納品日を入れる
+ * 入荷予定日は、発注日時と業者の発注条件から自動算出して保存する
  */
 function appendOrderHistoryRows_(sheet, draft, supplier, orderedAt, actor, now) {
   const orderNo = newIngredientId('ODR');
-  const expectedDate = resolveOrderExpectedDate_(draft.deliveryDate, supplier, now);
+  const expectedDate = resolveOrderExpectedDate_(supplier, now);
   const updatedAt = formatIngredientDateTime(now);
 
   const rows = [];
@@ -537,20 +476,10 @@ function appendOrderHistoryRows_(sheet, draft, supplier, orderedAt, actor, now) 
 /**
  * 入荷予定日を求める（分からないときは空欄のままにして、推測で埋めない）
  */
-function resolveOrderExpectedDate_(deliveryDate, supplier, now) {
-  if (deliveryDate !== '') {
-    return deliveryDate;
-  }
-  if (!supplier) {
-    return '';
-  }
+function resolveOrderExpectedDate_(supplier, now) {
+  if (!supplier || !now) { return ''; }
   const plan = buildIngredientSupplierPlan(supplier, now);
-  if (!plan.available) {
-    return '';
-  }
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const expected = findIngredientDeliveryDate(supplier, today);
-  return expected ? formatIngredientDate(expected) : '';
+  return plan.available ? plan.deliveryDateKey : '';
 }
 
 /**
@@ -650,7 +579,14 @@ function ensureOrderMasterData_() {
 
     const supplierIdByName = {};
     for (let i = 0; i < supplierRows.length; i++) {
-      supplierIdByName[supplierRows[i].values['業者名']] = supplierRows[i].values['業者ID'];
+      const row = supplierRows[i];
+      const oldName = row.values['業者名'];
+      const name = normalizeOrderSupplierName_(oldName);
+      if (name !== oldName) {
+        supplierSheet.getRange(row.rowNumber, INGREDIENT_SUPPLIER_SHEET_HEADER.indexOf('業者名') + 1).setValue(name);
+        row.values['業者名'] = name;
+      }
+      supplierIdByName[name] = row.values['業者ID'];
     }
 
     const masterSheet = ensureIngredientMasterSheet();

@@ -85,6 +85,9 @@ const NO_VALUE_LABEL = '-';
 
 const CLOCK_TYPES = ['出勤', '退勤', '休憩開始', '休憩終了'];
 
+// 元の休憩打刻を残し、店長が指定した合計分数との差だけを出勤行に保持する。
+const ATTENDANCE_BREAK_ADJUSTMENT_HEADER = '休憩補正（分）';
+
 const POSITION_ITEMS = ['ホール', '厨房', '肉の仕込み', '締め作業'];
 
 const TODAY_WORK_SHEET_HEADER = ['日付', '従業員ID', 'ポジション', '確認事項'];
@@ -197,23 +200,12 @@ const ORDER_SENDER_EMAIL = 'uu.kawamura@gmail.com';
 // 本番の業者へ送るようにするときは空文字にする
 const ORDER_TEST_RECIPIENT_EMAIL = 'yu150516@icloud.com';
 
-// メールの署名と件名に使う店舗の情報
-const ORDER_STORE_NAME = 'freee食堂';
-const ORDER_STORE_PHONE = '03-0000-0000';
+// メールの挨拶と署名に使う店舗の情報
+const ORDER_STORE_NAME = 'ラーメン焼肉freee';
+const ORDER_STORE_PHONE = '000-0000-0000';
 
 // 1回の発注で受け付ける数量の上限（入力ミスで極端な値が入るのを防ぐ）
 const ORDER_MAX_QUANTITY = 999;
-
-// 業者の「発注時の注意事項」に書かれていたら、メールの作り方を変える合図にする言葉
-const ORDER_MAIL_RULE_KEYWORDS = {
-  'DELIVERY_DATE': '納品希望日',
-  'SUBJECT_STORE_NAME': '件名',
-  'STORE_NAME': '店舗名'
-};
-
-// 注意事項の行がこの言葉で始まっていたら、その行の残りをメール本文にそのまま入れる
-// （「特定の文章を入れる」というルールを、業者ごとの設定だけで足せるようにするための決まり）
-const ORDER_MAIL_EXTRA_TEXT_PREFIX = '本文追記：';
 
 // 業者マスタが空のときだけ入れる初期データ
 // メールアドレスは動作確認用の宛先にしてあるので、実際の業者に送る前に業者マスタを書き換える
@@ -237,7 +229,7 @@ const ORDER_DEFAULT_VENDORS = [
     'note': '急ぎの場合は電話'
   },
   {
-    'name': '○○青果',
+    'name': 'freee青果',
     'address': '東京都大田区東海3-2-1',
     'phone': '03-2345-6789',
     'email': 'yu150516@icloud.com',
@@ -251,11 +243,11 @@ const ORDER_DEFAULT_VENDORS = [
     'deliveryDays': ['月', '火', '水', '木', '金', '土'],
     'pickupDays': ['月', '火', '水', '木', '金', '土'],
     'mainItems': '野菜・果物',
-    'orderNote': '納品希望日を記載',
+    'orderNote': '',
     'note': '箱のまま納品されます'
   },
   {
-    'name': '△△食品',
+    'name': 'freee食品',
     'address': '東京都江東区豊洲5-6-7',
     'phone': '03-3456-7890',
     'email': 'yu150516@icloud.com',
@@ -269,7 +261,7 @@ const ORDER_DEFAULT_VENDORS = [
     'deliveryDays': ['月', '火', '水', '木', '金'],
     'pickupDays': ['月', '火', '水', '木', '金'],
     'mainItems': '鶏ガラ・卵・調味料',
-    'orderNote': '件名に店舗名を入れる\n本文追記：伝票は商品に同梱してください',
+    'orderNote': '',
     'note': '土日は受注できません'
   }
 ];
@@ -283,12 +275,12 @@ const ORDER_DEFAULT_ITEMS = [
   { 'name': 'シマチョウ', 'vendorName': 'freee精肉店', 'unit': 'kg' },
   { 'name': '豚（ミンチ用）', 'vendorName': 'freee精肉店', 'unit': 'kg' },
   { 'name': '豚ロース', 'vendorName': 'freee精肉店', 'unit': 'kg' },
-  { 'name': '小松菜', 'vendorName': '○○青果', 'unit': '袋' },
-  { 'name': '玉ねぎ', 'vendorName': '○○青果', 'unit': 'ケース' },
-  { 'name': 'ニンニク', 'vendorName': '○○青果', 'unit': '個' },
-  { 'name': 'キャベツ', 'vendorName': '○○青果', 'unit': 'ケース' },
-  { 'name': '鶏ガラ', 'vendorName': '△△食品', 'unit': '袋' },
-  { 'name': '卵', 'vendorName': '△△食品', 'unit': 'ケース' }
+  { 'name': '小松菜', 'vendorName': 'freee青果', 'unit': '袋' },
+  { 'name': '玉ねぎ', 'vendorName': 'freee青果', 'unit': 'ケース' },
+  { 'name': 'ニンニク', 'vendorName': 'freee青果', 'unit': '個' },
+  { 'name': 'キャベツ', 'vendorName': 'freee青果', 'unit': 'ケース' },
+  { 'name': '鶏ガラ', 'vendorName': 'freee食品', 'unit': '袋' },
+  { 'name': '卵', 'vendorName': 'freee食品', 'unit': 'ケース' }
 ];
 
 // 初期データで足りない食材は食材マスタに追加する（区分は原材料・既定単位は発注単位と同じにする）

@@ -60,6 +60,8 @@
 
         document.addEventListener('click', handleDocumentClickForSharedNoteDropdown);
 
+        window.setInterval(refreshOrderUpcomingDate, 60000);
+        document.addEventListener('visibilitychange', refreshOrderUpcomingDate);
         initApp();
       });
 
@@ -112,12 +114,12 @@
        */
       function handleScreenSwitchButtonClick() {
         if (pendingClockRequests.size > 0 || isSharedNoteSubmitting) { return; }
-        if (shiftSaving) { return; }
+        if (shiftSaving || attendancePendingSaves.size) { return; }
         if (currentScreen === 'employee') {
           closeClockPinDialog();
           closeSharedNoteModal();
           openManagerLoginModal();
-        } else if (shiftDrafts.size > 0) {
+        } else if (shiftDrafts.size > 0 || hasUnsavedSkillChanges() || skillSaving) {
           switchToEmployeeScreen();
         } else {
           openScreenSwitchModal();
@@ -262,6 +264,8 @@
        * @return {void} 戻り値なし
        */
       function switchToEmployeeScreen() {
+        if (attendancePendingSaves.size) { return; }
+        if (!confirmLeaveSkillEditor(switchToEmployeeScreen)) { return; }
         if (!confirmLeaveShiftEditor(switchToEmployeeScreen)) { return; }
         const managerToken = authToken;
         authToken = employeeAuthToken;
@@ -316,7 +320,7 @@
        * @return {void} 戻り値なし
        */
       function resetManagerScreen() {
-        document.getElementById('manager_screen').classList.remove('skill-section-active');
+        document.getElementById('manager_screen').classList.remove('skill-section-active', 'order-section-active', 'attendance-section-active');
         document.getElementById('manager_screen').classList.remove('shift-section-active');
         document.getElementById('manager_screen').classList.remove('employee-section-active');
         currentManagerSection = '';
@@ -334,6 +338,7 @@
         resetEmployeeEditSection();
         resetSkillSection();
         resetShiftSections();
+        resetAttendanceSection();
 
         orderBoard = null;
         orderCart = [];
@@ -345,8 +350,6 @@
         orderSendKey = '';
         orderView = 'cart';
         document.getElementById('order_body').style.display = 'none';
-        document.getElementById('order_delivery_date').value = '';
-        document.getElementById('order_extra_note').value = '';
       }
 
       /**
@@ -1267,7 +1270,7 @@
         document.getElementById('add_last_name').value = '';
         document.getElementById('add_first_name').value = '';
         document.getElementById('add_employee_pin').value = '';
-        document.getElementById('employee_delete_message').textContent = '';
+        showAppMessage('employee_delete_message', '', false);
         document.getElementById('employee_delete_list').innerHTML = '';
         showEmployeeEditStatus('add_employee_status', '', false);
         showEmployeeEditStatus('employee_delete_status', '', false);
@@ -1312,7 +1315,11 @@
             return employee.skills[item];
           }), [employee.hourlyWage.toLocaleString('ja-JP') + '円']);
           const row = body.insertRow();
-          values.forEach(function (value) { row.insertCell().textContent = value; });
+          values.forEach(function (value, index) {
+            const cell = row.insertCell();
+            cell.textContent = value;
+            if (index >= 2 && index < 2 + SKILL_ITEMS.length && value === 'A') { cell.className = 'employee-skill-mastered'; }
+          });
         });
       }
 
@@ -1355,10 +1362,10 @@
         showEmployeeEditStatus('employee_delete_status', '', false);
 
         // 削除対象は必ず最新の一覧から選ぶ
-        document.getElementById('employee_delete_message').textContent = '読み込み中...';
+        showAppMessage('employee_delete_message', '読み込み中...', false);
         document.getElementById('employee_delete_list').innerHTML = '';
         loadEmployeeList(function (error) {
-          document.getElementById('employee_delete_message').textContent = 'エラー: ' + error.message;
+          showAppMessage('employee_delete_message', 'エラー: ' + error.message, false);
         });
       }
 
@@ -1371,11 +1378,11 @@
         list.innerHTML = '';
 
         if (employeeListItems.length === 0) {
-          document.getElementById('employee_delete_message').textContent = '削除できる従業員がいません';
+          showAppMessage('employee_delete_message', '削除できる従業員がいません', false);
           return;
         }
 
-        document.getElementById('employee_delete_message').textContent = '';
+        showAppMessage('employee_delete_message', '', false);
         for (let i = 0; i < employeeListItems.length; i++) {
           list.appendChild(createEmployeeDeleteItem(employeeListItems[i]));
         }
@@ -1418,7 +1425,7 @@
         document.getElementById('employee_delete_confirm').style.display = 'block';
         renderEmployeeNameBlock(document.getElementById('employee_delete_target'), employee);
         document.getElementById('employee_delete_impact').innerHTML = '';
-        document.getElementById('employee_delete_preview_message').textContent = '読み込み中...';
+        showAppMessage('employee_delete_preview_message', '読み込み中...', false);
         showEmployeeEditStatus('employee_delete_status', '', false);
 
         const sessionId = loginSessionId;
@@ -1428,14 +1435,14 @@
             if (!isSameLoginSession(sessionId) || !isEmployeeDeleteTarget(targetId)) {
               return;
             }
-            document.getElementById('employee_delete_preview_message').textContent = '';
+            showAppMessage('employee_delete_preview_message', '', false);
             renderEmployeeDeleteImpact();
           })
           .withFailureHandler(function (error) {
             if (!isSameLoginSession(sessionId) || !isEmployeeDeleteTarget(targetId)) {
               return;
             }
-            document.getElementById('employee_delete_preview_message').textContent = 'エラー: ' + error.message;
+            showAppMessage('employee_delete_preview_message', 'エラー: ' + error.message, false);
           })
           .getEmployeeDeletionPreview(employee.id, authToken);
       }
@@ -1735,14 +1742,15 @@
        * @param {boolean} isError エラーとして赤く出すなら true
        * @return {void} 戻り値なし
        */
+      function showAppMessage(elementId, message, isError) {
+        const element = document.getElementById(elementId);
+        element.textContent = message;
+        element.classList.toggle('error', !!isError);
+        element.classList.toggle('loading-message', /^読み込み中(?:\.{3}|…)$/.test(message));
+      }
+
       function showEmployeeEditStatus(elementId, message, isError) {
-        const statusEl = document.getElementById(elementId);
-        statusEl.textContent = message;
-        if (isError) {
-          statusEl.classList.add('error');
-        } else {
-          statusEl.classList.remove('error');
-        }
+        showAppMessage(elementId, message, isError);
       }
 
       /**
@@ -1750,8 +1758,13 @@
        * メニューを押すまでは何も表示しないので、ログイン直後のメイン領域は空欄のままになる
        */
       function showManagerSection(navItem) {
-        if (isEmployeeEditSubmitting || isManagerPasswordSubmitting) { return; }
+        if (isEmployeeEditSubmitting || isManagerPasswordSubmitting || attendancePendingSaves.size) { return; }
         const sectionName = navItem.dataset.section;
+        if ((sectionName === 'skill' || sectionName === 'attendance') && currentManagerSection === sectionName) { return; }
+        if (sectionName !== 'attendance') { attendanceRequestId++; }
+        if (sectionName !== currentManagerSection &&
+            !confirmLeaveSkillEditor(function () { showManagerSection(navItem); })) { return; }
+        skillRequestId++;
         if (shiftSaving) { return; }
         if (sectionName !== currentManagerSection &&
             !confirmLeaveShiftEditor(function () { showManagerSection(navItem); })) { return; }
@@ -1774,6 +1787,8 @@
         }
 
         document.getElementById('manager_screen').classList.toggle('skill-section-active', sectionName === 'skill');
+        document.getElementById('manager_screen').classList.toggle('order-section-active', sectionName === 'order');
+        document.getElementById('manager_screen').classList.toggle('attendance-section-active', sectionName === 'attendance');
         document.getElementById('manager_screen').classList.toggle('employee-section-active', sectionName === 'employee_edit');
         document.getElementById('manager_screen').classList.toggle('shift-section-active', sectionName === 'shift_confirm' || sectionName === 'shift_edit');
         if (sectionName === 'employee_edit') {
@@ -1939,70 +1954,212 @@
        * 表の代わりに出す一行メッセージ（読み込み中・従業員なし・エラー）を切り替える
        */
       function showTodayWorkMessage(message, isError) {
-        const messageEl = document.getElementById('today_work_message');
-        messageEl.textContent = message;
-        if (isError) {
-          messageEl.classList.add('error');
-        } else {
-          messageEl.classList.remove('error');
-        }
+        showAppMessage('today_work_message', message, isError);
       }
 
-      /**
-       * 本日の勤怠一覧をサーバーから取得する
-       */
+
+      let attendanceRows = new Map();
+      const attendanceDrafts = new Map();
+      const attendancePendingSaves = new Set();
+      let attendanceRequestId = 0;
+
+      function resetAttendanceSection() {
+        attendanceRequestId++;
+        attendanceRows.clear();
+        attendanceDrafts.clear();
+        attendancePendingSaves.clear();
+        document.getElementById('attendance_tbody').innerHTML = '';
+        document.getElementById('attendance_table').style.display = 'none';
+        document.getElementById('attendance_date').textContent = '';
+        showAttendanceMessage('', false);
+      }
+
+      /** 本日の保存済み勤怠を取得する。 */
       function loadAttendances() {
-        document.getElementById('attendance_reload_btn').disabled = true;
+        if (attendancePendingSaves.size) { return; }
+        const requestId = ++attendanceRequestId;
         document.getElementById('attendance_table').style.display = 'none';
         showAttendanceMessage('読み込み中...', false);
-
         const sessionId = loginSessionId;
         google.script.run
           .withSuccessHandler(function (result) {
-            if (!isSameLoginSession(sessionId)) {
-              return;
-            }
+            if (!isSameLoginSession(sessionId) || requestId !== attendanceRequestId) { return; }
             renderAttendances(result);
           })
           .withFailureHandler(function (error) {
-            if (!isSameLoginSession(sessionId)) {
-              return;
-            }
+            if (!isSameLoginSession(sessionId) || requestId !== attendanceRequestId) { return; }
             showAttendanceError(error);
           })
           .getTodayAttendances(authToken);
       }
 
-      /**
-       * 取得した本日の勤怠一覧を表に描画する
-       */
       function renderAttendances(result) {
-        document.getElementById('attendance_reload_btn').disabled = false;
         document.getElementById('attendance_date').textContent = result.date;
-
+        attendanceRows = new Map(result.attendances.map(function (attendance) { return [String(attendance.id), attendance]; }));
+        attendanceDrafts.clear();
         const tbody = document.getElementById('attendance_tbody');
         tbody.innerHTML = '';
-
-        if (result.attendances.length === 0) {
-          showAttendanceMessage('本日の打刻はまだありません', false);
-          return;
-        }
-
-        for (let i = 0; i < result.attendances.length; i++) {
-          const attendance = result.attendances[i];
-          const row = document.createElement('tr');
-          row.appendChild(createAttendanceCell(attendance.name));
-          row.appendChild(createAttendanceCell(attendance.clockIn));
-          row.appendChild(createAttendanceCell(attendance.clockOut));
-          row.appendChild(createAttendanceCell(attendance.breakTime));
-          row.appendChild(createAttendanceCell(attendance.workingTime));
-          row.appendChild(createAttendanceCell(attendance.estimatedWage));
-          tbody.appendChild(row);
-        }
-
-        showAttendanceMessage('', false);
-        document.getElementById('attendance_table').style.display = 'table';
+        attendanceRows.forEach(function (attendance) { tbody.appendChild(createAttendanceRow(attendance)); });
+        document.getElementById('attendance_table').style.display = attendanceRows.size ? 'table' : 'none';
+        showAttendanceMessage(attendanceRows.size ? '' : '従業員が登録されていません', false);
       }
+
+      function createAttendanceRow(attendance) {
+        const id = String(attendance.id);
+        const draft = attendanceDrafts.get(id);
+        const saving = attendancePendingSaves.has(id);
+        const row = document.createElement('tr');
+        row.dataset.employeeId = id;
+        row.classList.toggle('attendance-editing', !!draft);
+        row.appendChild(createAttendanceCell(attendance.name));
+        ['clockIn', 'clockOut', 'breakTime'].forEach(function (field) {
+          if (!draft) { row.appendChild(createAttendanceCell(attendance[field])); return; }
+          const cell = document.createElement('td');
+          const input = document.createElement('input');
+          const isBreak = field === 'breakTime';
+          const key = isBreak ? 'breakMinutes' : field;
+          input.type = isBreak ? 'number' : 'time';
+          input.className = isBreak ? 'attendance-break-input' : 'attendance-time-input';
+          input.step = isBreak ? '1' : '60';
+          if (isBreak) { input.min = '0'; input.max = '1439'; }
+          input.required = isBreak || field === 'clockIn';
+          input.value = draft[key];
+          input.disabled = saving;
+          input.setAttribute('aria-label', attendance.name + 'の' + (isBreak ? '休憩時間（分）' : field === 'clockIn' ? '出勤時刻' : '退勤時刻'));
+          input.addEventListener('input', function () {
+            draft[key] = input.value;
+            draft.error = '';
+            showAttendanceRowStatus(id, '', false);
+          });
+          cell.appendChild(input);
+          if (isBreak) {
+            const unit = document.createElement('span');
+            unit.textContent = ' 分';
+            cell.appendChild(unit);
+            if (attendance.breakOngoing) {
+              const note = document.createElement('small');
+              note.className = 'attendance-break-note';
+              note.textContent = '休憩中：終了済みの休憩分を入力。退勤を入力すると休憩も終了します。';
+              cell.appendChild(note);
+            }
+          }
+          row.appendChild(cell);
+        });
+        row.appendChild(createAttendanceCell(attendance.workingTime));
+        row.appendChild(createAttendanceCell(attendance.estimatedWage));
+        const actions = document.createElement('td');
+        actions.className = 'attendance-actions';
+        const buttons = document.createElement('div');
+        buttons.className = 'attendance-row-buttons';
+        function addButton(label, action, primary) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = primary ? 'modal-submit-btn' : 'modal-cancel-btn';
+          button.textContent = label;
+          button.disabled = saving;
+          button.addEventListener('click', action);
+          buttons.appendChild(button);
+        }
+        if (draft) {
+          addButton(saving ? '保存中...' : '保存', function () { saveAttendanceRow(id); }, true);
+          addButton('キャンセル', function () { cancelAttendanceEdit(id); }, false);
+        } else {
+          addButton('編集', function () { startAttendanceEdit(id); }, false);
+        }
+        actions.appendChild(buttons);
+        const status = document.createElement('div');
+        status.className = 'attendance-row-status';
+        status.setAttribute('role', 'status');
+        if (draft && draft.error) { status.textContent = draft.error; status.classList.add('error'); }
+        actions.appendChild(status);
+        row.appendChild(actions);
+        return row;
+      }
+
+      function findAttendanceRow(id) {
+        return Array.from(document.getElementById('attendance_tbody').rows).find(function (row) {
+          return row.dataset.employeeId === String(id);
+        });
+      }
+
+      function renderAttendanceRow(id) {
+        const row = findAttendanceRow(id);
+        const attendance = attendanceRows.get(String(id));
+        if (row && attendance) { row.replaceWith(createAttendanceRow(attendance)); }
+      }
+
+      function startAttendanceEdit(id) {
+        id = String(id);
+        const attendance = attendanceRows.get(id);
+        if (!attendance || attendanceDrafts.has(id) || attendancePendingSaves.has(id)) { return; }
+        attendanceDrafts.set(id, {
+          clockIn: attendance.clockInInput, clockOut: attendance.clockOutInput,
+          breakMinutes: String(attendance.breakMinutes), error: ''
+        });
+        renderAttendanceRow(id);
+        findAttendanceRow(id).querySelector('input').focus();
+      }
+
+      function cancelAttendanceEdit(id) {
+        id = String(id);
+        if (attendancePendingSaves.has(id)) { return; }
+        attendanceDrafts.delete(id);
+        renderAttendanceRow(id);
+      }
+
+      function showAttendanceRowStatus(id, message, isError) {
+        const row = findAttendanceRow(id);
+        if (!row) { return; }
+        const status = row.querySelector('.attendance-row-status');
+        status.textContent = message;
+        status.classList.toggle('error', isError);
+      }
+
+      function validateAttendanceDraft(draft) {
+        const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+        if (!timePattern.test(draft.clockIn)) { return '出勤時刻を入力してください'; }
+        if (draft.clockOut && !timePattern.test(draft.clockOut)) { return '退勤時刻を正しく入力してください'; }
+        if (draft.clockOut && draft.clockOut < draft.clockIn) { return '退勤時刻は出勤時刻以降にしてください'; }
+        if (!/^\d+$/.test(draft.breakMinutes) || Number(draft.breakMinutes) > 1439) {
+          return '休憩時間は0〜1439の整数（分）で入力してください';
+        }
+        const minutes = function (time) { return Number(time.slice(0, 2)) * 60 + Number(time.slice(3)); };
+        const maxBreak = minutes(draft.clockOut || '23:59') - minutes(draft.clockIn);
+        if (Number(draft.breakMinutes) > maxBreak) { return '休憩時間が勤務時間を超えています'; }
+        return '';
+      }
+
+      function saveAttendanceRow(id) {
+        id = String(id);
+        const draft = attendanceDrafts.get(id);
+        const attendance = attendanceRows.get(id);
+        if (!draft || !attendance || attendancePendingSaves.has(id)) { return; }
+        draft.error = validateAttendanceDraft(draft);
+        if (draft.error) { showAttendanceRowStatus(id, draft.error, true); return; }
+        attendancePendingSaves.add(id);
+        renderAttendanceRow(id);
+        const sessionId = loginSessionId;
+        google.script.run
+          .withSuccessHandler(function (result) {
+            if (!isSameLoginSession(sessionId)) { return; }
+            attendancePendingSaves.delete(id);
+            attendanceDrafts.delete(id);
+            attendanceRows.set(id, result.attendance);
+            renderAttendanceRow(id);
+            showAttendanceRowStatus(id, '保存しました', false);
+          })
+          .withFailureHandler(function (error) {
+            if (!isSameLoginSession(sessionId)) { return; }
+            attendancePendingSaves.delete(id);
+            draft.error = 'エラー: ' + error.message;
+            renderAttendanceRow(id);
+          })
+          .saveAttendance({
+            id: id, dateKey: attendance.dateKey, revision: attendance.revision,
+            clockIn: draft.clockIn, clockOut: draft.clockOut, breakMinutes: Number(draft.breakMinutes)
+          }, authToken);
+      }
+
 
       /**
        * 勤怠一覧のセルを作る
@@ -2018,7 +2175,6 @@
       }
 
       function showAttendanceError(error) {
-        document.getElementById('attendance_reload_btn').disabled = false;
         document.getElementById('attendance_date').textContent = '';
         showAttendanceMessage('エラー: ' + error.message, true);
       }
@@ -2027,13 +2183,7 @@
        * 表の代わりに出す一行メッセージ（読み込み中・打刻なし・エラー）を切り替える
        */
       function showAttendanceMessage(message, isError) {
-        const messageEl = document.getElementById('attendance_message');
-        messageEl.textContent = message;
-        if (isError) {
-          messageEl.classList.add('error');
-        } else {
-          messageEl.classList.remove('error');
-        }
+        showAppMessage('attendance_message', message, isError);
       }
 
       // スキル項目・評価値（config.js の SKILL_ITEMS / SKILL_LEVELS をそのまま埋め込み、二重管理しない）
@@ -2044,29 +2194,33 @@
 
       let skillMatrix = []; // サーバーから取得した、有効な従業員ごとのスキル情報
       let skillSelectedEmpId = null; // 右側に出している従業員（文字列にした従業員番号）
-      let skillEditOriginalValues = null; // 編集開始時の評価値だけを保持。null は通常表示。
-      let skillSwitchEmpId = null;
+      let skillEditing = false;
+      let skillSaving = false;
+      const skillDrafts = new Map(); // 従業員IDごとの未保存評価。skillMatrixは保存済みの状態を保つ。
+      let skillLeaveAction = null;
       let skillDiscardFocus = null;
-      const pendingSkillSaves = new Map(); // 保存中の従業員のバーを変更・二重送信しない。
+      let skillRequestId = 0;
 
       /**
        * 従業員ごとのスキル情報をサーバーから取得する
        * @return {void} 戻り値なし
        */
       function loadSkills() {
+        if (skillEditing || skillSaving) { return; }
+        const requestId = ++skillRequestId;
         document.getElementById('skill_layout').style.display = 'none';
         showSkillMessage('読み込み中...', false);
 
         const sessionId = loginSessionId;
         google.script.run
           .withSuccessHandler(function (matrix) {
-            if (!isSameLoginSession(sessionId)) {
+            if (!isSameLoginSession(sessionId) || requestId !== skillRequestId) {
               return;
             }
             renderSkills(matrix);
           })
           .withFailureHandler(function (error) {
-            if (!isSameLoginSession(sessionId)) {
+            if (!isSameLoginSession(sessionId) || requestId !== skillRequestId) {
               return;
             }
             showSkillError(error);
@@ -2080,7 +2234,7 @@
        * @return {void} 戻り値なし
        */
       function renderSkills(matrix) {
-        skillEditOriginalValues = null;
+        if (skillEditing || skillSaving) { return; }
         closeSkillDiscardDialog();
         skillMatrix = matrix;
 
@@ -2140,80 +2294,97 @@
        * @return {void} 戻り値なし
        */
       function selectSkillEmployee(empId) {
-        if (skillSelectedEmpId === empId) {
-          return; // 同じ人を押し直したときは、編集途中の選択内容をそのまま残す
-        }
-        if (hasUnsavedSkillChanges()) {
-          skillSwitchEmpId = empId;
-          skillDiscardFocus = document.activeElement;
-          document.getElementById('skill_discard_overlay').style.display = 'flex';
-          document.getElementById('skill_discard_cancel_btn').focus();
-          return;
-        }
-        skillEditOriginalValues = null;
+        if (skillSelectedEmpId === empId || !findSkillEmployee(empId)) { return; }
         skillSelectedEmpId = empId;
-
-        const items = document.querySelectorAll('.skill-employee-item');
-        for (let i = 0; i < items.length; i++) {
-          if (items[i].dataset.empId === empId) {
-            items[i].classList.add('selected');
-          } else {
-            items[i].classList.remove('selected');
-          }
-        }
-
+        document.querySelectorAll('.skill-employee-item').forEach(function (item) {
+          item.classList.toggle('selected', item.dataset.empId === empId);
+        });
         renderSkillDetail();
       }
 
       function startSkillEdit() {
-        if (skillSelectedEmpId === null || skillEditOriginalValues !== null ||
-            pendingSkillSaves.has(loginSessionId + ':' + skillSelectedEmpId)) { return; }
-        skillEditOriginalValues = Array.from(document.querySelectorAll('#skill_detail_items .skill-rank-slider'),
-          function (slider) { return SKILL_LEVELS[Number(slider.value)]; });
+        if (skillSelectedEmpId === null || skillEditing || skillSaving) { return; }
+        skillEditing = true;
         showSkillSaveStatus('', false);
         updateSkillEditControls();
       }
 
       function cancelSkillEdit() {
-        if (pendingSkillSaves.has(loginSessionId + ':' + skillSelectedEmpId)) { return; }
-        skillEditOriginalValues = null;
-        renderSkillDetail(); // 保存前の skillMatrix は変更していないため、元の評価に戻る。
+        if (skillSaving) { return; }
+        skillDrafts.clear();
+        skillEditing = false;
+        renderSkillDetail();
       }
 
       function updateSkillEditControls() {
-        const saving = pendingSkillSaves.has(loginSessionId + ':' + skillSelectedEmpId);
-        const editing = skillEditOriginalValues !== null;
-        document.getElementById('skill_edit_btn').hidden = editing;
-        document.getElementById('skill_edit_btn').disabled = saving;
-        document.getElementById('skill_back_btn').hidden = !editing;
-        document.getElementById('skill_back_btn').disabled = saving;
-        document.getElementById('skill_save_btn').hidden = !editing;
-        document.getElementById('skill_save_btn').disabled = saving;
+        document.getElementById('skill_edit_btn').hidden = skillEditing;
+        document.getElementById('skill_edit_btn').disabled = skillSaving;
+        document.getElementById('skill_back_btn').hidden = !skillEditing;
+        document.getElementById('skill_back_btn').disabled = skillSaving;
+        document.getElementById('skill_save_btn').hidden = !skillEditing;
+        document.getElementById('skill_save_btn').disabled = skillSaving;
         document.querySelectorAll('#skill_detail_items .skill-rank-slider').forEach(function (slider) {
-          slider.disabled = !editing || saving;
+          slider.disabled = !skillEditing || skillSaving;
         });
+        document.querySelectorAll('#skill_discard_overlay button').forEach(function (button) { button.disabled = skillSaving; });
       }
 
       function hasUnsavedSkillChanges() {
-        if (skillEditOriginalValues === null || pendingSkillSaves.has(loginSessionId + ':' + skillSelectedEmpId)) { return false; }
-        return Array.from(document.querySelectorAll('#skill_detail_items .skill-rank-slider')).some(function (slider, index) {
-          return SKILL_LEVELS[Number(slider.value)] !== skillEditOriginalValues[index];
-        });
+        return skillDrafts.size > 0;
+      }
+
+      function updateSkillDraft(empId, item, rank) {
+        if (!skillEditing || skillSaving) { return; }
+        const employee = findSkillEmployee(empId);
+        if (!employee) { return; }
+        const key = String(empId);
+        const values = (skillDrafts.get(key) || SKILL_ITEMS.map(function (skill) { return employee.skills[skill]; })).slice();
+        values[SKILL_ITEMS.indexOf(item)] = rank;
+        if (values.every(function (value, i) { return value === employee.skills[SKILL_ITEMS[i]]; })) {
+          skillDrafts.delete(key);
+        } else {
+          skillDrafts.set(key, values);
+        }
+        showSkillSaveStatus(hasUnsavedSkillChanges() ? skillDrafts.size + '人分の未保存の変更があります' : '', false);
+      }
+
+      function confirmLeaveSkillEditor(onLeave) {
+        if (skillSaving) { return false; }
+        if (!hasUnsavedSkillChanges()) {
+          skillEditing = false;
+          return true;
+        }
+        skillLeaveAction = onLeave;
+        skillDiscardFocus = document.activeElement;
+        document.getElementById('skill_discard_status').textContent = '';
+        document.getElementById('skill_discard_overlay').style.display = 'flex';
+        document.getElementById('skill_discard_cancel_btn').focus();
+        return false;
       }
 
       function closeSkillDiscardDialog() {
+        if (skillSaving) { return; }
         document.getElementById('skill_discard_overlay').style.display = 'none';
-        skillSwitchEmpId = null;
+        skillLeaveAction = null;
         if (skillDiscardFocus && skillDiscardFocus.isConnected) { skillDiscardFocus.focus(); }
         skillDiscardFocus = null;
       }
 
       function confirmSkillDiscard() {
-        const empId = skillSwitchEmpId;
-        if (empId === null) { return; }
-        skillEditOriginalValues = null;
+        if (skillSaving || !skillLeaveAction) { return; }
+        const action = skillLeaveAction;
+        cancelSkillEdit();
         closeSkillDiscardDialog();
-        selectSkillEmployee(empId);
+        action();
+      }
+
+      function saveSkillsAndLeave() {
+        if (skillSaving || !skillLeaveAction) { return; }
+        const action = skillLeaveAction;
+        saveSelectedEmployeeSkills(function () {
+          closeSkillDiscardDialog();
+          action();
+        });
       }
 
       function handleSkillDiscardKeydown(event) {
@@ -2222,7 +2393,7 @@
           closeSkillDiscardDialog();
         } else if (event.key === 'Tab') {
           const first = document.getElementById('skill_discard_cancel_btn');
-          const last = document.getElementById('skill_discard_confirm_btn');
+          const last = document.getElementById('skill_discard_save_btn');
           if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
           else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
         }
@@ -2263,7 +2434,7 @@
 
         const itemsEl = document.getElementById('skill_detail_items');
         itemsEl.innerHTML = '';
-        const pendingValues = pendingSkillSaves.get(loginSessionId + ':' + employeeSkill.id);
+        const pendingValues = skillDrafts.get(String(employeeSkill.id));
         const displayEmployee = pendingValues ? Object.assign({}, employeeSkill, { skills: {} }) : employeeSkill;
         if (pendingValues) {
           SKILL_ITEMS.forEach(function (item, i) { displayEmployee.skills[item] = pendingValues[i]; });
@@ -2273,7 +2444,7 @@
         }
 
         updateSkillEditControls();
-        showSkillSaveStatus(pendingValues ? '保存中...' : '', false);
+        showSkillSaveStatus(skillSaving ? '保存中...' : hasUnsavedSkillChanges() ? skillDrafts.size + '人分の未保存の変更があります' : '', false);
         emptyMessage.style.display = 'none';
         detail.style.display = 'block';
       }
@@ -2324,7 +2495,10 @@
           current.textContent = rank + '：' + SKILL_LEVEL_LABELS[rank];
           Array.from(labels.children).forEach(function (label, i) { label.classList.toggle('selected', i === index); });
         }
-        slider.addEventListener('input', updateRank);
+        slider.addEventListener('input', function () {
+          updateRank();
+          updateSkillDraft(employeeSkill.id, item, SKILL_LEVELS[Number(slider.value)]);
+        });
         updateRank();
         control.appendChild(labels);
         control.appendChild(slider);
@@ -2356,58 +2530,43 @@
       }
 
       /**
-       * 選択中の従業員の6項目をまとめて保存する
+       * 複数従業員の下書きをまとめて保存し、成功したときだけ下書きを消す
        * 変えていない項目の更新日はサーバー側でも動かさないので、変えた項目だけ日付が新しくなる
        * @return {void} 戻り値なし
        */
-      function saveSelectedEmployeeSkills() {
-        if (skillEditOriginalValues === null) { return; }
-        const employeeSkill = (skillSelectedEmpId === null) ? null : findSkillEmployee(skillSelectedEmpId);
-        if (employeeSkill === null) {
+      function saveSelectedEmployeeSkills(onSaved) {
+        if (!skillEditing || skillSaving) { return; }
+        if (!hasUnsavedSkillChanges()) {
+          cancelSkillEdit();
+          if (typeof onSaved === 'function') { onSaved(); }
           return;
         }
-        const saveKey = loginSessionId + ':' + employeeSkill.id;
-        if (pendingSkillSaves.has(saveKey)) { return; }
-
-        const sliders = document.getElementById('skill_detail_items').querySelectorAll('.skill-rank-slider');
-        const skillValues = [];
-        for (let i = 0; i < sliders.length; i++) {
-          skillValues.push(SKILL_LEVELS[Number(sliders[i].value)]);
-          sliders[i].disabled = true;
-        }
-        pendingSkillSaves.set(saveKey, skillValues);
-
+        const changes = Array.from(skillDrafts, function (entry) { return { empId: entry[0], skillValues: entry[1].slice() }; });
+        skillSaving = true;
         updateSkillEditControls();
         showSkillSaveStatus('保存中...', false);
-
+        document.getElementById('skill_discard_status').textContent = '保存中...';
         const sessionId = loginSessionId;
-        const savedEmpId = skillSelectedEmpId;
         google.script.run
           .withSuccessHandler(function (result) {
-            pendingSkillSaves.delete(saveKey);
-            if (!isSameLoginSession(sessionId)) {
-              return;
-            }
-            applySavedSkills(savedEmpId, skillValues, result.updatedAt);
-            if (skillSelectedEmpId !== savedEmpId) {
-              return; // 保存の間に別の従業員へ切り替わっていたら、いまの表示はそのままにする
-            }
-            skillEditOriginalValues = null;
+            if (!isSameLoginSession(sessionId)) { return; }
+            skillSaving = false;
+            result.employees.forEach(function (saved) { applySavedSkills(saved.empId, saved.skillValues, saved.updatedAt); });
+            skillDrafts.clear();
+            skillEditing = false;
             renderSkillDetail();
-            showSkillSaveStatus('保存しました', false);
+            showSkillSaveStatus('変更を保存しました', false);
+            if (typeof onSaved === 'function') { onSaved(); }
           })
           .withFailureHandler(function (error) {
-            pendingSkillSaves.delete(saveKey);
-            if (!isSameLoginSession(sessionId) || skillSelectedEmpId !== savedEmpId) {
-              return;
-            }
-            if (skillEditOriginalValues === null) {
-              skillEditOriginalValues = SKILL_ITEMS.map(function (item) { return findSkillEmployee(savedEmpId).skills[item]; });
-            }
+            if (!isSameLoginSession(sessionId)) { return; }
+            skillSaving = false;
             updateSkillEditControls();
-            showSkillSaveStatus('エラー: ' + error.message, true);
+            const message = 'エラー: ' + error.message;
+            showSkillSaveStatus(message, true);
+            document.getElementById('skill_discard_status').textContent = message;
           })
-          .saveEmployeeSkills(employeeSkill.id, skillValues, authToken);
+          .saveEmployeeSkillsBatch(changes, authToken);
       }
 
       /**
@@ -2434,10 +2593,12 @@
        * @return {void} 戻り値なし
        */
       function resetSkillSection() {
-        skillEditOriginalValues = null;
+        skillRequestId++;
+        skillSaving = false;
+        skillEditing = false;
         closeSkillDiscardDialog();
         skillMatrix = [];
-        pendingSkillSaves.clear();
+        skillDrafts.clear();
         skillSelectedEmpId = null;
         document.getElementById('skill_layout').style.display = 'none';
         document.getElementById('skill_employee_list').innerHTML = '';
@@ -2473,13 +2634,7 @@
        * 一覧・詳細の代わりに出す一行メッセージ（読み込み中・従業員なし・エラー）を切り替える
        */
       function showSkillMessage(message, isError) {
-        const messageEl = document.getElementById('skill_message');
-        messageEl.textContent = message;
-        if (isError) {
-          messageEl.classList.add('error');
-        } else {
-          messageEl.classList.remove('error');
-        }
+        showAppMessage('skill_message', message, isError);
       }
 
       // シフト確認は保存済みデータだけを表示し、編集の下書きとは分離する。
@@ -2554,7 +2709,7 @@
     }
 
       window.addEventListener('beforeunload', function (event) {
-        if (shiftDrafts.size > 0 || shiftSaving) {
+        if (shiftDrafts.size > 0 || shiftSaving || hasUnsavedSkillChanges() || skillSaving || attendancePendingSaves.size) {
           event.preventDefault();
           event.returnValue = '';
         }
@@ -2720,13 +2875,13 @@
         const weekday = parseShiftDate(dateKey).getUTCDay();
         const required = weekday === 0 || weekday === 6 || shiftMonthHolidays.has(dateKey) ? 4 : 3;
         const employees = new Map(shiftMonthEmployees.map(function (employee) { return [String(employee.id), employee]; }));
-        const periods = status === 'closed' ? [] : ['lunch', 'dinner'].map(function (period) {
+        const periods = status !== 'created' ? [] : ['lunch', 'dinner'].map(function (period) {
           const ids = new Set(records.filter(function (record) { return getShiftWorkPeriods(record).includes(period); })
             .map(function (record) { return String(record.employeeId); }));
           const members = Array.from(ids).map(function (id) { return employees.get(id); }).filter(Boolean);
           const count = members.filter(function (employee) { return !employee.isManager; }).length;
           return { period: period, members: members, count: count, shortage: Math.max(0, required - count),
-            excess: count > required, missingSkills: SKILL_ITEMS.filter(function (skill) {
+            excess: count > required, missingSkills: getShiftPeriodSkills(period).filter(function (skill) {
               return !members.some(function (employee) { return canPerformShiftSkill(employee, skill); });
             }) };
         });
@@ -2738,6 +2893,10 @@
       function canPerformShiftSkill(employee, skill) {
         const rank = employee.skills && employee.skills[skill];
         return rank === 'A';
+      }
+
+      function getShiftPeriodSkills(period) {
+        return SKILL_ITEMS.filter(function (skill) { return period !== 'lunch' || skill !== '締め作業'; });
       }
 
       function getShiftWorkPeriods(record) {
@@ -2786,22 +2945,24 @@
       }
 
       function getShiftEducationCandidates(detail) {
-        const members = new Map();
+        const candidates = new Map();
         detail.periods.forEach(function (period) {
-          period.members.forEach(function (employee) { members.set(String(employee.id), employee); });
-        });
-        const candidates = [];
-        members.forEach(function (teacher) {
-          members.forEach(function (learner) {
-            if (String(teacher.id) === String(learner.id)) { return; }
-            const skills = SKILL_ITEMS.filter(function (skill) {
-              const rank = learner.skills && learner.skills[skill] || 'F';
-              return canPerformShiftSkill(teacher, skill) && (rank === 'F' || rank === 'B');
+          period.members.forEach(function (teacher) {
+            period.members.forEach(function (learner) {
+              if (String(teacher.id) === String(learner.id)) { return; }
+              const skills = getShiftPeriodSkills(period.period).filter(function (skill) {
+                const rank = learner.skills && learner.skills[skill] || 'F';
+                return canPerformShiftSkill(teacher, skill) && (rank === 'F' || rank === 'B');
+              });
+              if (!skills.length) { return; }
+              const key = JSON.stringify([String(teacher.id), String(learner.id)]);
+              const candidate = candidates.get(key) || { teacher: teacher, learner: learner, skills: [] };
+              skills.forEach(function (skill) { if (!candidate.skills.includes(skill)) { candidate.skills.push(skill); } });
+              candidates.set(key, candidate);
             });
-            if (skills.length) { candidates.push({ teacher: teacher, learner: learner, skills: skills }); }
           });
         });
-        return candidates;
+        return Array.from(candidates.values());
       }
 
       function renderShiftCalendar() {
@@ -2831,7 +2992,6 @@
         const cell = document.createElement('button');
         cell.type = 'button';
         cell.className = 'shift-day-cell status-' + detail.status;
-        cell.classList.toggle('status-shortage', detail.shortage);
         cell.dataset.dateKey = dateKey;
         cell.classList.toggle('shift-closed', detail.status === 'closed');
         cell.classList.toggle('today', dateKey === shiftTodayKey);
@@ -2844,15 +3004,28 @@
         number.textContent = String(day);
         const status = document.createElement('span');
         status.className = 'shift-day-status';
-        status.textContent = detail.status === 'closed' ? label : '';
+        status.textContent = detail.status === 'created' ? '' : label;
         cell.appendChild(number);
         cell.appendChild(status);
-        if (detail.excess) {
-          const mark = document.createElement('span');
-          mark.className = 'shift-excess-mark';
-          mark.textContent = '!';
-          mark.setAttribute('aria-hidden', 'true');
-          cell.appendChild(mark);
+        detail.periods.forEach(function (period) {
+          const half = document.createElement('span');
+          half.className = 'shift-day-period period-' + period.period + (period.shortage ? ' status-shortage' : ' status-created');
+          half.setAttribute('aria-hidden', 'true');
+          half.title = SHIFT_WORK_LABELS[period.period] + '：' + period.count + '名' +
+            (period.shortage ? '（' + period.shortage + '名不足）' : period.excess ? '（人数超過）' : '');
+          if (period.excess) {
+            const mark = document.createElement('span');
+            mark.className = 'shift-excess-mark';
+            mark.textContent = '!';
+            half.appendChild(mark);
+          }
+          cell.appendChild(half);
+        });
+        if (detail.periods.length) {
+          cell.setAttribute('aria-label', cell.getAttribute('aria-label') + ' ' + detail.periods.map(function (period) {
+            return SHIFT_WORK_LABELS[period.period] + ' ' + period.count + '名' +
+              (period.shortage ? ' ' + period.shortage + '名不足' : period.excess ? ' 人数超過' : ' 必要人数以上');
+          }).join('、'));
         }
         cell.addEventListener('click', function () { selectShiftDate(dateKey); });
         return cell;
@@ -2899,8 +3072,8 @@
           return;
         }
         const assignments = createShiftDetailSection(container, '当日のシフト', 'assignments', 'この日に勤務するスタッフの一覧です。');
-        if (detail.shifts.length === 0) {
-          appendShiftDetailMessage(assignments, '登録済みのシフトはありません。');
+        if (detail.status === 'uncreated') {
+          appendShiftDetailMessage(assignments, '未作成：通常シフトが登録されていません。');
         }
         const names = new Map(shiftMonthEmployees.map(function (employee) { return [String(employee.id), employee.name]; }));
         const tableScroll = document.createElement('div');
@@ -3040,15 +3213,11 @@
       }
 
       function showShiftMessage(message, isError) {
-        const element = document.getElementById('shift_message');
-        element.textContent = message;
-        element.classList.toggle('error', isError);
+        showAppMessage('shift_message', message, isError);
       }
 
       function showShiftEditMessage(message, isError) {
-        const element = document.getElementById('shift_edit_message');
-        element.textContent = message;
-        element.classList.toggle('error', isError);
+        showAppMessage('shift_edit_message', message, isError);
       }
 
       function loadShiftWeek(weekStart) {
@@ -3373,6 +3542,7 @@
        * @return {void} 戻り値なし
        */
       function loadOrderBoard() {
+        document.getElementById('order_body').style.display = 'none';
         showOrderMessage('読み込み中...', false);
 
         const sessionId = loginSessionId;
@@ -3419,13 +3589,7 @@
       }
 
       function showOrderMessage(message, isError) {
-        const messageEl = document.getElementById('order_message');
-        messageEl.textContent = message;
-        if (isError) {
-          messageEl.classList.add('error');
-        } else {
-          messageEl.classList.remove('error');
-        }
+        showAppMessage('order_message', message, isError);
       }
 
       /**
@@ -3441,12 +3605,12 @@
 
       function renderOrderView() {
         document.getElementById('order_view_picker').style.display = orderView === 'confirm' ? 'none' : 'flex';
-        const views = ['cart', 'confirm', 'history', 'vendor'];
+        const views = ['cart', 'confirm', 'upcoming', 'history', 'vendor'];
         for(let i = 0; i < views.length; i++) {
           document.getElementById('order_view_' + views[i]).style.display = (views[i] === orderView) ? 'block' : 'none';
         }
 
-        const tabViews = ['cart', 'history', 'vendor'];
+        const tabViews = ['cart', 'upcoming', 'history', 'vendor'];
 
         for(let i = 0; i < tabViews.length; i++) {
           const button = document.getElementById('order_view_btn_' + tabViews[i]);
@@ -3464,6 +3628,8 @@
           renderOrderCart();
         } else if (orderView === 'confirm') {
           refreshOrderConfirm();
+        } else if (orderView === 'upcoming') {
+          renderOrderUpcoming();
         } else if (orderView === 'history') {
           renderOrderHistory();
         } else if (orderView === 'vendor') {
@@ -3771,9 +3937,7 @@
           })
           .getOrderDrafts({
             'authToken': authToken,
-            'items': orderCart,
-            'deliveryDate': document.getElementById('order_delivery_date').value,
-            'note': document.getElementById('order_extra_note').value
+            'items': orderCart
           });
       }
 
@@ -3821,7 +3985,7 @@
         }));
         card.appendChild(title);
 
-        const lines = createOrderElement('ul', 'order-line-list');
+        const lines = createOrderElement('ul', 'order-line-list order-confirm-lines');
         for (let i = 0; i < draft.lines.length; i++) {
           const li = document.createElement('li');
           li.appendChild(createOrderElement('span', '', draft.lines[i].name));
@@ -3829,14 +3993,6 @@
           lines.appendChild(li);
         }
         card.appendChild(lines);
-
-        if (draft.appliedRuleTexts.length > 0) {
-          const ruleList = createOrderElement('ul', 'order-rule-list');
-          for (let i = 0; i < draft.appliedRuleTexts.length; i++) {
-            ruleList.appendChild(createOrderElement('li', '', draft.appliedRuleTexts[i]));
-          }
-          card.appendChild(ruleList);
-        }
 
         card.appendChild(createOrderElement('div', 'order-mail-subject', '件名：' + draft.subject));
         card.appendChild(createOrderElement('pre', 'order-mail-preview', draft.body));
@@ -3907,9 +4063,7 @@
           .sendOrderMails({
             'authToken': authToken,
             'operationKey': orderSendKey,
-            'items': orderCart,
-            'deliveryDate': document.getElementById('order_delivery_date').value,
-            'note': document.getElementById('order_extra_note').value
+            'items': orderCart
           });
       }
 
@@ -3940,12 +4094,44 @@
         showOrderMessage(result.message, hasFailure);
 
         if (!hasFailure && orderCart.length === 0) {
-          document.getElementById('order_delivery_date').value = '';
-          document.getElementById('order_extra_note').value = '';
           changeOrderView('history'); // 保存された発注履歴をそのまま確認できるようにする
         } else {
           showOrderSendStatus(result.message, hasFailure);
         }
+      }
+
+      // 入荷予定は日付が過ぎた行だけ非表示にし、発注履歴は変更しない。
+      let orderUpcomingToday = '';
+
+      function getOrderToday() {
+        const parts = new Intl.DateTimeFormat('en-US', { timeZone: CLOCK_TIME_ZONE,
+          year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+        const values = {};
+        parts.forEach(function (part) { values[part.type] = part.value; });
+        return values.year + '/' + values.month + '/' + values.day;
+      }
+
+      function renderOrderUpcoming() {
+        const body = document.getElementById('order_upcoming_tbody');
+        body.innerHTML = '';
+        orderUpcomingToday = getOrderToday();
+        const orders = (orderBoard.upcoming || []).filter(function (order) {
+          return !order.expectedDate || order.expectedDate >= orderUpcomingToday;
+        });
+        document.getElementById('order_upcoming_message').textContent = orders.length ? '' : '入荷予定の食材はありません。';
+        document.getElementById('order_upcoming_scroll').hidden = orders.length === 0;
+        orders.forEach(function (order) {
+          const row = document.createElement('tr');
+          [order.name, order.orderedAt, order.quantityText, order.expectedDate || '未設定', order.vendorName].forEach(function (value) {
+            row.appendChild(createOrderElement('td', '', value));
+          });
+          body.appendChild(row);
+        });
+      }
+
+      function refreshOrderUpcomingDate() {
+        if (currentScreen === 'manager' && currentManagerSection === 'order' && orderView === 'upcoming' &&
+            orderBoard && orderUpcomingToday !== getOrderToday()) { renderOrderUpcoming(); }
       }
 
       // 発注履歴
@@ -4069,15 +4255,10 @@
           ['住所', vendor.address],
           ['電話番号', vendor.phone],
           ['メールアドレス', vendor.email],
-          ['発注メールの送信先', vendor.mailToText],
           ['営業時間', vendor.businessHours],
           ['定休日', vendor.closedDays],
           ['発注締切', vendor.deadlineText],
-          ['通常納品日数', vendor.leadTimeText],
-          ['配送曜日', vendor.deliveryDaysText],
-          ['主な取扱商品', vendor.mainItems],
-          ['発注時の注意事項', vendor.orderNote],
-          ['備考', vendor.note]
+          ['通常納品日数', vendor.leadTimeText]
         ];
         const grid = createOrderElement('div', 'order-detail-grid');
         for (let i = 0; i < rows.length; i++) {

@@ -194,7 +194,6 @@
     font-size: 18px;
     min-height: 24px;
   }
-  .attendance-reload-btn,
   .header-btn {
     padding: 6px 20px;
     font-size: 20px;
@@ -204,11 +203,9 @@
     border-radius: 8px;
     cursor: pointer;
   }
-  .attendance-reload-btn:hover,
   .header-btn:hover {
     background-color: #dcdcdc;
   }
-  .attendance-reload-btn:active,
   .header-btn:active {
     background-color: #c8c8c8;
     transform: translateY(2px);
@@ -521,10 +518,6 @@
     flex-wrap: wrap;
     gap: 12px;
   }
-  .attendance-reload-btn:disabled {
-    color: #999;
-    cursor: not-allowed;
-  }
   .attendance-date {
     font-size: 18px;
     color: #666;
@@ -536,6 +529,12 @@
     margin-top: 16px;
     min-height: 24px;
   }
+  .loading-message { border: 0; box-shadow: none; text-decoration: none; background: none; }
+  .loading-message::before, .loading-message::after { content: none; }
+  /* 空の表・スクロール枠が読み込み表示の横線にならないようにする。 */
+  #section_shift_edit:has(.loading-message) .shift-editor-layout,
+  #employee_directory_block:has(.loading-message) .employee-directory-scroll { display: none; }
+  .shift-table-scroll:has(.shift-week-table:empty) { border: 0; }
   .attendance-message.error {
     color: #e53935;
   }
@@ -561,6 +560,27 @@
   }
   .attendance-table td.unrecorded {
     color: #e53935;
+  }
+  .attendance-section-active .manager-main { min-width: 0; }
+  .attendance-table-scroll { overflow-x: auto; max-width: 1120px; }
+  #attendance_table { min-width: 850px; max-width: 1120px; }
+  #attendance_table th, #attendance_table td { vertical-align: middle; }
+  .attendance-time-input, .attendance-break-input {
+    box-sizing: border-box; padding: 6px 8px; font: inherit; border: 1px solid #aaa; border-radius: 6px;
+  }
+  .attendance-time-input { width: 132px; }
+  .attendance-break-input { width: 82px; }
+  .attendance-row-buttons { display: flex; gap: 6px; flex-wrap: wrap; }
+  .attendance-row-buttons button { padding: 6px 10px; font-size: 15px; white-space: nowrap; }
+  .attendance-row-status { margin-top: 6px; font-size: 13px; color: #397348; max-width: 240px; }
+  .attendance-row-status:empty { display: none; }
+  .attendance-row-status.error { color: #c62828; }
+  .attendance-break-note { display: block; max-width: 180px; margin-top: 6px; font-size: 12px; color: #666; }
+  .attendance-editing { background-color: #f7faff; }
+  @media (max-width: 900px) {
+    .attendance-section-active .manager-layout { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+    .attendance-section-active .manager-sidebar { display: flex; gap: 8px; flex-wrap: wrap; }
+    .attendance-section-active .manager-nav-item { margin: 0; padding: 10px; font-size: 15px; }
   }
   /* 店長画面：スキル管理 */
   /* 左に従業員一覧、右に選んだ1人のスキル詳細を並べる */
@@ -768,6 +788,10 @@
     align-items: center;
     gap: 8px;
   }
+  @media (max-width: 600px) {
+    .skill-detail-header { grid-template-columns: minmax(0, 1fr); }
+    .skill-detail-actions { grid-column: 1; grid-row: 3; flex-wrap: wrap; margin-top: 12px; }
+  }
   .skill-detail-actions button { padding: 8px 16px; font-size: 16px; line-height: 1.5; }
   .skill-detail-actions .modal-cancel-btn { background-color: #fff; }
   .skill-detail-actions .modal-cancel-btn:hover { background-color: #f0f0f0; }
@@ -807,7 +831,12 @@
     color: #666;
     margin-top: 8px;
   }
+  .employee-directory-table .employee-skill-mastered { color: #35609c; }
+  .today-work-table th:not(:nth-child(3)),
+  .today-work-table td:not(:nth-child(3)) { text-align: center; vertical-align: middle; }
   .today-work-table select {
+    text-align: center;
+    text-align-last: center;
     font-size: 16px;
     padding: 4px 8px;
   }
@@ -844,6 +873,8 @@
     font-size: 14px;
     color: #43a047;
   }
+  .today-work-table .today-work-row-status { display: block; margin: 6px 0 0; }
+  .today-work-table .today-work-row-status:empty { display: none; }
   .today-work-row-status.error {
     color: #e53935;
   }
@@ -1127,7 +1158,7 @@
   }
   .shift-day-cell.status-uncreated,
   .shift-legend-swatch.status-uncreated { background-color: #f5f5f5; }
-  /* 作成済みと判定結果は分けておく。問題なし・不足は判定処理の追加時に利用する。 */
+  /* 作成済みの日はランチ・ディナーを個別に塗り分ける。 */
   .shift-day-cell.status-created,
   .shift-legend-swatch.status-created { background-color: #d6e6fa; }
   .shift-day-cell.status-ok { background-color: #eaf5eb; }
@@ -1185,10 +1216,16 @@
     color: #fff;
     font-weight: bold;
   }
-  #section_shift_confirm .shift-day-cell.status-created,
-  #section_shift_confirm .shift-legend-swatch.status-created { background-color: #e7ebf0; }
-  #section_shift_confirm .shift-day-cell.status-shortage,
-  #section_shift_confirm .shift-legend-swatch.status-shortage { background-color: #fdeaea; }
+  .shift-day-period { position: absolute; left: 0; right: 0; height: 50%; box-sizing: border-box; }
+  .shift-day-period.period-lunch { top: 0; }
+  .shift-day-period.period-dinner { top: 50%; border-top: 1px solid #bec8d4; }
+  .shift-day-period.status-created { background-color: #d6e6fa; }
+  .shift-day-period.status-shortage { background-color: #fdeaea; }
+  .shift-day-cell .shift-day-number,
+  .shift-day-cell .shift-day-status { position: relative; z-index: 1; pointer-events: none; }
+  .shift-day-cell::after { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+  #section_shift_confirm .shift-day-cell:hover::after { box-shadow: inset 0 0 0 1px #667085; }
+  #section_shift_confirm .shift-day-cell.selected::after { box-shadow: inset 0 0 0 2px #667085; }
   #section_shift_confirm .shift-day-cell:hover { box-shadow: inset 0 0 0 1px #667085; }
   #section_shift_confirm .shift-day-cell.selected { box-shadow: inset 0 0 0 2px #667085; }
   #section_shift_confirm .shift-day-cell.today .shift-day-number { background-color: #4b5563; }
@@ -1431,6 +1468,12 @@
     .shift-week-switch { flex-wrap: wrap; gap: 10px; }
     .shift-week-label { flex: 1 0 100%; order: -1; font-size: 17px; }
     .shift-day-status { font-size: 10px; }
+    #section_shift_confirm .shift-day-cell.status-created .shift-day-number {
+      position: absolute; top: 2px; left: 2px; height: 20px; width: 24px; font-size: 14px;
+    }
+    #section_shift_confirm .shift-day-cell .shift-excess-mark {
+      top: auto; left: auto; right: 2px; bottom: 2px; transform: none; width: 14px; height: 14px; font-size: 11px;
+    }
     .shift-calendar-card,
     .shift-detail-section { padding: 14px; }
     .shift-calendar-card .shift-month-label { font-size: 18px; }
@@ -1492,8 +1535,15 @@
     margin-bottom: 24px;
   }
 
+  .order-section-active .manager-main { min-width: 0; }
+  @media (max-width: 900px) {
+    .order-section-active .manager-layout { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+    .order-section-active .manager-sidebar { display: flex; flex-wrap: wrap; gap: 8px; }
+    .order-section-active .manager-nav-item { margin: 0; padding: 10px; font-size: 15px; }
+  }
   .order-view-tabs {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 10px;
     margin-top: 24px;
@@ -1526,6 +1576,7 @@
   }
   .order-view-header {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: 16px;
@@ -1564,11 +1615,12 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+    container-type: inline-size;
   }
   .order-cart-card {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(140px, 1fr) 260px minmax(140px, .8fr) 64px;
     align-items: center;
-    flex-wrap: wrap;
     gap: 16px;
     padding: 16px 20px;
     background-color: #fff;
@@ -1576,22 +1628,26 @@
     border-radius: 8px;
   }
   .order-cart-name {
-    flex: 1 1 200px;
+    min-width: 0;
+    overflow-wrap: anywhere;
     font-size: 18px;
     font-weight: bold;
   }
   .order-cart-vendor {
-    flex: 0 0 auto;
+    min-width: 0;
+    overflow-wrap: anywhere;
     font-size: 15px;
     color: #555;
   }
   .order-cart-quantity {
-    display: flex;
+    display: grid;
+    grid-template-columns: 36px minmax(44px, 84px) 36px minmax(30px, 1fr);
     align-items: center;
     gap: 8px;
+    min-width: 0;
   }
   .order-step-btn {
-    width: 40px;
+    width: 36px;
     height: 40px;
     font-size: 20px;
     line-height: 1;
@@ -1605,7 +1661,9 @@
     background-color: #f0f4fa;
   }
   .order-quantity-input {
-    width: 84px;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
     padding: 8px;
     font-size: 18px;
     text-align: center;
@@ -1616,7 +1674,8 @@
   .order-cart-unit {
     font-size: 16px;
     color: #555;
-    min-width: 48px;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
   .order-remove-btn {
     padding: 8px 14px;
@@ -1636,16 +1695,18 @@
     gap: 12px;
     margin-top: 24px;
   }
+  @container (max-width: 740px) {
+    .order-cart-card { grid-template-columns: minmax(0, 1fr) auto; padding: 14px; gap: 12px; }
+    .order-cart-name { grid-column: 1; grid-row: 1; }
+    .order-cart-quantity { grid-column: 1 / -1; grid-row: 2; width: 100%; max-width: 260px; }
+    .order-cart-vendor { grid-column: 1 / -1; grid-row: 3; }
+    .order-remove-btn { grid-column: 2; grid-row: 1; }
+  }
+  .order-upcoming-scroll { overflow-x: auto; }
+  .order-upcoming-table { min-width: 640px; width: 100%; }
+  .order-upcoming-table th, .order-upcoming-table td { white-space: nowrap; }
+  #skill_discard_overlay .modal-footer { flex-wrap: wrap; }
   /* 発注内容確認 */
-  .order-confirm-inputs {
-    display: flex;
-    gap: 24px;
-    flex-wrap: wrap;
-    margin-bottom: 8px;
-  }
-  .order-confirm-input {
-    flex: 1 1 260px;
-  }
   .order-confirm-list {
     display: flex;
     flex-direction: column;
@@ -1680,14 +1741,10 @@
   .order-line-quantity {
     font-variant-numeric: tabular-nums;
   }
-  .order-rule-list {
-    margin: 0 0 12px;
-    padding-left: 20px;
-    font-size: 14px;
-    color: #555;
-    line-height: 1.7;
-  }
+  .order-confirm-lines li { font-size: 22px; font-weight: bold; color: #000; }
+  .order-confirm-lines .order-line-quantity { flex-shrink: 0; }
   .order-mail-preview {
+    color: #667085;
     margin: 0;
     padding: 16px;
     font-family: inherit;
@@ -1701,8 +1758,9 @@
   }
   .order-mail-subject {
     margin-bottom: 8px;
-    font-size: 15px;
-    font-weight: bold;
+    font-size: 14px;
+    font-weight: normal;
+    color: #667085;
   }
   .order-send-footer {
     display: flex;
