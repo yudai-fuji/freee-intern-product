@@ -114,14 +114,17 @@ function getTodayAttendances(authToken) {
 
 function buildAttendances(targetDate) {
   const eventsByEmpId = new Map();
+  const shiftDate = targetDate.replace(/\//g, '-');
+  // 通常シフトの従業員だけを起点にし、未打刻でも勤怠行を用意する。
+  readShiftStore_().records.forEach(function (record) {
+    if (record.date === shiftDate && record.workType !== 'unavailable') {
+      eventsByEmpId.set(String(record.employeeId), []);
+    }
+  });
+  if (eventsByEmpId.size === 0) { return []; }
   readAttendanceEvents_(getSheet(SHEET_NAMES.TIME_CLOCKS), targetDate).forEach(function (event) {
     const id = String(event.employeeId);
-    if (!eventsByEmpId.has(id)) { eventsByEmpId.set(id, []); }
-    eventsByEmpId.get(id).push(event);
-  });
-  // 両方とも未打刻の従業員も行を表示し、店長が出退勤を入力できるようにする。
-  getEmployees().forEach(function (employee) {
-    if (!eventsByEmpId.has(String(employee.id))) { eventsByEmpId.set(String(employee.id), []); }
+    if (eventsByEmpId.has(id)) { eventsByEmpId.get(id).push(event); }
   });
   const names = getEmployeeNameMap();
   const rates = getEmployeeRateMap();

@@ -2001,7 +2001,7 @@
         tbody.innerHTML = '';
         attendanceRows.forEach(function (attendance) { tbody.appendChild(createAttendanceRow(attendance)); });
         document.getElementById('attendance_table').style.display = attendanceRows.size ? 'table' : 'none';
-        showAttendanceMessage(attendanceRows.size ? '' : '従業員が登録されていません', false);
+        showAttendanceMessage(attendanceRows.size ? '' : '本日の勤務予定はありません', false);
       }
 
       function createAttendanceRow(attendance) {
