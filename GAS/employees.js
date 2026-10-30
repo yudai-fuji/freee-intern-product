@@ -1,16 +1,6 @@
- 
- 
- 
-
- 
-
-
-
-
 function ensureEmployeeStatusColumns_() {
   const sheet = getSheet(SHEET_NAMES.EMPLOYEES);
 
-   
   const lastColumn = Math.max(sheet.getLastColumn(), EMPLOYEE_COL_PART_TIME_MARK);
   const header = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
   let statusColumn = 0;
@@ -24,7 +14,6 @@ function ensureEmployeeStatusColumns_() {
     }
   }
 
-   
   let nextColumn = lastColumn;
   if (statusColumn === 0) {
     nextColumn++;
@@ -35,7 +24,6 @@ function ensureEmployeeStatusColumns_() {
     deletedAtColumn = nextColumn;
   }
 
-   
   if (nextColumn > sheet.getMaxColumns()) {
     sheet.insertColumnsAfter(sheet.getMaxColumns(), nextColumn - sheet.getMaxColumns());
   }
@@ -59,7 +47,7 @@ function getEmployeeIdentityColumns_(sheet) {
   }
   const id = findColumn(['従業員番号', '従業員ID'], EMPLOYEE_COL_ID);
   const name = findColumn(['氏名'], EMPLOYEE_COL_NAME);
-   
+
   return {
     id: id,
     name: name,
@@ -68,18 +56,13 @@ function getEmployeeIdentityColumns_(sheet) {
   };
 }
 
- 
-
-
-
-
 function readEmployeeRows_() {
   const columns = ensureEmployeeStatusColumns_();
   const sheet = columns.sheet;
   const lastRow = sheet.getLastRow();
   const rows = [];
   if (lastRow < 2) {
-    return rows;  
+    return rows;
   }
 
   const identity = getEmployeeIdentityColumns_(sheet);
@@ -88,25 +71,19 @@ function readEmployeeRows_() {
   for (let i = 0; i < values.length; i++) {
     const empId = values[i][identity.id - 1];
     if (empId === '') {
-      continue;  
+      continue;
     }
-     
+
     const status = String(values[i][columns.statusColumn - 1] || '').trim();
     rows.push({
       'id': empId,
       'name': String(values[i][identity.name - 1] || '').trim(),
-      'rowNumber': i + 2,  
+      'rowNumber': i + 2,
       'isDeleted': (status === EMPLOYEE_STATUS_DELETED)
     });
   }
   return rows;
 }
-
- 
-
-
-
-
 
 function formatEmployeeNumber(empId) {
   const text = String(empId === null || empId === undefined ? '' : empId).trim();
@@ -116,17 +93,12 @@ function formatEmployeeNumber(empId) {
   return text;
 }
 
- 
-
-
-
-
 function getEmployees() {
   const rows = readEmployeeRows_();
   const employees = [];
   for (let i = 0; i < rows.length; i++) {
     if (rows[i].isDeleted || rows[i].name === '') {
-      continue;  
+      continue;
     }
     employees.push({
       'id': rows[i].id,
@@ -136,12 +108,6 @@ function getEmployees() {
   }
   return employees;
 }
-
- 
-
-
-
-
 
 function getActiveEmployeeList(authToken) {
   requireLoggedIn_(authToken);
@@ -165,11 +131,6 @@ function getEmployeeDirectory(authToken) {
   });
 }
 
- 
-
-
-
-
 function getEmployeeNameMap() {
   const rows = readEmployeeRows_();
   const nameByEmpId = {};
@@ -182,11 +143,6 @@ function getEmployeeNameMap() {
   return nameByEmpId;
 }
 
- 
-
-
-
-
 function getActiveEmployeeNameMap() {
   const employees = getEmployees();
   const nameByEmpId = {};
@@ -195,12 +151,6 @@ function getActiveEmployeeNameMap() {
   }
   return nameByEmpId;
 }
-
- 
-
-
-
-
 
 function findEmployeeRow_(rows, empId) {
   for (let i = 0; i < rows.length; i++) {
@@ -211,7 +161,6 @@ function findEmployeeRow_(rows, empId) {
   return null;
 }
 
- 
 function ensureEmployeePinColumn_() {
   const sheet = ensureEmployeeStatusColumns_().sheet;
   const lastColumn = sheet.getLastColumn();
@@ -256,15 +205,6 @@ function changeEmployeePin(empId, newPin, confirmPin, authToken) {
   });
 }
 
- 
-
-
-
-
-
-
-
-
 function addEmployee(lastName, firstName, pin, authToken) {
   requireManagerRole_(authToken);
   requireValidEmployeePin_(pin);
@@ -273,7 +213,6 @@ function addEmployee(lastName, firstName, pin, authToken) {
 
 function addEmployee_(lastName, firstName, pin) {
 
-   
   lastName = String(lastName === null || lastName === undefined ? '' : lastName).trim();
   firstName = String(firstName === null || firstName === undefined ? '' : firstName).trim();
   if (lastName === '' || firstName === '') {
@@ -314,12 +253,6 @@ function addEmployee_(lastName, firstName, pin) {
   };
 }
 
- 
-
-
-
-
-
 function getEmployeeDeletionPreview(empId, authToken) {
   requireManagerRole_(authToken);
 
@@ -337,13 +270,6 @@ function getEmployeeDeletionPreview(empId, authToken) {
     'number': formatEmployeeNumber(targetRow.id)
   };
 }
-
- 
-
-
-
-
-
 
 function deleteEmployee(empId, authToken) {
   requireManagerRole_(authToken);
@@ -366,21 +292,11 @@ function deleteEmployee(empId, authToken) {
   };
 }
 
- 
- 
- 
-
- 
-
-
-
-
 function ensureEmployeeSkillAllowanceColumn_() {
-   
+
   const statusColumns = ensureEmployeeStatusColumns_();
   const sheet = statusColumns.sheet;
 
-   
   const lastColumn = Math.max(sheet.getLastColumn(), statusColumns.deletedAtColumn);
   const header = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
   let allowanceColumn = 0;
@@ -392,7 +308,6 @@ function ensureEmployeeSkillAllowanceColumn_() {
     }
   }
 
-   
   if (allowanceColumn === 0) {
     allowanceColumn = lastColumn + 1;
     if (allowanceColumn > sheet.getMaxColumns()) {
@@ -404,12 +319,6 @@ function ensureEmployeeSkillAllowanceColumn_() {
   return { 'sheet': sheet, 'column': allowanceColumn };
 }
 
- 
-
-
-
-
-
 function normalizeSkillAllowance_(rawValue) {
   const amount = Number(rawValue);
   if (!isFinite(amount) || amount <= 0) {
@@ -418,18 +327,13 @@ function normalizeSkillAllowance_(rawValue) {
   return amount;
 }
 
- 
-
-
-
-
 function getEmployeeSkillAllowanceMap() {
   const columns = ensureEmployeeSkillAllowanceColumn_();
   const sheet = columns.sheet;
   const lastRow = sheet.getLastRow();
   const allowanceByEmpId = {};
   if (lastRow < 2) {
-    return allowanceByEmpId;  
+    return allowanceByEmpId;
   }
 
   const empIdValues = sheet.getRange(2, getEmployeeIdentityColumns_(sheet).id, lastRow - 1, 1).getValues();
@@ -443,22 +347,10 @@ function getEmployeeSkillAllowanceMap() {
   return allowanceByEmpId;
 }
 
- 
-
-
-
-
 function getEmployeeSkillAllowance(empId) {
   const amount = getEmployeeSkillAllowanceMap()[String(empId)];
   return (amount === undefined) ? SKILL_ALLOWANCE_DEFAULT : amount;
 }
-
- 
-
-
-
-
-
 
 function saveEmployeeSkillAllowance_(empId, amount) {
   const columns = ensureEmployeeSkillAllowanceColumn_();

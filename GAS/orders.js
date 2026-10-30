@@ -1,30 +1,10 @@
- 
- 
- 
- 
- 
- 
- 
-
- 
 const ORDER_HISTORY_LIMIT = 100;
-
- 
-
-
-
-
 
 function getOrderBoard(authToken) {
   requireManagerRole_(authToken);
   ensureOrderMasterData_();
   return buildOrderBoard_();
 }
-
- 
-
-
-
 
 function buildOrderBoard_() {
   const now = new Date();
@@ -43,10 +23,10 @@ function buildOrderBoard_() {
   for (let i = 0; i < masters.length; i++) {
     const master = masters[i];
     if (!master.active) {
-      continue;  
+      continue;
     }
     if (master.category !== ORDER_DEFAULT_ITEM_CATEGORY) {
-      continue;  
+      continue;
     }
     const supplier = supplierById[master.supplierId];
     items.push({
@@ -78,10 +58,6 @@ function buildOrderBoard_() {
   };
 }
 
- 
-
-
-
 function buildOrderVendorView_(supplier, now) {
   return {
     'id': supplier.id,
@@ -91,15 +67,12 @@ function buildOrderVendorView_(supplier, now) {
     'email': supplier.email,
     'businessHours': supplier.businessHours,
     'closedDays': supplier.closedDays,
-     
+
     'deadlineText': buildOrderDeadlineText_(supplier),
     'leadTimeText': buildOrderLeadTimeText_(supplier),
     'planText': buildIngredientSupplierPlan(supplier, now).text
   };
 }
-
- 
-
 
 function buildOrderDeadlineText_(supplier) {
   if (supplier.deadlineTime === '') {
@@ -111,9 +84,6 @@ function buildOrderDeadlineText_(supplier) {
   return formatIngredientWeekdayList(supplier.orderDays) + 'の' + supplier.deadlineTime + 'まで';
 }
 
- 
-
-
 function buildOrderLeadTimeText_(supplier) {
   if (supplier.leadTimeDays === null) {
     return '';
@@ -122,27 +92,12 @@ function buildOrderLeadTimeText_(supplier) {
   return supplier.leadTimeDays + countText;
 }
 
- 
-
-
-
-
-
 function resolveOrderRecipient_(supplier) {
   if (normalizeIngredientText(ORDER_TEST_RECIPIENT_EMAIL) !== '') {
     return ORDER_TEST_RECIPIENT_EMAIL;
   }
   return supplier.email;
 }
-
- 
-
- 
-
-
-
-
-
 
 function buildOrderHistory_(orders, supplierById) {
   const groups = [];
@@ -185,13 +140,12 @@ function buildOrderHistory_(orders, supplierById) {
     const timeB = parseIngredientDateTime(b.orderedAt);
     const valueA = timeA ? timeA.getTime() : 0;
     const valueB = timeB ? timeB.getTime() : 0;
-    return valueB - valueA;  
+    return valueB - valueA;
   });
 
   return groups.slice(0, ORDER_HISTORY_LIMIT);
 }
 
- 
 function buildOrderUpcoming_(orders, supplierById, now) {
   const today = formatIngredientDate(now);
   return orders.map(function (order) {
@@ -214,7 +168,6 @@ function buildOrderUpcoming_(orders, supplierById, now) {
   });
 }
 
- 
 function formatOrderHistoryLabel_(orderedAt) {
   const date = parseIngredientDateTime(orderedAt);
   if (!date) {
@@ -222,14 +175,6 @@ function formatOrderHistoryLabel_(orderedAt) {
   }
   return Utilities.formatDate(date, TIME_ZONE, 'M/d HH:mm');
 }
-
- 
-
- 
-
-
-
-
 
 function normalizeOrderItems_(items) {
   const list = Array.isArray(items) ? items : [];
@@ -278,13 +223,6 @@ function normalizeOrderItems_(items) {
   return normalized;
 }
 
- 
-
-
-
-
-
-
 function buildOrderDrafts_(items, now) {
   const normalized = normalizeOrderItems_(items);
 
@@ -322,16 +260,9 @@ function buildOrderDrafts_(items, now) {
   return drafts;
 }
 
- 
-
-
 function buildOrderMailSubject_(now) {
   return (now.getMonth() + 1) + '月' + now.getDate() + '日 発注依頼';
 }
-
- 
-
-
 
 function buildOrderMailBody_(draft) {
   const parts = [];
@@ -356,25 +287,12 @@ function buildOrderMailBody_(draft) {
   return parts.join('\n');
 }
 
- 
-
-
-
-
 function getOrderDrafts(input) {
   const payload = input || {};
   requireManagerRole_(payload.authToken);
   const drafts = buildOrderDrafts_(payload.items, new Date());
   return { 'drafts': drafts, 'vendorCount': drafts.length };
 }
-
- 
-
- 
-
-
-
-
 
 function sendOrderMails(input) {
   const payload = input || {};
@@ -411,7 +329,7 @@ function sendOrderMails(input) {
         failures.push(draft.vendorName + '：' + error.message);
         continue;
       }
-       
+
       appendOrderHistoryRows_(sheet, draft, supplierById[draft.vendorId], orderedAt, actor, now);
       sentVendorIds.push(draft.vendorId);
       sentVendorNames.push(draft.vendorName);
@@ -438,10 +356,6 @@ function sendOrderMails(input) {
   });
 }
 
- 
-
-
-
 function sendOrderMail_(draft) {
   MailApp.sendEmail({
     to: draft.to,
@@ -450,10 +364,6 @@ function sendOrderMail_(draft) {
     name: ORDER_STORE_NAME
   });
 }
-
- 
-
-
 
 function appendOrderHistoryRows_(sheet, draft, supplier, orderedAt, actor, now) {
   const orderNo = newIngredientId('ODR');
@@ -473,19 +383,11 @@ function appendOrderHistoryRows_(sheet, draft, supplier, orderedAt, actor, now) 
   appendIngredientRows(sheet, rows, INGREDIENT_ORDER_SHEET_HEADER.length);
 }
 
- 
-
-
 function resolveOrderExpectedDate_(supplier, now) {
   if (!supplier || !now) { return ''; }
   const plan = buildIngredientSupplierPlan(supplier, now);
   return plan.available ? plan.deliveryDateKey : '';
 }
-
- 
-
-
-
 
 function resolveOrderActor_() {
   try {
@@ -494,18 +396,10 @@ function resolveOrderActor_() {
       return ROLE_MANAGER + '（' + email + '）';
     }
   } catch (error) {
-     
+
   }
   return ROLE_MANAGER;
 }
-
- 
-
-
-
-
-
-
 
 function runOrderOperation_(operationKey, type, executor) {
   const key = normalizeIngredientText(operationKey);
@@ -527,13 +421,13 @@ function runOrderOperation_(operationKey, type, executor) {
     if (existing) {
       const status = existing.values['処理状態'];
       if (status === '完了') {
-         
+
         message = existing.values['内容'] + '（この発注はすでに送信済みです）';
         isDuplicated = true;
       } else if (status === '処理中') {
         throw new Error('前回の送信が完了していない可能性があります。発注履歴を確認してください');
       }
-       
+
     }
 
     if (!isDuplicated) {
@@ -545,7 +439,7 @@ function runOrderOperation_(operationKey, type, executor) {
         failIngredientEvent(eventSheet, eventRowNumber, error);
         throw error;
       }
-      SpreadsheetApp.flush();  
+      SpreadsheetApp.flush();
       completeIngredientEvent(eventSheet, eventRowNumber, result);
       message = result.message;
       detail = result;
@@ -557,17 +451,10 @@ function runOrderOperation_(operationKey, type, executor) {
   return { 'message': message, 'detail': detail, 'board': buildOrderBoard_() };
 }
 
- 
-
- 
-
-
-
-
 function ensureOrderMasterData_() {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) {
-    return;  
+    return;
   }
   try {
     const supplierSheet = ensureIngredientSupplierSheet();
@@ -609,7 +496,7 @@ function ensureOrderMasterData_() {
         ]);
         continue;
       }
-       
+
       const values = row.values;
       let changed = false;
       if (values['業者ID'] === '' && vendorId !== '') {
@@ -633,9 +520,6 @@ function ensureOrderMasterData_() {
   }
 }
 
- 
-
-
 function buildOrderDefaultVendorRows_() {
   const rows = [];
   const updatedAt = formatIngredientDateTime(new Date());
@@ -652,14 +536,6 @@ function buildOrderDefaultVendorRows_() {
   }
   return rows;
 }
-
- 
-
-
-
-
-
-
 
 function writeOrderSheetRow_(sheet, rowNumber, header, values) {
   const row = [];

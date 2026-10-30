@@ -1,11 +1,3 @@
- 
- 
-
- 
-
-
-
-
 function login(passcode) {
   ensureAppDataMigration_();
   if (typeof passcode !== 'string' || passcode !== PropertiesService.getScriptProperties().getProperty(MANAGER_PASSWORD_PROPERTY)) {
@@ -14,13 +6,11 @@ function login(passcode) {
   return { 'success': true, 'role': ROLE_MANAGER, 'token': issueAuthToken_(ROLE_MANAGER) };
 }
 
- 
 function createEmployeeSession() {
   ensureAppDataMigration_();
   return { 'success': true, 'role': ROLE_EMPLOYEE, 'token': issueAuthToken_(ROLE_EMPLOYEE)};
 }
 
- 
 function ensureAppDataMigration_() {
   const properties = PropertiesService.getScriptProperties();
   if (properties.getProperty(APP_DATA_MIGRATION_PROPERTY) === 'done') return;
@@ -64,13 +54,12 @@ function changeManagerPassword(currentPassword, newPassword, confirmPassword, au
   });
 }
 
- 
 function authenticateClockPin(empId, type, pin, authToken) {
   requireLoggedIn_(authToken);
   requireValidEmployeePin_(pin);
   if (CLOCK_TYPES.indexOf(type) === -1) throw new Error('不正な打刻種別です');
   return withAppLock_(function () {
-     
+
     if (readEmployeePin_(empId) !== pin) throw new Error('PINが違います');
     const now = new Date();
     const state = readTodayClockState_(empId, getSheet(SHEET_NAMES.TIME_CLOCKS), now);
@@ -85,7 +74,6 @@ function authenticateClockPin(empId, type, pin, authToken) {
   });
 }
 
- 
 function consumeClockPinTicket_(empId, type, ticket, authToken, now) {
   requireLoggedIn_(authToken);
   const cache = CacheService.getScriptCache();
@@ -98,11 +86,6 @@ function consumeClockPinTicket_(empId, type, ticket, authToken, now) {
   cache.remove(CLOCK_PIN_TICKET_PREFIX + ticket);
 }
 
- 
-
-
-
-
 function logout(token) {
   const cacheKey = buildAuthCacheKey_(token);
   if (cacheKey === '') {
@@ -112,21 +95,11 @@ function logout(token) {
   return true;
 }
 
- 
-
-
-
-
 function issueAuthToken_(role) {
   const token = Utilities.getUuid();
   CacheService.getScriptCache().put(AUTH_TOKEN_CACHE_PREFIX + token, role, AUTH_TOKEN_TTL_SECONDS);
   return token;
 }
-
- 
-
-
-
 
 function getRoleByToken_(token) {
   const cacheKey = buildAuthCacheKey_(token);
@@ -137,34 +110,17 @@ function getRoleByToken_(token) {
   return role ? role : '';
 }
 
- 
-
-
-
-
-
 function requireLoggedIn_(token) {
   if (getRoleByToken_(token) === '') {
     throw new Error('ログインし直してください');
   }
 }
 
- 
-
-
-
-
-
 function requireManagerRole_(token) {
   if (getRoleByToken_(token) !== ROLE_MANAGER) {
     throw new Error('店長としてログインし直してください');
   }
 }
-
- 
-
-
-
 
 function buildAuthCacheKey_(token) {
   const text = (token === null || token === undefined) ? '' : String(token).trim();

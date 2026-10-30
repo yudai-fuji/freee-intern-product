@@ -1,5 +1,3 @@
- 
-
 function ensureTodayWorkSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(SHEET_NAMES.TODAY_WORK);
@@ -27,7 +25,7 @@ function findTodayWorkRow(sheet, dateKey, empId) {
   if (lastRow < 2) {
     return -1;
   }
-  const values = sheet.getRange(2, 1, lastRow - 1, 2).getValues();  
+  const values = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
   for (let i = 0; i < values.length; i++) {
     const rowDate = values[i][0];
     const rowEmpId = values[i][1];
@@ -36,7 +34,7 @@ function findTodayWorkRow(sheet, dateKey, empId) {
     }
     const rowDateKey = (rowDate instanceof Date) ? Utilities.formatDate(rowDate, TIME_ZONE, 'yyyy/MM/dd') : String(rowDate);
     if (rowDateKey === dateKey && String(rowEmpId) === String(empId)) {
-      return i + 2;  
+      return i + 2;
     }
   }
   return -1;
@@ -59,7 +57,7 @@ function getTodayWorkMapForDate(dateKey) {
     }
     const rowDateKey = (rowDate instanceof Date) ? Utilities.formatDate(rowDate, TIME_ZONE, 'yyyy/MM/dd') : String(rowDate);
     if (rowDateKey !== dateKey) {
-      continue;  
+      continue;
     }
     map[String(rowEmpId)] = {
       'position': values[i][2] || '',
@@ -116,7 +114,6 @@ function getTodayWorkSettings(authToken) {
 function saveTodayWork(empId, position, noticesText, authToken) {
   requireManagerRole_(authToken);
 
-   
   const nameByEmpId = getActiveEmployeeNameMap();
   const empName = nameByEmpId[String(empId)];
   console.log(empName)
@@ -150,7 +147,6 @@ function getTodayWorkInfo(empId) {
 
   const position = saved ? saved.position : '';
   const notices = splitNoticesText(saved ? saved.noticesText : '');
-   
 
   return {
     'position': position,

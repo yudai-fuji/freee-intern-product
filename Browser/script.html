@@ -2,7 +2,6 @@
       let selectedEmpId = null;
       let clockIntervalId = null;
 
-       
       let employeeClockState = null;
       let clockStateRequestId = 0;
       const pendingClockRequests = new Set();
@@ -12,30 +11,21 @@
       let isClockPinSubmitting = false;
       let sharedNotePinGrant = null;
 
-       
-       
       let employeeListItems = [];
 
-       
       let authToken = '';
 
-       
       let employeeAuthToken = '';
 
-       
       let currentScreen = 'employee';
       let currentManagerSection = '';
 
-       
       let loginSessionId = 0;
 
-       
       const UNRECORDED_LABEL = '未打刻';
 
-       
       const POSITION_ITEMS = <?!= JSON.stringify(POSITION_ITEMS) ?>;
 
-       
       const ROLE_MANAGER = <?!= JSON.stringify(ROLE_MANAGER) ?>;
 
       window.addEventListener('load', function () {
@@ -65,11 +55,6 @@
         initApp();
       });
 
-       
-
-
-
-
       function initApp() {
         google.script.run
           .withSuccessHandler(function (result) {
@@ -91,26 +76,14 @@
           .createEmployeeSession();
       }
 
-       
-
-
-
-
-
       function showScreen(screenName) {
         currentScreen = screenName;
         const isEmployee = (screenName === 'employee');
         document.getElementById('employee_screen').style.display = isEmployee ? 'block' : 'none';
         document.getElementById('manager_screen').style.display = isEmployee ? 'none' : 'block';
 
-         
         document.getElementById('screen_switch_btn').textContent = isEmployee ? '店長画面へ' : '従業員画面へ';
       }
-
-       
-
-
-
 
       function handleScreenSwitchButtonClick() {
         if (pendingClockRequests.size > 0 || isSharedNoteSubmitting) { return; }
@@ -126,10 +99,6 @@
         }
       }
 
-       
-
-
-
       function openManagerLoginModal() {
         document.getElementById('manager_password_input').value = '';
         showManagerLoginError('');
@@ -137,35 +106,21 @@
         document.getElementById('manager_password_input').focus();
       }
 
-       
-
-
-
       function closeManagerLoginModal() {
         document.getElementById('manager_login_overlay').style.display = 'none';
         document.getElementById('manager_password_input').value = '';
       }
 
-       
-
-
-
-
       function handleManagerLoginOverlayClick(event) {
-         
+
         if (event.target === event.currentTarget) {
           closeManagerLoginModal();
         }
       }
 
-       
-
-
-
-
       function submitManagerLogin() {
         const passwordInput = document.getElementById('manager_password_input');
-         
+
         const password = passwordInput.value;
         const submitBtn = document.getElementById('manager_login_submit_btn');
         if (submitBtn.disabled) { return; }
@@ -198,50 +153,27 @@
           .login(password);
       }
 
-       
-
-
-
-
       function showManagerLoginError(message) {
         document.getElementById('manager_login_error').textContent = message;
       }
 
-       
-
-
-
-
       function startManagerSession(token) {
         authToken = token;
-        loginSessionId++;  
+        loginSessionId++;
 
         closeAllModals();
-         
+
         resetManagerScreen();
         showScreen('manager');
       }
-
-       
-
-
 
       function openScreenSwitchModal() {
         document.getElementById('screen_switch_overlay').style.display = 'flex';
       }
 
-       
-
-
-
       function closeScreenSwitchModal() {
         document.getElementById('screen_switch_overlay').style.display = 'none';
       }
-
-       
-
-
-
 
       function handleScreenSwitchOverlayClick(event) {
         if (event.target === event.currentTarget) {
@@ -249,19 +181,10 @@
         }
       }
 
-       
-
-
-
       function confirmScreenSwitch() {
         closeScreenSwitchModal();
         switchToEmployeeScreen();
       }
-
-       
-
-
-
 
       function switchToEmployeeScreen() {
         if (attendancePendingSaves.size) { return; }
@@ -269,24 +192,19 @@
         if (!confirmLeaveShiftEditor(switchToEmployeeScreen)) { return; }
         const managerToken = authToken;
         authToken = employeeAuthToken;
-        loginSessionId++;  
+        loginSessionId++;
 
         closeAllModals();
-         
+
         resetEmployeeScreen();
         loadEmployeeList();
         resetManagerScreen();
         showScreen('employee');
 
-         
         if (managerToken !== '' && managerToken !== employeeAuthToken) {
           google.script.run.logout(managerToken);
         }
       }
-
-       
-
-
 
       function closeAllModals() {
         closeClockPinDialog();
@@ -298,11 +216,6 @@
         }
       }
 
-       
-
-
-
-
       function resetEmployeeScreen() {
         isSharedNoteSubmitting = false;
         closeSharedNoteModal();
@@ -313,11 +226,6 @@
         document.getElementById('employee_list').innerHTML = '';
         showEmployeeListMessage('');
       }
-
-       
-
-
-
 
       function resetManagerScreen() {
         document.getElementById('manager_screen').classList.remove('skill-section-active', 'order-section-active', 'attendance-section-active');
@@ -352,21 +260,9 @@
         document.getElementById('order_body').style.display = 'none';
       }
 
-       
-
-
-
-
-
       function isSameLoginSession(sessionId) {
         return authToken !== '' && sessionId === loginSessionId;
       }
-
-       
-
-
-
-
 
       function loadEmployeeList(onFailed) {
         const sessionId = loginSessionId;
@@ -389,12 +285,6 @@
           .getActiveEmployeeList(authToken);
       }
 
-       
-
-
-
-
-
       function applyEmployeeList(employees) {
         employeeListItems = employees || [];
         renderEmployeeList();
@@ -405,12 +295,6 @@
           renderEmployeePinTargets();
         }
       }
-
-       
-
-
-
-
 
       function renderEmployeeList() {
         const list = document.getElementById('employee_list');
@@ -439,11 +323,6 @@
         }
       }
 
-       
-
-
-
-
       function createEmployeeListItem(employee) {
         const item = document.createElement('li');
         item.className = 'employee-item';
@@ -454,12 +333,6 @@
         });
         return item;
       }
-
-       
-
-
-
-
 
       function renderEmployeeNameBlock(container, employee) {
         container.innerHTML = '';
@@ -475,20 +348,9 @@
         container.appendChild(numberEl);
       }
 
-       
-
-
-
-
       function showEmployeeListMessage(message) {
         document.getElementById('employee_list_message').textContent = message;
       }
-
-       
-
-
-
-
 
       function selectEmployee(employee, item) {
         if (isSharedNoteSubmitting) { return; }
@@ -505,21 +367,15 @@
         }
         item.classList.add('selected');
 
-         
         renderEmployeeNameBlock(document.getElementById('selected_emp_name'), employee);
         document.getElementById('record_message').textContent = '';
-        hideTodayWorkCard();  
-        hideSharedNoteCard();  
+        hideTodayWorkCard();
+        hideSharedNoteCard();
         document.getElementById('right_panel').style.display = 'block';
         startClock();
-        loadSharedNotesForSelection(selectedEmpId);  
+        loadSharedNotesForSelection(selectedEmpId);
         loadEmployeeClockState(selectedEmpId);
       }
-
-       
-
-
-
 
       function clearEmployeeSelection() {
         closeClockPinDialog();
@@ -545,10 +401,6 @@
         hideTodayWorkCard();
         hideSharedNoteCard();
       }
-
-       
-
-
 
       function hideTodayWorkCard() {
         document.getElementById('today_work_card').style.display = 'none';
@@ -632,7 +484,7 @@
 
       function startClockSubmission(empId) {
         pendingClockRequests.add(clockRequestKey(empId, loginSessionId));
-        clockStateRequestId++;  
+        clockStateRequestId++;
         renderClockButtons();
       }
 
@@ -658,7 +510,6 @@
         return typeof pin === 'string' && pin.length === 6 && !/[^0-9]/.test(pin);
       }
 
-       
       function openClockPinDialog(type, resumeWithNote) {
         if (clockPinContext !== null || currentScreen !== 'employee' || !canRecordClock(type)) { return; }
         clockPinContext = {
@@ -765,11 +616,6 @@
         document.getElementById('record_message').textContent = 'エラー: ' + error.message;
       }
 
-       
-
-
-
-
       function loadTodayWorkInfo(empId) {
         const sessionId = loginSessionId;
         google.script.run
@@ -787,10 +633,6 @@
           })
           .getTodayWorkInfo(empId);
       }
-
-       
-
-
 
       function renderTodayWorkCard(info) {
         const card = document.getElementById('today_work_card');
@@ -843,10 +685,6 @@
         card.style.display = 'block';
       }
 
-       
-
-
-
       function showTodayWorkFetchError() {
         const card = document.getElementById('today_work_card');
         const body = document.getElementById('today_work_card_body');
@@ -857,15 +695,6 @@
         body.appendChild(warning);
         card.style.display = 'block';
       }
-
-       
-       
-
-       
-
-
-
-
 
       function loadSharedNotesForSelection(empId) {
         const sessionId = loginSessionId;
@@ -885,11 +714,6 @@
           .getSharedNotesForSelection(empId);
       }
 
-       
-
-
-
-
       function loadSharedNotesForClockIn(empId) {
         const sessionId = loginSessionId;
         google.script.run
@@ -907,11 +731,6 @@
           })
           .getSharedNotesForClockIn(empId);
       }
-
-       
-
-
-
 
       function renderSharedNoteCard(notes) {
         const card = document.getElementById('shared_note_card');
@@ -948,22 +767,11 @@
         document.getElementById('shared_note_card_body').innerHTML = '';
       }
 
-       
-       
-       
-
-       
       let sharedNoteEmpId = null;
 
-       
       const SHARED_NOTE_SELECT_PLACEHOLDER = '共有したいスタッフを選択してください（複数選択可）';
 
-       
       let isSharedNoteSubmitting = false;
-
-       
-
-
 
       function openSharedNoteDialog() {
         if (!canRecordClock('退勤') || isSharedNoteSubmitting || sharedNoteEmpId !== null) {
@@ -999,13 +807,6 @@
           .getSharedNoteRecipientCandidates(empId, authToken);
       }
 
-       
-
-
-
-
-
-
       function renderSharedNoteRecipientList(candidates) {
         const list = document.getElementById('shared_note_recipient_list');
         list.innerHTML = '';
@@ -1037,10 +838,6 @@
         }
       }
 
-       
-
-
-
       function getSharedNoteCheckedRecipients() {
         const boxes = document.querySelectorAll('#shared_note_recipient_list input[type=checkbox]:checked');
         const result = [];
@@ -1050,11 +847,6 @@
         return result;
       }
 
-       
-
-
-
-
       function toggleSharedNoteRecipientDropdown() {
         document.getElementById('shared_note_select').classList.toggle('open');
       }
@@ -1063,11 +855,6 @@
         document.getElementById('shared_note_select').classList.remove('open');
       }
 
-       
-
-
-
-
       function handleDocumentClickForSharedNoteDropdown(event) {
         const selectBox = document.getElementById('shared_note_select');
         if (!selectBox.classList.contains('open') || selectBox.contains(event.target)) {
@@ -1075,11 +862,6 @@
         }
         closeSharedNoteRecipientDropdown();
       }
-
-       
-
-
-
 
       function updateSharedNoteSelectLabel() {
         const label = document.getElementById('shared_note_select_label');
@@ -1111,12 +893,6 @@
         document.getElementById('shared_note_confirm_error').textContent = message;
       }
 
-       
-
-
-
-
-
       function goToSharedNoteConfirm() {
         const checked = getSharedNoteCheckedRecipients();
         const noteText = document.getElementById('shared_note_text').value.trim();
@@ -1140,18 +916,9 @@
         showSharedNoteConfirmView();
       }
 
-       
-
-
-
       function backToSharedNoteInput() {
         showSharedNoteInputView();
       }
-
-       
-
-
-
 
       function closeSharedNoteModal() {
         if (isSharedNoteSubmitting) { return; }
@@ -1167,12 +934,10 @@
         renderClockButtons();
       }
 
-       
       function submitClockOutWithoutSharedNote() {
         submitSharedNoteClockOut(false);
       }
 
-       
       function submitClockOutWithSharedNote() {
         submitSharedNoteClockOut(true);
       }
@@ -1193,7 +958,7 @@
           return;
         }
         const ticket = sharedNotePinGrant.ticket;
-        sharedNotePinGrant = null;  
+        sharedNotePinGrant = null;
         isSharedNoteSubmitting = true;
         startClockSubmission(empId);
         showSharedNoteInputError('');
@@ -1231,18 +996,11 @@
         document.getElementById('shared_note_confirm_submit_btn').disabled = disabled;
       }
 
-       
-       
       let isEmployeeEditSubmitting = false;
 
-       
       let employeeDeleteTarget = null;
       let employeePinRequestId = 0;
       let employeeDirectoryRequestId = 0;
-
-       
-
-
 
       function resetEmployeeEditSection() {
         finishEmployeeAdding();
@@ -1323,10 +1081,6 @@
         });
       }
 
-       
-
-
-
       function showEmployeeAddForm() {
         if (isEmployeeEditSubmitting) {
           return;
@@ -1343,11 +1097,6 @@
         document.getElementById('add_last_name').focus();
       }
 
-       
-
-
-
-
       function showEmployeeDeleteList() {
         if (isEmployeeEditSubmitting) {
           return;
@@ -1361,17 +1110,12 @@
         employeeDeleteTarget = null;
         showEmployeeEditStatus('employee_delete_status', '', false);
 
-         
         showAppMessage('employee_delete_message', '読み込み中...', false);
         document.getElementById('employee_delete_list').innerHTML = '';
         loadEmployeeList(function (error) {
           showAppMessage('employee_delete_message', 'エラー: ' + error.message, false);
         });
       }
-
-       
-
-
 
       function renderEmployeeDeleteList() {
         const list = document.getElementById('employee_delete_list');
@@ -1388,11 +1132,6 @@
         }
       }
 
-       
-
-
-
-
       function createEmployeeDeleteItem(employee) {
         const item = document.createElement('li');
         item.className = 'employee-delete-item';
@@ -1403,12 +1142,6 @@
         });
         return item;
       }
-
-       
-
-
-
-
 
       function selectEmployeeDeleteTarget(employee, item) {
         if (isEmployeeEditSubmitting) {
@@ -1447,19 +1180,9 @@
           .getEmployeeDeletionPreview(employee.id, authToken);
       }
 
-       
-
-
-
-
-
       function isEmployeeDeleteTarget(empId) {
         return employeeDeleteTarget !== null && String(employeeDeleteTarget.id) === empId;
       }
-
-       
-
-
 
       function renderEmployeeDeleteImpact() {
         const container = document.getElementById('employee_delete_impact');
@@ -1479,10 +1202,6 @@
 
       }
 
-       
-
-
-
       function backToEmployeeDeleteList() {
         if (isEmployeeEditSubmitting) {
           return;
@@ -1496,11 +1215,6 @@
           items[i].classList.remove('selected');
         }
       }
-
-       
-
-
-
 
       function submitDeleteEmployee() {
         if (isEmployeeEditSubmitting || employeeDeleteTarget === null) {
@@ -1522,8 +1236,8 @@
             finishEmployeeDeleting();
             employeeDeleteTarget = null;
             document.getElementById('employee_delete_confirm').style.display = 'none';
-            applyEmployeeList(result.employees);  
-             
+            applyEmployeeList(result.employees);
+
             showEmployeeEditStatus('employee_delete_status', result.message, false);
           })
           .withFailureHandler(function (error) {
@@ -1536,21 +1250,12 @@
           .deleteEmployee(employeeDeleteTarget.id, authToken);
       }
 
-       
-
-
-
       function finishEmployeeDeleting() {
         isEmployeeEditSubmitting = false;
         const submitBtn = document.getElementById('employee_delete_submit_btn');
         submitBtn.disabled = false;
         submitBtn.textContent = '削除する';
       }
-
-       
-
-
-
 
       function submitAddEmployee() {
         if (isEmployeeEditSubmitting) {
@@ -1589,7 +1294,7 @@
             document.getElementById('add_last_name').value = '';
             document.getElementById('add_first_name').value = '';
             showEmployeeEditStatus('add_employee_status', result.message, false);
-            applyEmployeeList(result.employees);  
+            applyEmployeeList(result.employees);
           })
           .withFailureHandler(function (error) {
             if (!isSameLoginSession(sessionId)) {
@@ -1723,10 +1428,6 @@
           .changeManagerPassword(currentPassword, newPassword, confirmPassword, authToken);
       }
 
-       
-
-
-
       function finishEmployeeAdding() {
         isEmployeeEditSubmitting = false;
         document.getElementById('add_employee_pin').value = '';
@@ -1734,13 +1435,6 @@
         submitBtn.disabled = false;
         submitBtn.textContent = '登録';
       }
-
-       
-
-
-
-
-
 
       function showAppMessage(elementId, message, isError) {
         const element = document.getElementById(elementId);
@@ -1752,10 +1446,6 @@
       function showEmployeeEditStatus(elementId, message, isError) {
         showAppMessage(elementId, message, isError);
       }
-
-       
-
-
 
       function showManagerSection(navItem) {
         if (isEmployeeEditSubmitting || isManagerPasswordSubmitting || attendancePendingSaves.size) { return; }
@@ -1795,13 +1485,13 @@
           document.getElementById('section_employee_edit').style.display = 'block';
         } else if (sectionName === 'dashboard') {
           document.getElementById('section_dashboard').style.display = 'block';
-          loadTodayWork();  
+          loadTodayWork();
         } else if (sectionName === 'attendance') {
           document.getElementById('section_attendance').style.display = 'block';
-          loadAttendances();  
+          loadAttendances();
         } else if (sectionName === 'skill') {
           document.getElementById('section_skill').style.display = 'block';
-          loadSkills();  
+          loadSkills();
         } else if (sectionName === 'shift_confirm') {
           document.getElementById('section_shift_confirm').style.display = 'block';
           loadShiftMonth(shiftYear, shiftMonth);
@@ -1811,16 +1501,13 @@
           loadShiftWeek(shiftWeekStart);
         } else if (sectionName === 'order') {
           document.getElementById('section_order').style.display = 'block';
-          changeOrderView('cart');  
-          loadOrderBoard();  
+          changeOrderView('cart');
+          loadOrderBoard();
         } else if (sectionName === 'password_change') {
           document.getElementById('section_password_change').style.display = 'block';
           document.getElementById('current_manager_password').focus();
         }
       }
-
-       
-
 
       function loadTodayWork() {
         document.getElementById('today_work_table').style.display = 'none';
@@ -1843,9 +1530,6 @@
           .getTodayWorkSettings(authToken);
       }
 
-       
-
-
       function renderTodayWork(result) {
         document.getElementById('today_work_date').textContent = result.date;
 
@@ -1864,9 +1548,6 @@
         showTodayWorkMessage('', false);
         document.getElementById('today_work_table').style.display = 'table';
       }
-
-       
-
 
       function createTodayWorkRow(setting) {
         const row = document.createElement('tr');
@@ -1916,10 +1597,6 @@
         return row;
       }
 
-       
-
-
-
       function saveTodayWorkRow(empId, select, textarea, saveBtn, statusSpan) {
         saveBtn.disabled = true;
         statusSpan.textContent = '保存中...';
@@ -1950,13 +1627,9 @@
         showTodayWorkMessage('エラー: ' + error.message, true);
       }
 
-       
-
-
       function showTodayWorkMessage(message, isError) {
         showAppMessage('today_work_message', message, isError);
       }
-
 
       let attendanceRows = new Map();
       const attendanceDrafts = new Map();
@@ -1974,7 +1647,6 @@
         showAttendanceMessage('', false);
       }
 
-       
       function loadAttendances() {
         if (attendancePendingSaves.size) { return; }
         const requestId = ++attendanceRequestId;
@@ -2160,16 +1832,11 @@
           }, authToken);
       }
 
-
-       
-
-
-
       function createAttendanceCell(text) {
         const cell = document.createElement('td');
         cell.textContent = text;
         if (text === UNRECORDED_LABEL) {
-          cell.classList.add('unrecorded');  
+          cell.classList.add('unrecorded');
         }
         return cell;
       }
@@ -2179,31 +1846,22 @@
         showAttendanceMessage('エラー: ' + error.message, true);
       }
 
-       
-
-
       function showAttendanceMessage(message, isError) {
         showAppMessage('attendance_message', message, isError);
       }
 
-       
-       
       const SKILL_ITEMS = <?!= JSON.stringify(SKILL_ITEMS) ?>;
       const SKILL_LEVELS = <?!= JSON.stringify(SKILL_LEVELS) ?>;
       const SKILL_LEVEL_LABELS = <?!= JSON.stringify(SKILL_LEVEL_LABELS) ?>;
 
-      let skillMatrix = [];  
-      let skillSelectedEmpId = null;  
+      let skillMatrix = [];
+      let skillSelectedEmpId = null;
       let skillEditing = false;
       let skillSaving = false;
-      const skillDrafts = new Map();  
+      const skillDrafts = new Map();
       let skillLeaveAction = null;
       let skillDiscardFocus = null;
       let skillRequestId = 0;
-
-       
-
-
 
       function loadSkills() {
         if (skillEditing || skillSaving) { return; }
@@ -2228,11 +1886,6 @@
           .getSkillMatrix(authToken);
       }
 
-       
-
-
-
-
       function renderSkills(matrix) {
         if (skillEditing || skillSaving) { return; }
         closeSkillDiscardDialog();
@@ -2244,7 +1897,6 @@
           return;
         }
 
-         
         if (skillSelectedEmpId !== null && findSkillEmployee(skillSelectedEmpId) === null) {
           skillSelectedEmpId = null;
         }
@@ -2255,11 +1907,6 @@
         document.getElementById('skill_layout').style.display = 'grid';
       }
 
-       
-
-
-
-
       function renderSkillEmployeeList() {
         const list = document.getElementById('skill_employee_list');
         list.innerHTML = '';
@@ -2269,16 +1916,11 @@
         }
       }
 
-       
-
-
-
-
       function createSkillEmployeeListItem(employeeSkill) {
         const item = document.createElement('li');
         item.className = 'skill-employee-item';
         item.dataset.empId = String(employeeSkill.id);
-        renderEmployeeNameBlock(item, employeeSkill);  
+        renderEmployeeNameBlock(item, employeeSkill);
         if (skillSelectedEmpId !== null && String(employeeSkill.id) === skillSelectedEmpId) {
           item.classList.add('selected');
         }
@@ -2287,11 +1929,6 @@
         });
         return item;
       }
-
-       
-
-
-
 
       function selectSkillEmployee(empId) {
         if (skillSelectedEmpId === empId || !findSkillEmployee(empId)) { return; }
@@ -2399,11 +2036,6 @@
         }
       }
 
-       
-
-
-
-
       function findSkillEmployee(empId) {
         for (let i = 0; i < skillMatrix.length; i++) {
           if (String(skillMatrix[i].id) === String(empId)) {
@@ -2412,11 +2044,6 @@
         }
         return null;
       }
-
-       
-
-
-
 
       function renderSkillDetail() {
         const detail = document.getElementById('skill_detail');
@@ -2429,7 +2056,6 @@
           return;
         }
 
-         
         renderEmployeeNameBlock(document.getElementById('skill_detail_name'), employeeSkill);
 
         const itemsEl = document.getElementById('skill_detail_items');
@@ -2448,13 +2074,6 @@
         emptyMessage.style.display = 'none';
         detail.style.display = 'block';
       }
-
-       
-
-
-
-
-
 
       function createSkillDetailItem(item, employeeSkill) {
         const row = document.createElement('div');
@@ -2513,11 +2132,6 @@
         return row;
       }
 
-       
-
-
-
-
       function formatSkillUpdatedAtLabel(dateStr) {
         if (!dateStr) {
           return '最終更新：-';
@@ -2528,11 +2142,6 @@
         }
         return '最終更新：' + Number(parts[1]) + '/' + Number(parts[2]);
       }
-
-       
-
-
-
 
       function saveSelectedEmployeeSkills(onSaved) {
         if (!skillEditing || skillSaving) { return; }
@@ -2569,14 +2178,6 @@
           .saveEmployeeSkillsBatch(changes, authToken);
       }
 
-       
-
-
-
-
-
-
-
       function applySavedSkills(empId, skillValues, updatedAt) {
         const employeeSkill = findSkillEmployee(empId);
         if (employeeSkill === null) {
@@ -2587,10 +2188,6 @@
           employeeSkill.updatedAt[SKILL_ITEMS[i]] = updatedAt[SKILL_ITEMS[i]];
         }
       }
-
-       
-
-
 
       function resetSkillSection() {
         skillRequestId++;
@@ -2610,12 +2207,6 @@
         showSkillMessage('', false);
       }
 
-       
-
-
-
-
-
       function showSkillSaveStatus(message, isError) {
         const statusEl = document.getElementById('skill_save_status');
         statusEl.textContent = message;
@@ -2630,14 +2221,10 @@
         showSkillMessage('エラー: ' + error.message, true);
       }
 
-       
-
-
       function showSkillMessage(message, isError) {
         showAppMessage('skill_message', message, isError);
       }
 
-       
       let shiftYear = null;
       let shiftMonth = null;
       let shiftSelectedDate = null;
@@ -2778,7 +2365,6 @@
         }
       }
 
-       
       function parseShiftDate(dateKey) {
         return new Date(dateKey + 'T00:00:00Z');
       }
@@ -2863,7 +2449,6 @@
         loadShiftMonth(date.getUTCFullYear(), date.getUTCMonth() + 1);
       }
 
-       
       function getShiftDayStatus(dateKey, records) {
         if (isShiftClosedDate(dateKey)) { return 'closed'; }
         return records.some(function (record) { return record.workType !== 'unavailable'; }) ? 'created' : 'uncreated';
@@ -3420,7 +3005,7 @@
           workType: shiftEditMode, startTime: '', endTime: '' };
         if (shiftEditMode === 'delete') {
           if (!saved) {
-             
+
             if (previous) { shiftDrafts.delete(key); }
             renderShiftWeek();
             return;
@@ -3449,7 +3034,7 @@
         }
         showShiftEditMessage('', false);
         renderShiftWeek();
-         
+
         document.querySelectorAll('.shift-edit-cell').forEach(function (button) {
           if (button.dataset.employeeId === String(employeeId) && button.dataset.dateKey === dateKey) { button.focus(); }
         });
@@ -3472,7 +3057,7 @@
             });
             shiftDrafts.clear();
             shiftSaving = false;
-             
+
             shiftMonthRequestId++;
             shiftMonthRecords = [];
             renderShiftWeek();
@@ -3487,9 +3072,6 @@
           .saveShiftDrafts(changes, authToken);
       }
 
-       
-       
-
       function closeIngredientModal(overlayId) {
         document.getElementById(overlayId).style.display = 'none';
         if (overlayId === 'order_item_overlay') {
@@ -3498,48 +3080,31 @@
       }
 
       function handleIngredientOverlayClick(event) {
-         
+
         if (event.target === event.currentTarget) {
           closeIngredientModal(event.currentTarget.id);
         }
       }
 
-       
-
-
-
       function createIngredientOperationKey() {
         return 'op-' + Date.now() + '-' + Math.random().toString(36).substring(2, 10);
       }
 
-       
-       
       let orderBoard = null;
 
-       
       let orderView = 'cart';
 
-       
       let orderCart = [];
 
-       
       let orderItemSelection = null;
 
-       
       let orderSelectedVendorId = '';
 
-       
       let orderDrafts = [];
 
-       
       let orderSendKey = '';
 
-       
       let orderSending = false;
-
-       
-
-
 
       function loadOrderBoard() {
         document.getElementById('order_body').style.display = 'none';
@@ -3564,12 +3129,6 @@
           .getOrderBoard(authToken);
       }
 
-       
-
-
-
-
-
       function applyOrderBoard(board) {
         orderBoard = board;
         document.getElementById('order_body').style.display = 'block';
@@ -3591,12 +3150,6 @@
       function showOrderMessage(message, isError) {
         showAppMessage('order_message', message, isError);
       }
-
-       
-
-
-
-
 
       function changeOrderView(viewName) {
         orderView = viewName;
@@ -3637,9 +3190,6 @@
         }
       }
 
-       
-
-
       function createOrderElement(tagName, className, text) {
         const element = document.createElement(tagName);
         if (className) {
@@ -3650,9 +3200,6 @@
         }
         return element;
       }
-
-       
-
 
       function createOrderLinkButton(text, onClick) {
         const button = createOrderElement('button', 'order-link', text);
@@ -3688,16 +3235,9 @@
         return null;
       }
 
-       
       function roundOrderQuantity(quantity) {
         return Math.round(quantity * 10) / 10;
       }
-
-       
-
-       
-
-
 
       function renderOrderCart() {
 
@@ -3721,9 +3261,6 @@
         }
         document.getElementById('order_cart_footer').style.display = 'flex';
       }
-
-       
-
 
       function createOrderCartCard(item, cartItem) {
         const card = createOrderElement('div', 'order-cart-card');
@@ -3755,7 +3292,6 @@
         quantityBox.appendChild(createOrderElement('span', 'order-cart-unit', item.unit));
         card.appendChild(quantityBox);
 
-         
         const vendorBox = createOrderElement('div', 'order-cart-vendor');
         vendorBox.appendChild(document.createTextNode('業者：'));
         if (item.vendorId === '') {
@@ -3774,10 +3310,6 @@
         return card;
       }
 
-       
-
-
-
       function changeOrderQuantity(ingredientId, delta) {
         const cartItem = findOrderCartItem(ingredientId);
         if (!cartItem) {
@@ -3791,9 +3323,6 @@
         renderOrderCart();
       }
 
-       
-
-
       function setOrderQuantity(ingredientId, value) {
         const cartItem = findOrderCartItem(ingredientId);
         if (!cartItem) {
@@ -3803,7 +3332,7 @@
         if (isFinite(quantity) && quantity > 0 && quantity <= orderBoard.maxQuantity) {
           cartItem.quantity = quantity;
         }
-        renderOrderCart();  
+        renderOrderCart();
       }
 
       function removeOrderCartItem(ingredientId) {
@@ -3822,9 +3351,6 @@
         renderOrderCart();
       }
 
-       
-
-       
       function openOrderItemModal() {
         if (!orderBoard) {
           showOrderMessage('発注の情報を読み込めていません。発注管理を開き直してください', true);
@@ -3835,7 +3361,6 @@
         document.getElementById('order_item_overlay').style.display = 'flex';
       }
 
-       
       function applyOrderItemSelection() {
         if (!orderBoard || orderItemSelection === null) { return; }
         const nextCart = orderCart.filter(function (item) {
@@ -3851,10 +3376,6 @@
         closeIngredientModal('order_item_overlay');
         renderOrderCart();
       }
-
-       
-
-
 
       function renderOrderItemChoices() {
         const container = document.getElementById('order_item_choices');
@@ -3879,7 +3400,7 @@
           button.setAttribute('aria-pressed', String(selected));
           button.type = 'button';
           if (item.vendorId === '') {
-            button.disabled = true;  
+            button.disabled = true;
           } else {
             button.addEventListener('click', function () {
               if (orderItemSelection.has(item.id)) {
@@ -3900,13 +3421,6 @@
           container.appendChild(createOrderElement('div', 'order-empty', '選べる食材がありません。'));
         }
       }
-
-       
-
-       
-
-
-
 
       function refreshOrderConfirm() {
         const list = document.getElementById('order_confirm_list');
@@ -3951,11 +3465,6 @@
         }
       }
 
-       
-
-
-
-
       function renderOrderConfirm(drafts) {
         orderDrafts = drafts;
         const list = document.getElementById('order_confirm_list');
@@ -3972,9 +3481,6 @@
         }
         footer.style.display = drafts.length > 0 ? 'flex' : 'none';
       }
-
-       
-
 
       function createOrderConfirmCard(draft) {
         const card = createOrderElement('div', 'order-vendor-card');
@@ -4003,11 +3509,6 @@
         return card;
       }
 
-       
-
-
-
-
       function updateOrderSendButton() {
         const sendBtn = document.getElementById('order_send_btn');
         sendBtn.textContent = orderSending ? '送信中...' : (orderDrafts.length + '社へ発注する');
@@ -4024,13 +3525,9 @@
         }
       }
 
-       
-
-
-
       function submitOrderMails() {
         if (orderSending || orderDrafts.length === 0) {
-          return;  
+          return;
         }
         if (orderSendKey === '') {
           orderSendKey = createIngredientOperationKey();
@@ -4048,7 +3545,7 @@
             }
             orderSending = false;
             updateOrderSendButton();
-            orderSendKey = '';  
+            orderSendKey = '';
             applyOrderAfterSend(result);
           })
           .withFailureHandler(function (error) {
@@ -4057,7 +3554,7 @@
             }
             orderSending = false;
             updateOrderSendButton();
-             
+
             showOrderSendStatus('エラー: ' + error.message, true);
           })
           .sendOrderMails({
@@ -4067,16 +3564,10 @@
           });
       }
 
-       
-
-
-
-
-
       function applyOrderAfterSend(result) {
         const detail = result.detail;
         if (!detail) {
-           
+
           orderCart = [];
         } else {
           const keptCart = [];
@@ -4094,13 +3585,12 @@
         showOrderMessage(result.message, hasFailure);
 
         if (!hasFailure && orderCart.length === 0) {
-          changeOrderView('history');  
+          changeOrderView('history');
         } else {
           showOrderSendStatus(result.message, hasFailure);
         }
       }
 
-       
       let orderUpcomingToday = '';
 
       function getOrderToday() {
@@ -4134,12 +3624,6 @@
             orderBoard && orderUpcomingToday !== getOrderToday()) { renderOrderUpcoming(); }
       }
 
-       
-
-       
-
-
-
       function renderOrderHistory() {
         const list = document.getElementById('order_history_list');
         list.innerHTML = '';
@@ -4154,9 +3638,6 @@
           list.appendChild(createOrderHistoryCard(orderBoard.history[i]));
         }
       }
-
-       
-
 
       function createOrderHistoryCard(history) {
         const card = createOrderElement('div', 'order-history-card');
@@ -4196,9 +3677,6 @@
         return card;
       }
 
-       
-
-       
       function renderOrderVendor() {
         const vendor = findOrderVendorById(orderSelectedVendorId) || orderBoard.vendors[0];
         orderSelectedVendorId = vendor ? vendor.id : '';
@@ -4228,26 +3706,17 @@
         listEl.scrollTop = scrollTop;
       }
 
-       
-
-
-
-
       function openOrderVendorDetail(vendorId) {
         orderSelectedVendorId = vendorId;
         changeOrderView('vendor');
       }
 
-       
       function renderOrderVendorDetail(vendor) {
         const container = document.getElementById('order_vendor_detail');
         container.innerHTML = '';
         container.appendChild(createOrderElement('h4', 'order-view-heading', vendor.name));
         container.appendChild(createOrderVendorDetailGrid(vendor));
       }
-
-       
-
 
       function createOrderVendorDetailGrid(vendor) {
         const rows = [

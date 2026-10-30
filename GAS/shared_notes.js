@@ -1,6 +1,3 @@
- 
- 
-
 function ensureSharedNoteSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(SHEET_NAMES.SHARED_NOTES);
@@ -23,13 +20,6 @@ function newSharedNoteId_() {
   return 'NOTE-' + Utilities.getUuid().replace(/-/g, '').substring(0, 12);
 }
 
- 
-
-
-
-
-
-
 function getSharedNoteRecipientCandidates(empId, authToken) {
   requireLoggedIn_(authToken);
 
@@ -37,23 +27,12 @@ function getSharedNoteRecipientCandidates(empId, authToken) {
   const candidates = [];
   for (let i = 0; i < employees.length; i++) {
     if (String(employees[i].id) === String(empId)) {
-      continue;  
+      continue;
     }
     candidates.push(employees[i]);
   }
   return candidates;
 }
-
- 
-
-
-
-
-
-
-
-
-
 
 function saveSharedNoteAndClockOut(empId, recipientIds, noteText, authToken, ticket) {
   requireLoggedIn_(authToken);
@@ -67,10 +46,10 @@ function saveSharedNoteAndClockOut(empId, recipientIds, noteText, authToken, tic
     for (let i = 0; i < (recipientIds || []).length; i++) {
       const recipientId = String(recipientIds[i]);
       if (recipientId === String(empId) || seen[recipientId]) {
-        continue;  
+        continue;
       }
       if (!nameByEmpId[recipientId]) {
-        continue;  
+        continue;
       }
       seen[recipientId] = true;
       uniqueRecipientIds.push(recipientId);
@@ -98,7 +77,7 @@ function saveSharedNoteRows_(senderEmpId, senderName, recipientIds, nameByEmpId,
       nameByEmpId[recipientId],
       noteText,
       now,
-      ''  
+      ''
     ]);
   }
 
@@ -106,30 +85,13 @@ function saveSharedNoteRows_(senderEmpId, senderName, recipientIds, nameByEmpId,
   sheet.getRange(startRow, 1, rows.length, SHARED_NOTE_SHEET_HEADER.length).setValues(rows);
 }
 
- 
-
-
-
-
 function getSharedNotesForClockIn(empId) {
   return collectSharedNotesForDisplay_(empId, true);
 }
 
- 
-
-
-
-
-
 function getSharedNotesForSelection(empId) {
   return collectSharedNotesForDisplay_(empId, false);
 }
-
- 
-
-
-
-
 
 function collectSharedNotesForDisplay_(empId, revealPending) {
   const sheet = ensureSharedNoteSheet();
@@ -142,8 +104,8 @@ function collectSharedNotesForDisplay_(empId, revealPending) {
   const values = sheet.getRange(2, 1, lastRow - 1, SHARED_NOTE_SHEET_HEADER.length).getValues();
 
   const notes = [];
-  const rowsToReveal = [];  
-  const rowsToDelete = [];  
+  const rowsToReveal = [];
+  const rowsToDelete = [];
 
   for (let i = 0; i < values.length; i++) {
     const row = values[i];
@@ -152,14 +114,14 @@ function collectSharedNotesForDisplay_(empId, revealPending) {
       continue;
     }
 
-    const sheetRowNumber = i + 2;  
+    const sheetRowNumber = i + 2;
     const firstShownAt = row[7];
     const firstShownKey = (firstShownAt instanceof Date)
       ? Utilities.formatDate(firstShownAt, TIME_ZONE, 'yyyy/MM/dd')
       : '';
 
     if (firstShownKey === '') {
-       
+
       if (revealPending) {
         rowsToReveal.push(sheetRowNumber);
         notes.push(buildSharedNoteView_(row));
@@ -172,15 +134,13 @@ function collectSharedNotesForDisplay_(empId, revealPending) {
       continue;
     }
 
-     
     rowsToDelete.push(sheetRowNumber);
   }
 
-   
   for (let i = 0; i < rowsToReveal.length; i++) {
     sheet.getRange(rowsToReveal[i], 8).setValue(new Date(todayKey));
   }
-   
+
   for (let i = rowsToDelete.length - 1; i >= 0; i--) {
     sheet.deleteRow(rowsToDelete[i]);
   }

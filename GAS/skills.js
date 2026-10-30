@@ -1,5 +1,3 @@
- 
-
 function ensureSkillSheetHeader(sheet) {
   const headerRange = sheet.getRange(1, 1, 1, SKILL_SHEET_HEADER.length);
   const currentHeader = headerRange.getValues()[0];
@@ -25,12 +23,6 @@ function getDefaultSkills() {
   return skills;
 }
 
- 
-
-
-
-
-
 function normalizeSkillLevel_(rawValue) {
   const text = String(rawValue === null || rawValue === undefined ? '' : rawValue).trim();
   if (SKILL_LEVELS.indexOf(text) !== -1) {
@@ -42,11 +34,6 @@ function normalizeSkillLevel_(rawValue) {
   return SKILL_LEVEL_DEFAULT;
 }
 
- 
-
-
-
-
 function toSkillValueList_(skills) {
   const skillValues = [];
   for (let i = 0; i < SKILL_ITEMS.length; i++) {
@@ -56,7 +43,7 @@ function toSkillValueList_(skills) {
 }
 
 function getSkillEvalColumn(skillIndex) {
-  return 3 + skillIndex * 2;  
+  return 3 + skillIndex * 2;
 }
 
 function getEmployeeSkillMap() {
@@ -75,7 +62,7 @@ function getEmployeeSkillMap() {
     }
     const skills = {};
     for (let s = 0; s < SKILL_ITEMS.length; s++) {
-      const rawValue = values[i][getSkillEvalColumn(s) - 1];  
+      const rawValue = values[i][getSkillEvalColumn(s) - 1];
       skills[SKILL_ITEMS[s]] = normalizeSkillLevel_(rawValue);
     }
     skillMapByEmpId[String(empId)] = skills;
@@ -99,7 +86,7 @@ function getEmployeeSkillUpdatedAtMap() {
     }
     const updatedAt = {};
     for (let s = 0; s < SKILL_ITEMS.length; s++) {
-      const rawDate = values[i][getSkillEvalColumn(s)];  
+      const rawDate = values[i][getSkillEvalColumn(s)];
       updatedAt[SKILL_ITEMS[s]] = formatSkillUpdatedAt(rawDate);
     }
     updatedAtMapByEmpId[String(empId)] = updatedAt;
@@ -136,7 +123,7 @@ function getSkillMatrix(authToken) {
     matrix.push({
       'id': empId,
       'name': employees[i]['name'],
-      'number': employees[i]['number'],  
+      'number': employees[i]['number'],
       'skills': skillMapByEmpId[key] || getDefaultSkills(),
       'updatedAt': updatedAtMapByEmpId[key] || getDefaultSkillUpdatedAt()
     });
@@ -152,7 +139,7 @@ function findSkillRowByEmpId(sheet, empId) {
   const empIdValues = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
   for (let i = 0; i < empIdValues.length; i++) {
     if (String(empIdValues[i][0]) === String(empId)) {
-      return i + 2;  
+      return i + 2;
     }
   }
   return -1;
@@ -164,7 +151,7 @@ function saveEmployeeSkills(empId, skillValues, authToken) {
 }
 
 function validateEmployeeSkills_(empId, skillValues, nameByEmpId) {
-   
+
   const empName = nameByEmpId[String(empId)];
   if (!empName) {
     throw new Error('この従業員は選べません。画面を開き直してください（従業員番号 ' + empId + '）');
@@ -181,7 +168,6 @@ function validateEmployeeSkills_(empId, skillValues, nameByEmpId) {
   return empName;
 }
 
- 
 function saveEmployeeSkillsBatch(changes, authToken) {
   requireManagerRole_(authToken);
   return withAppLock_(function () {
@@ -224,7 +210,7 @@ function saveEmployeeSkillsBatch(changes, authToken) {
       SpreadsheetApp.flush();
       return { employees: saved, message: saved.length + '人分の変更を保存しました' };
     } catch (error) {
-       
+
       let restoreFailed = false;
       backups.forEach(function (backup) {
         try { backup.range.setValues(backup.values); } catch (restoreError) { restoreFailed = true; }
@@ -246,8 +232,6 @@ function saveEmployeeSkills_(empId, skillValues) {
   }
   sheet.getRange(targetRow, 2).setValue(empName);
 
-   
-   
   const currentRowValues = isNewRow ? null : sheet.getRange(targetRow, 3, 1, SKILL_ITEMS.length * 2).getValues()[0];
   const today = new Date();
   const updatedAt = {};
@@ -255,12 +239,11 @@ function saveEmployeeSkills_(empId, skillValues) {
   for (let s = 0; s < SKILL_ITEMS.length; s++) {
     const evalCol = getSkillEvalColumn(s);
     const newValue = skillValues[s];
-    const currentRaw = isNewRow ? SKILL_LEVEL_DEFAULT : currentRowValues[evalCol - 3];  
+    const currentRaw = isNewRow ? SKILL_LEVEL_DEFAULT : currentRowValues[evalCol - 3];
     const currentDate = isNewRow ? null : currentRowValues[evalCol - 3 + 1];
-     
+
     const isChanged = (normalizeSkillLevel_(currentRaw) !== newValue);
 
-     
     if (isNewRow || currentRaw !== newValue) {
       sheet.getRange(targetRow, evalCol).setValue(newValue);
     }
@@ -273,7 +256,6 @@ function saveEmployeeSkills_(empId, skillValues) {
     }
   }
 
-   
   promoteSkillAllowance_(empId, skillValues);
 
   return {
@@ -281,11 +263,6 @@ function saveEmployeeSkills_(empId, skillValues) {
     'updatedAt': updatedAt
   };
 }
-
- 
-
-
-
 
 function countMasteredSkills_(skillValues) {
   let masteredCount = 0;
@@ -298,12 +275,6 @@ function countMasteredSkills_(skillValues) {
   return masteredCount;
 }
 
- 
-
-
-
-
-
 function calcEarnedSkillAllowance_(masteredCount) {
   let earnedAmount = SKILL_ALLOWANCE_DEFAULT;
   for (let i = 0; i < SKILL_ALLOWANCE_TIERS.length; i++) {
@@ -315,20 +286,11 @@ function calcEarnedSkillAllowance_(masteredCount) {
   return earnedAmount;
 }
 
- 
-
-
-
-
-
-
-
 function promoteSkillAllowance_(empId, skillValues) {
   const savedAmount = getEmployeeSkillAllowance(empId);
   const earnedAmount = calcEarnedSkillAllowance_(countMasteredSkills_(skillValues));
   const nextAmount = Math.max(savedAmount, earnedAmount);
-   
-   
+
   saveEmployeeSkillAllowance_(empId, nextAmount);
   return nextAmount;
 }
@@ -345,20 +307,19 @@ function migrateSkillSheetToDatedColumns() {
 
   const newColumnCount = 2 + SKILL_ITEMS.length * 2;
   if (lastCol >= newColumnCount) {
-     
+
     sheet.getRange(1, 1, 1, SKILL_SHEET_HEADER.length).setValues([SKILL_SHEET_HEADER]);
     return 'ヘッダーを更新しました（データは新レイアウト済みのため変更していません）';
   }
 
-   
   const oldValues = sheet.getRange(2, 1, lastRow - 1, 2 + SKILL_ITEMS.length).getValues();
   const newValues = [];
   for (let i = 0; i < oldValues.length; i++) {
     const row = oldValues[i];
-    const newRow = [row[0], row[1]];  
+    const newRow = [row[0], row[1]];
     for (let s = 0; s < SKILL_ITEMS.length; s++) {
-      newRow.push(row[2 + s]);  
-      newRow.push('');  
+      newRow.push(row[2 + s]);
+      newRow.push('');
     }
     newValues.push(newRow);
   }
@@ -367,21 +328,6 @@ function migrateSkillSheetToDatedColumns() {
   sheet.getRange(2, 1, newValues.length, newColumnCount).setValues(newValues);
   return newValues.length + '件のデータを新しい列構成（評価・更新日を別列）に変換しました';
 }
-
- 
- 
- 
-
- 
-
-
-
-
-
-
-
-
-
 
 function migrateSkillRatingsToText() {
   const sheet = getSkillSheet();
@@ -393,7 +339,6 @@ function migrateSkillRatingsToText() {
   let convertedCount = 0;
   let unknownCount = 0;
 
-   
   for (let s = 0; s < SKILL_ITEMS.length; s++) {
     const evalRange = sheet.getRange(2, getSkillEvalColumn(s), lastRow - 1, 1);
     const evalValues = evalRange.getValues();
@@ -403,10 +348,10 @@ function migrateSkillRatingsToText() {
       const rawValue = evalValues[r][0];
       const text = String(rawValue === null || rawValue === undefined ? '' : rawValue).trim();
       if (text === '' || SKILL_LEVELS.indexOf(text) !== -1) {
-        continue;  
+        continue;
       }
       if (!Object.prototype.hasOwnProperty.call(SKILL_LEGACY_LEVEL_MAP, text)) {
-        unknownCount++;  
+        unknownCount++;
         continue;
       }
       evalValues[r][0] = SKILL_LEGACY_LEVEL_MAP[text];
@@ -425,12 +370,6 @@ function migrateSkillRatingsToText() {
   return '旧スキル評価を ' + convertedCount + '件 F/B/Aへ変換しました' + unknownMessage + ' / ' + allowanceMessage;
 }
 
- 
-
-
-
-
-
 function recalcSkillAllowances() {
   const columns = ensureEmployeeSkillAllowanceColumn_();
   const sheet = columns.sheet;
@@ -439,7 +378,7 @@ function recalcSkillAllowances() {
     return 'スキル手当を更新する従業員がいません';
   }
 
-  const skillMapByEmpId = getEmployeeSkillMap();  
+  const skillMapByEmpId = getEmployeeSkillMap();
   const empIdValues = sheet.getRange(2, getEmployeeIdentityColumns_(sheet).id, lastRow - 1, 1).getValues();
   const allowanceRange = sheet.getRange(2, columns.column, lastRow - 1, 1);
   const allowanceValues = allowanceRange.getValues();
@@ -460,7 +399,7 @@ function recalcSkillAllowances() {
       raisedCount++;
     }
     if (allowanceValues[i][0] !== nextAmount) {
-      allowanceValues[i][0] = nextAmount;  
+      allowanceValues[i][0] = nextAmount;
       isChanged = true;
     }
   }

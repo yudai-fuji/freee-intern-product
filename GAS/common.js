@@ -1,5 +1,3 @@
- 
-
 function getSheet(sheetName) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
   if (!sheet) {
@@ -8,7 +6,6 @@ function getSheet(sheetName) {
   return sheet;
 }
 
- 
 function withAppLock_(callback) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) {

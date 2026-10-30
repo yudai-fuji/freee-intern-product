@@ -1,6 +1,3 @@
- 
-
- 
 function getTodayClockState(empId, authToken) {
   requireLoggedIn_(authToken);
   requireActiveClockEmployee_(empId);
@@ -22,7 +19,6 @@ function allowedClockTypes_(state) {
   return [];
 }
 
- 
 function nextClockState_(state, type) {
   if (allowedClockTypes_(state).indexOf(type) === -1) return null;
   if (type === '退勤') return 'clocked_out';
@@ -40,7 +36,6 @@ function recordClock(empId, type, ticket, authToken) {
   return recordClockWithValidation_(empId, type, ticket, authToken);
 }
 
- 
 function recordClockWithValidation_(empId, type, ticket, authToken, beforeRecord) {
   requireLoggedIn_(authToken);
   if (CLOCK_TYPES.indexOf(type) === -1) throw new Error('不正な打刻種別です');
@@ -58,7 +53,6 @@ function recordClockWithValidation_(empId, type, ticket, authToken, beforeRecord
     if (next === null) throw new Error('現在の打刻状態では「' + type + '」を記録できません。本日の打刻状態を確認してください');
     consumeClockPinTicket_(empId, type, ticket, authToken, now);
 
-     
     if (beforeRecord) {
       beforeRecord(activeNameByEmpId);
       SpreadsheetApp.flush();
@@ -76,12 +70,10 @@ function recordClockWithValidation_(empId, type, ticket, authToken, beforeRecord
   }
 }
 
- 
 function resetClockRecords() {
   const sheet = getSheet(SHEET_NAMES.TIME_CLOCKS);
   const lastRow = sheet.getLastRow();
 
-   
   if (lastRow >= 2) {
     sheet.getRange(2, 1, lastRow - 1, 3).clearContent();
     const adjustmentColumn = getAttendanceAdjustmentColumn_(sheet, false);
@@ -89,19 +81,15 @@ function resetClockRecords() {
   }
 }
 
-
-
 function getTodayAttendances(authToken) {
   requireManagerRole_(authToken);
 
   const now = new Date();
-  
-   
+
   const today = Utilities.formatDate(now, TIME_ZONE, 'yyyy/MM/dd');
-  
+
   const weekdayLabels = ['日', '月', '火', '水', '木', '金', '土'];
 
-   
   const dateLabel = Utilities.formatDate(now, TIME_ZONE, 'yyyy年M月d日') +
     `（${weekdayLabels[now.getDay()]}）`;
 
@@ -115,7 +103,7 @@ function getTodayAttendances(authToken) {
 function buildAttendances(targetDate) {
   const eventsByEmpId = new Map();
   const shiftDate = targetDate.replace(/\//g, '-');
-   
+
   readShiftStore_().records.forEach(function (record) {
     if (record.date === shiftDate && record.workType !== 'unavailable') {
       eventsByEmpId.set(String(record.employeeId), []);
@@ -155,9 +143,9 @@ function summarizeDayEvents(events) {
         clockInAt = ev.time;
       }
     } else if (ev.type === '退勤') {
-      clockOutAt = ev.time; 
+      clockOutAt = ev.time;
     } else if (ev.type === '休憩開始') {
-      if (breakStartAt === null) { 
+      if (breakStartAt === null) {
         breakStartAt = ev.time;
       }
     } else if (ev.type === '休憩終了') {
@@ -268,15 +256,12 @@ function formatEstimatedWage(actualMinutes, rate, isHolidayRate) {
   if (actualMinutes === null) {
     return NO_VALUE_LABEL;
   }
-   
-   
+
   const hourlyRate = rate.base + (isHolidayRate ? rate.holidayBonus : 0) + (rate.skillAllowance || 0);
   const wage = Math.floor(actualMinutes / 60 * hourlyRate);
   return wage.toLocaleString('ja-JP') + '円';
 }
 
-
- 
 function compareClockEvents_(a, b) {
   const priority = function (type) { return type === '出勤' ? -1 : type === '退勤' ? 1 : 0; };
   return a.time.getTime() - b.time.getTime() || priority(a.type) - priority(b.type) ||
@@ -295,7 +280,6 @@ function getAttendanceAdjustmentColumn_(sheet, create) {
   return column;
 }
 
- 
 function readAttendanceEvents_(sheet, dateKey) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) { return []; }
@@ -351,7 +335,7 @@ function parseAttendanceTime_(value, dateKey, original, label) {
   if (typeof value !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) {
     throw new Error(label + 'は時:分の形式で入力してください');
   }
-   
+
   if (original && formatClockTime(original) === value) { return original; }
   const date = Utilities.parseDate(dateKey + ' ' + value, TIME_ZONE, 'yyyy/MM/dd HH:mm');
   if (Utilities.formatDate(date, TIME_ZONE, 'yyyy/MM/dd HH:mm') !== dateKey + ' ' + value) {
@@ -360,7 +344,6 @@ function parseAttendanceTime_(value, dateKey, original, label) {
   return date;
 }
 
- 
 function saveAttendance(input, authToken) {
   requireManagerRole_(authToken);
   const payload = input || {};
@@ -402,7 +385,7 @@ function saveAttendance(input, authToken) {
       rowNumber: clockIns.length ? clockIns[0].rowNumber : nextRow++, breakAdjustment: 0 };
     edited.push(inEvent);
     if (clockOut) {
-       
+
       if (original.breakOngoing) {
         edited.push({ employeeId: payload.id, type: '休憩終了', time: clockOut, rowNumber: nextRow++, breakAdjustment: 0 });
       }

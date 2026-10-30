@@ -1,28 +1,10 @@
- 
- 
- 
- 
- 
- 
- 
-
- 
 const INGREDIENT_DATE_PATTERN = /^\d{4}\/\d{2}\/\d{2}$/;
 const INGREDIENT_DATE_TIME_PATTERN = /^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}$/;
 const INGREDIENT_TIME_PATTERN = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
 
- 
 const INGREDIENT_MAX_QUANTITY = 100000;
 
- 
 const INGREDIENT_PLAN_SEARCH_DAYS = 120;
-
- 
-
-
-
-
-
 
 function ensureIngredientSheet(sheetName, header) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -33,7 +15,6 @@ function ensureIngredientSheet(sheetName, header) {
     isNewSheet = true;
   }
 
-   
   const shortageColumns = header.length - sheet.getMaxColumns();
   if (shortageColumns > 0) {
     sheet.insertColumnsAfter(sheet.getMaxColumns(), shortageColumns);
@@ -43,7 +24,7 @@ function ensureIngredientSheet(sheetName, header) {
   const currentHeader = headerRange.getValues()[0];
   for (let i = 0; i < header.length; i++) {
     if (currentHeader[i] !== header[i]) {
-      headerRange.setValues([header]);  
+      headerRange.setValues([header]);
       break;
     }
   }
@@ -54,10 +35,6 @@ function ensureIngredientSheet(sheetName, header) {
   }
   return sheet;
 }
-
- 
-
-
 
 function ensureIngredientMasterSheet() {
   const sheet = ensureIngredientSheet(SHEET_NAMES.INGREDIENT_MASTERS, INGREDIENT_MASTER_SHEET_HEADER);
@@ -71,7 +48,7 @@ function ensureIngredientMasterSheet() {
     rows.push([
       newIngredientId('ING'), master.name, master.category, master.unit,
       '', '', '', '', '○', updatedAt,
-      ''  
+      ''
     ]);
   }
   appendIngredientRows(sheet, rows, INGREDIENT_MASTER_SHEET_HEADER.length);
@@ -90,11 +67,6 @@ function ensureIngredientOrderSheet() {
   return ensureIngredientSheet(SHEET_NAMES.INGREDIENT_ORDERS, INGREDIENT_ORDER_SHEET_HEADER);
 }
 
- 
-
-
-
-
 function appendIngredientRows(sheet, rows, columnCount) {
   if (rows.length === 0) {
     return -1;
@@ -109,11 +81,6 @@ function appendIngredientRows(sheet, rows, columnCount) {
   range.setValues(rows);
   return startRow;
 }
-
- 
-
-
-
 
 function readIngredientRows(sheet, header) {
   const lastRow = sheet.getLastRow();
@@ -133,16 +100,12 @@ function readIngredientRows(sheet, header) {
       }
     }
     if (!hasValue) {
-      continue;  
+      continue;
     }
     rows.push({ 'rowNumber': i + 2, 'values': record });
   }
   return rows;
 }
-
- 
-
-
 
 function toIngredientCellText(value) {
   if (value === null || value === undefined) {
@@ -163,9 +126,6 @@ function formatIngredientDateTime(date) {
   return Utilities.formatDate(date, TIME_ZONE, 'yyyy/MM/dd HH:mm');
 }
 
- 
-
-
 function newIngredientId(prefix) {
   return prefix + '-' + Utilities.getUuid().replace(/-/g, '').substring(0, 12);
 }
@@ -176,11 +136,6 @@ function normalizeIngredientText(value) {
   }
   return String(value).trim();
 }
-
- 
-
-
-
 
 function normalizeIngredientDateInput(value, label) {
   const raw = normalizeIngredientText(value);
@@ -197,9 +152,6 @@ function normalizeIngredientDateInput(value, label) {
   return text;
 }
 
- 
-
-
 function parseIngredientDate(dateText) {
   if (!INGREDIENT_DATE_PATTERN.test(dateText)) {
     return null;
@@ -210,13 +162,10 @@ function parseIngredientDate(dateText) {
   const day = Number(parts[2]);
   const date = new Date(year, month - 1, day);
   if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
-    return null;  
+    return null;
   }
   return date;
 }
-
- 
-
 
 function parseIngredientDateTime(dateTimeText) {
   if (!INGREDIENT_DATE_TIME_PATTERN.test(dateTimeText)) {
@@ -230,13 +179,6 @@ function parseIngredientDateTime(dateTimeText) {
   date.setMinutes(Number(dateTimeText.substring(14, 16)));
   return date;
 }
-
- 
-
-
-
-
-
 
 function parseIngredientQuantity(value, label, allowZero) {
   const text = normalizeIngredientText(value);
@@ -259,15 +201,9 @@ function parseIngredientQuantity(value, label, allowZero) {
   return roundIngredientQuantity(quantity);
 }
 
- 
-
-
 function roundIngredientQuantity(quantity) {
   return Math.round(quantity * 1000) / 1000;
 }
-
- 
-
 
 function formatIngredientQuantity(quantity) {
   return String(roundIngredientQuantity(quantity));
@@ -279,18 +215,9 @@ function addIngredientDays(date, days) {
   return result;
 }
 
- 
-
-
 function formatIngredientDateWithWeekday(date) {
   return formatIngredientDate(date) + '（' + INGREDIENT_WEEKDAY_LABELS[date.getDay()] + '）';
 }
-
- 
-
- 
-
-
 
 function getIngredientMasters() {
   const sheet = ensureIngredientMasterSheet();
@@ -308,7 +235,7 @@ function getIngredientMasters() {
       'defaultUnit': values['既定単位'],
       'supplierId': values['業者ID'],
       'active': values['有効'] !== '',
-       
+
       'orderUnit': values['発注単位'] !== '' ? values['発注単位'] : values['既定単位'],
       'rowNumber': rows[i].rowNumber
     });
@@ -316,12 +243,11 @@ function getIngredientMasters() {
   return masters;
 }
 
- 
 function normalizeIngredientSupplierNote_(value) {
   const retiredInstruction = /商品コード|product\s*code|item\s*code/i;
   return normalizeIngredientText(value).split(/\r\n|\r|\n/).map(function (line) {
     if (!retiredInstruction.test(line)) {
-      return line;  
+      return line;
     }
     const parts = line.match(/[^。；;、,]+[。；;、,]?/g) || [];
     return parts.filter(function (part) {
@@ -330,14 +256,12 @@ function normalizeIngredientSupplierNote_(value) {
   }).filter(function (line) { return line.trim() !== ''; }).join('\n');
 }
 
- 
 function normalizeOrderSupplierName_(name) {
   if (name === '○○青果') { return 'freee青果'; }
   if (name === '△△食品') { return 'freee食品'; }
   return name;
 }
 
- 
 function getIngredientSuppliers() {
   const sheet = ensureIngredientSupplierSheet();
   const rows = readIngredientRows(sheet, INGREDIENT_SUPPLIER_SHEET_HEADER);
@@ -373,9 +297,6 @@ function getIngredientSuppliers() {
   return suppliers;
 }
 
- 
-
-
 function getIngredientOrders() {
   const sheet = ensureIngredientOrderSheet();
   const rows = readIngredientRows(sheet, INGREDIENT_ORDER_SHEET_HEADER);
@@ -397,7 +318,7 @@ function getIngredientOrders() {
       'expectedDate': values['入荷予定日'],
       'status': values['状態'],
       'note': values['備考'],
-       
+
       'orderNo': values['発注番号'],
       'orderedBy': values['発注者'],
       'mailTo': values['送信先メール'],
@@ -406,9 +327,6 @@ function getIngredientOrders() {
   }
   return orders;
 }
-
- 
-
 
 function parseIngredientWeekdayList(text) {
   const days = [];
@@ -426,9 +344,6 @@ function parseIngredientWeekdayList(text) {
   return days;
 }
 
- 
-
-
 function formatIngredientWeekdayList(days) {
   const labels = [];
   for (let i = 0; i < days.length; i++) {
@@ -436,9 +351,6 @@ function formatIngredientWeekdayList(days) {
   }
   return labels.join('・');
 }
-
- 
-
 
 function parseIngredientDateList(text) {
   const dates = [];
@@ -455,19 +367,9 @@ function parseIngredientDateList(text) {
   return dates;
 }
 
- 
-
- 
-
-
 function isIngredientClosedDate(supplier, date) {
   return supplier.closedDates.indexOf(formatIngredientDate(date)) !== -1;
 }
-
- 
-
-
-
 
 function findIngredientDeliveryDate(supplier, orderDate) {
   let shipDate = null;
@@ -488,7 +390,7 @@ function findIngredientDeliveryDate(supplier, orderDate) {
   } else if (supplier.leadTimeDays === 0) {
     deliveryDate = shipDate;
   } else {
-     
+
     let remaining = supplier.leadTimeDays;
     for (let i = 1; i <= INGREDIENT_PLAN_SEARCH_DAYS; i++) {
       const candidate = addIngredientDays(shipDate, i);
@@ -515,19 +417,12 @@ function findIngredientDeliveryDate(supplier, orderDate) {
       continue;
     }
     if (supplier.pickupDays.indexOf(candidate.getDay()) === -1) {
-      continue;  
+      continue;
     }
     return candidate;
   }
   return null;
 }
-
- 
-
-
-
-
-
 
 function buildIngredientSupplierPlan(supplier, now) {
   const missing = [];
@@ -568,7 +463,7 @@ function buildIngredientSupplierPlan(supplier, now) {
     }
     const deadline = parseIngredientDateTime(formatIngredientDate(orderDate) + ' ' + supplier.deadlineTime);
     if (!deadline || deadline.getTime() <= now.getTime()) {
-      continue;  
+      continue;
     }
     const deliveryDate = findIngredientDeliveryDate(supplier, orderDate);
     if (!deliveryDate) {
@@ -593,9 +488,6 @@ function buildIngredientSupplierPlan(supplier, now) {
   };
 }
 
- 
-
-
 function buildIngredientClosedWeekdayText(supplier) {
   const closedDays = [];
   for (let day = 0; day < INGREDIENT_WEEKDAY_LABELS.length; day++) {
@@ -609,11 +501,6 @@ function buildIngredientClosedWeekdayText(supplier) {
   return formatIngredientWeekdayList(closedDays) + 'は納品休業です';
 }
 
- 
-
- 
-
-
 function findIngredientEventByKey(eventSheet, operationKey) {
   const rows = readIngredientRows(eventSheet, INGREDIENT_EVENT_SHEET_HEADER);
   for (let i = rows.length - 1; i >= 0; i--) {
@@ -624,11 +511,6 @@ function findIngredientEventByKey(eventSheet, operationKey) {
   return null;
 }
 
- 
-
-
-
-
 function startIngredientEvent(eventSheet, operationKey, type) {
   const row = [
     newIngredientId('EVT'), operationKey, formatIngredientDateTime(new Date()), type,
@@ -636,9 +518,6 @@ function startIngredientEvent(eventSheet, operationKey, type) {
   ];
   return appendIngredientRows(eventSheet, [row], INGREDIENT_EVENT_SHEET_HEADER.length);
 }
-
- 
-
 
 function completeIngredientEvent(eventSheet, rowNumber, result) {
   const values = [
@@ -651,18 +530,11 @@ function completeIngredientEvent(eventSheet, rowNumber, result) {
   range.setValues([values]);
 }
 
- 
-
-
-
 function failIngredientEvent(eventSheet, rowNumber, error) {
-  const range = eventSheet.getRange(rowNumber, 10, 1, 3);  
+  const range = eventSheet.getRange(rowNumber, 10, 1, 3);
   range.setNumberFormat('@');
   range.setValues([['保存できませんでした: ' + error.message, '', '失敗']]);
 }
-
- 
-
 
 function findIngredientMasterById(masters, ingredientId) {
   const id = normalizeIngredientText(ingredientId);

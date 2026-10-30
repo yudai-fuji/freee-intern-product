@@ -1,5 +1,3 @@
- 
- 
 const SHIFT_SHEET_NAME = 'シフト';
 const SHIFT_FIELDS = ['employeeId', 'date', 'workType', 'startTime', 'endTime'];
 const SHIFT_HEADERS = ['従業員ID', '日付', '勤務区分', '開始時刻', '終了時刻'];
@@ -13,7 +11,6 @@ const SHIFT_HEADER_ALIASES = {
 const SHIFT_TIME_PATTERN = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
 const SHIFT_CUSTOM_TIME_PATTERN = /^(1[1-9]|2[0-2]):[0-5][0-9]$/;
 
- 
 function getShiftMonth(year, month, authToken) {
   requireManagerRole_(authToken);
   const today = getTodayDateKey().replace(/\//g, '-');
@@ -44,7 +41,6 @@ function getShiftMonth(year, month, authToken) {
   };
 }
 
- 
 function getShiftWeek(weekStart, authToken) {
   requireManagerRole_(authToken);
   const today = getTodayDateKey().replace(/\//g, '-');
@@ -71,11 +67,6 @@ function getShiftWeek(weekStart, authToken) {
   };
 }
 
- 
-
-
-
-
 function saveShiftDrafts(changes, authToken) {
   requireManagerRole_(authToken);
   const normalized = validateShiftChanges_(changes);
@@ -87,7 +78,6 @@ function saveShiftDrafts(changes, authToken) {
       if (!activeIds[change.employeeId]) throw new Error('無効な従業員が含まれています。従業員一覧を更新してください');
     });
 
-     
     const store = readShiftStore_();
     const existing = Object.create(null);
     store.records.forEach(function (record) { existing[shiftRecordKey_(record)] = record; });
@@ -162,7 +152,6 @@ function validateShiftChanges_(changes) {
   });
 }
 
- 
 function readShiftStore_() {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   if (!spreadsheet) throw new Error('対象のスプレッドシートが見つかりません');
@@ -224,7 +213,7 @@ function prepareShiftStoreForWrite_(store) {
     sheet.getRange(1, 1, 1, SHIFT_HEADERS.length).setValues([SHIFT_HEADERS]);
     SHIFT_FIELDS.forEach(function (field, index) { store.columns[field] = index + 1; });
   } else if (!store.columns.workType) {
-     
+
     const column = sheet.getLastColumn() + 1;
     if (column > sheet.getMaxColumns()) sheet.insertColumnsAfter(sheet.getMaxColumns(), column - sheet.getMaxColumns());
     sheet.getRange(1, column).setValue('勤務区分');
@@ -232,7 +221,6 @@ function prepareShiftStoreForWrite_(store) {
   }
 }
 
- 
 function writeShiftChanges_(store, writes) {
   writes.sort(function (a, b) { return a.rowNumber - b.rowNumber; });
   const lastRow = writes[writes.length - 1].rowNumber;
@@ -242,7 +230,6 @@ function writeShiftChanges_(store, writes) {
   }).sort(function (a, b) { return a.column - b.column; });
   const batches = [];
 
-   
   for (let rowStart = 0; rowStart < writes.length;) {
     let rowEnd = rowStart + 1;
     while (rowEnd < writes.length && writes[rowEnd].rowNumber === writes[rowEnd - 1].rowNumber + 1) rowEnd++;
@@ -266,7 +253,6 @@ function writeShiftChanges_(store, writes) {
     rowStart = rowEnd;
   }
 
-   
   let attempted = 0;
   try {
     batches.forEach(function (batch) {
