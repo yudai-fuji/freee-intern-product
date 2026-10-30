@@ -1,5 +1,5 @@
-// シフト確認・週間編集の取得と、登録ボタンで送られた下書きの一括保存を扱う。
-// 「シフト」シートを再利用し、旧データやシフト必要人数シートは削除しない。
+ 
+ 
 const SHIFT_SHEET_NAME = 'シフト';
 const SHIFT_FIELDS = ['employeeId', 'date', 'workType', 'startTime', 'endTime'];
 const SHIFT_HEADERS = ['従業員ID', '日付', '勤務区分', '開始時刻', '終了時刻'];
@@ -13,7 +13,7 @@ const SHIFT_HEADER_ALIASES = {
 const SHIFT_TIME_PATTERN = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
 const SHIFT_CUSTOM_TIME_PATTERN = /^(1[1-9]|2[0-2]):[0-5][0-9]$/;
 
-/** 月の保存済みシフトを返す。氏名は削除済み従業員についても表示できる。 */
+ 
 function getShiftMonth(year, month, authToken) {
   requireManagerRole_(authToken);
   const today = getTodayDateKey().replace(/\//g, '-');
@@ -44,7 +44,7 @@ function getShiftMonth(year, month, authToken) {
   };
 }
 
-/** 省略時は店舗の今日を含む日曜からの7日間。有効な全従業員を返す。 */
+ 
 function getShiftWeek(weekStart, authToken) {
   requireManagerRole_(authToken);
   const today = getTodayDateKey().replace(/\//g, '-');
@@ -71,11 +71,11 @@ function getShiftWeek(weekStart, authToken) {
   };
 }
 
-/**
- * 全変更を検証してから、従業員IDと日付が一致する行を更新する。
- * ロック中に既存データを読み直すので、再送でも同じセルを重複追加しない。
- * changes: [{ employeeId, date, operation: 'upsert'|'delete', workType, startTime, endTime }]
- */
+ 
+
+
+
+
 function saveShiftDrafts(changes, authToken) {
   requireManagerRole_(authToken);
   const normalized = validateShiftChanges_(changes);
@@ -87,7 +87,7 @@ function saveShiftDrafts(changes, authToken) {
       if (!activeIds[change.employeeId]) throw new Error('無効な従業員が含まれています。従業員一覧を更新してください');
     });
 
-    // 未知のヘッダーや既存の重複は、書き換える前にエラーとして知らせる。
+     
     const store = readShiftStore_();
     const existing = Object.create(null);
     store.records.forEach(function (record) { existing[shiftRecordKey_(record)] = record; });
@@ -162,7 +162,7 @@ function validateShiftChanges_(changes) {
   });
 }
 
-/** 表示は読み取りのみ。旧列名を再利用し、区分のない旧勤務は時刻を保持したcustomとする。 */
+ 
 function readShiftStore_() {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   if (!spreadsheet) throw new Error('対象のスプレッドシートが見つかりません');
@@ -224,7 +224,7 @@ function prepareShiftStoreForWrite_(store) {
     sheet.getRange(1, 1, 1, SHIFT_HEADERS.length).setValues([SHIFT_HEADERS]);
     SHIFT_FIELDS.forEach(function (field, index) { store.columns[field] = index + 1; });
   } else if (!store.columns.workType) {
-    // 旧シートの出退勤時刻・ポジション・備考等をそのまま残し、不足する区分列だけ末尾に追加。
+     
     const column = sheet.getLastColumn() + 1;
     if (column > sheet.getMaxColumns()) sheet.insertColumnsAfter(sheet.getMaxColumns(), column - sheet.getMaxColumns());
     sheet.getRange(1, column).setValue('勤務区分');
@@ -232,7 +232,7 @@ function prepareShiftStoreForWrite_(store) {
   }
 }
 
-/** 変更対象の行とシフトの5列だけを書き込み、他の列の値や数式を保持する。 */
+ 
 function writeShiftChanges_(store, writes) {
   writes.sort(function (a, b) { return a.rowNumber - b.rowNumber; });
   const lastRow = writes[writes.length - 1].rowNumber;
@@ -242,7 +242,7 @@ function writeShiftChanges_(store, writes) {
   }).sort(function (a, b) { return a.column - b.column; });
   const batches = [];
 
-  // 連続する行・列はまとめて保存する。間の無関係な行や列は書き戻さない。
+   
   for (let rowStart = 0; rowStart < writes.length;) {
     let rowEnd = rowStart + 1;
     while (rowEnd < writes.length && writes[rowEnd].rowNumber === writes[rowEnd - 1].rowNumber + 1) rowEnd++;
@@ -266,7 +266,7 @@ function writeShiftChanges_(store, writes) {
     rowStart = rowEnd;
   }
 
-  // 列が離れた旧シートでも、途中の書込失敗でIDだけの不完全な行を残さない。
+   
   let attempted = 0;
   try {
     batches.forEach(function (batch) {

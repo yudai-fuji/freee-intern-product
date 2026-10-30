@@ -52,7 +52,7 @@
   .employee-list-message:empty {
     display: none;
   }
-  /* 氏名はフルネーム、その下に「従業員番号 : 3」を出す */
+   
   .employee-name-text {
     font-size: 22px;
   }
@@ -210,7 +210,7 @@
     background-color: #c8c8c8;
     transform: translateY(2px);
   }
-  /* 店長画面 */
+   
   .manager-layout {
     display: grid;
     grid-template-columns: 220px 1fr;
@@ -235,7 +235,7 @@
     font-size: 28px;
     margin: 0;
   }
-  /* 店長画面：従業員編集 */
+   
   .employee-section-active .manager-main,
   .employee-edit-content { min-width: 0; }
   .employee-edit-layout {
@@ -505,14 +505,14 @@
     background-color: #9db3dc;
     cursor: not-allowed;
   }
-  /* 店長画面：勤怠管理 */
+   
   .manager-section-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     max-width: 960px;
   }
-  /* 見出しの右にボタンが複数並ぶとき、ボタン同士を隣り合わせにする */
+   
   .manager-section-buttons {
     display: flex;
     flex-wrap: wrap;
@@ -531,7 +531,7 @@
   }
   .loading-message { border: 0; box-shadow: none; text-decoration: none; background: none; }
   .loading-message::before, .loading-message::after { content: none; }
-  /* 空の表・スクロール枠が読み込み表示の横線にならないようにする。 */
+   
   #section_shift_edit:has(.loading-message) .shift-editor-layout,
   #employee_directory_block:has(.loading-message) .employee-directory-scroll { display: none; }
   .shift-table-scroll:has(.shift-week-table:empty) { border: 0; }
@@ -554,7 +554,7 @@
   .attendance-table th {
     background-color: #f0f4fa;
   }
-  /* 時刻と労働時間は桁を揃えて読みやすくする */
+   
   .attendance-table td:not(:first-child) {
     font-variant-numeric: tabular-nums;
   }
@@ -582,8 +582,8 @@
     .attendance-section-active .manager-sidebar { display: flex; gap: 8px; flex-wrap: wrap; }
     .attendance-section-active .manager-nav-item { margin: 0; padding: 10px; font-size: 15px; }
   }
-  /* 店長画面：スキル管理 */
-  /* 左に従業員一覧、右に選んだ1人のスキル詳細を並べる */
+   
+   
   .skill-layout {
     display: grid;
     grid-template-columns: 280px 1fr;
@@ -596,7 +596,7 @@
     font-size: 20px;
     margin: 0 0 10px;
   }
-  /* 従業員が増えても画面が伸び続けないよう、一覧だけを縦スクロールさせる */
+   
   .skill-employee-list ul {
     list-style: none;
     padding: 0;
@@ -616,7 +616,7 @@
   .skill-employee-item:hover {
     background-color: #f0f4fa;
   }
-  /* 選択中の従業員は、他の画面と同じ青系で塗って分かるようにする */
+   
   .skill-employee-item.selected {
     background-color: #3f6fd1;
     color: #fff;
@@ -657,7 +657,7 @@
     grid-row: 2;
     font-size: 15px;
   }
-  /* スキル名・3段階バー・最終更新日 */
+   
   #section_skill .skill-detail-item {
     display: grid;
     grid-template-columns: 120px minmax(160px, 1fr);
@@ -669,7 +669,7 @@
   .skill-detail-item-name {
     font-size: 20px;
   }
-  /* 更新日はバーの下に控えめに表示する */
+   
   #section_skill .skill-detail-item-updated-at {
     grid-column: 2;
     font-size: 12px;
@@ -818,7 +818,7 @@
   .skill-save-status.error {
     color: #e53935;
   }
-  /* 店長画面：ダッシュボード（本日の業務設定） */
+   
   .today-work-block {
     margin-top: 30px;
   }
@@ -878,8 +878,8 @@
   .today-work-row-status.error {
     color: #e53935;
   }
-  /* 従業員画面：本日の業務カードと共有メモカードを、同じ幅・同じ上端で横に並べる
-     align-items: start により、内容が増えた側のカードだけが下方向に伸びる */
+   
+
   .employee-cards-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -887,7 +887,7 @@
     align-items: start;
     margin-top: 28px;
   }
-  /* 従業員画面：本日の業務カード */
+   
   .today-work-card {
     padding: 20px;
     border: 1px solid #ccc;
@@ -934,8 +934,8 @@
     font-size: 15px;
     color: #e53935;
   }
-  /* 従業員画面：共有メモカード（本日の業務の右隣、employee-cards-row の2列目に表示する）
-     本日の業務が非表示のときも、共有メモは右側の列に出す */
+   
+
   .shared-note-card {
     grid-column: 2;
   }
@@ -954,7 +954,7 @@
     white-space: pre-wrap;
     word-break: break-word;
   }
-  /* 共有メモダイアログ：共有したいスタッフのプルダウン */
+   
   .shared-note-select {
     position: relative;
     margin-bottom: 18px;
@@ -979,7 +979,7 @@
   .shared-note-select-trigger:hover {
     background-color: #f0f4fa;
   }
-  /* 誰も選んでいない間の案内文は、選択済みの表示と区別できるよう淡い色にする */
+   
   .shared-note-select-placeholder {
     color: #767676;
   }
@@ -991,7 +991,7 @@
   .shared-note-select.open .shared-note-select-arrow {
     transform: rotate(180deg);
   }
-  /* 一覧は閉じているのが初期状態。開いたときもダイアログを縦に伸ばさないよう、重ねて出す */
+   
   .shared-note-recipient-list {
     display: none;
     position: absolute;
@@ -1038,7 +1038,7 @@
     white-space: pre-wrap;
     word-break: break-word;
   }
-  /* 店長画面：シフト確認・シフト編集 */
+   
   .shift-section-active .manager-main { min-width: 0; }
   .shift-month-switch,
   .shift-week-switch {
@@ -1110,7 +1110,7 @@
   }
   .shift-legend > span { display: inline-flex; align-items: center; gap: 6px; }
   .shift-legend-swatch { width: 16px; height: 16px; border: 1px solid #ccc; border-radius: 3px; }
-  /* 曜日見出しとカレンダー本体は同じ列幅・同じ最大幅にして、列を縦に揃える */
+   
   .shift-weekdays,
   .shift-calendar {
     display: grid;
@@ -1158,7 +1158,7 @@
   }
   .shift-day-cell.status-uncreated,
   .shift-legend-swatch.status-uncreated { background-color: #f5f5f5; }
-  /* 作成済みの日はランチ・ディナーを個別に塗り分ける。 */
+   
   .shift-day-cell.status-created,
   .shift-legend-swatch.status-created { background-color: #d6e6fa; }
   .shift-day-cell.status-ok { background-color: #eaf5eb; }
@@ -1210,7 +1210,7 @@
     border-radius: 50%;
     font-variant-numeric: tabular-nums;
   }
-  /* 今日は日付を塗りつぶした丸で示し、選択中（セルの青枠）と見分けられるようにする */
+   
   .shift-day-cell.today .shift-day-number {
     background-color: #3f6fd1;
     color: #fff;
@@ -1450,7 +1450,7 @@
   }
   .shift-register-btn:hover { background-color: #1f2937; }
   .shift-register-btn:disabled { background-color: #9ca3af; cursor: not-allowed; }
-  /* 狭い画面でも曜日と日付の7列を維持する */
+   
   @media (max-width: 900px) {
     .shift-section-active .manager-layout { grid-template-columns: minmax(0, 1fr); gap: 24px; }
     .shift-section-active .manager-sidebar { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -1489,7 +1489,7 @@
     .shift-candidate-list .shift-candidate-skills { grid-column: 2; grid-row: 2; padding-left: 0; border-left: none; }
     .shift-candidate-list .shift-detail-time { grid-column: 2; grid-row: 3; padding-left: 0; border-left: none; }
   }
-  /* 店長画面：発注管理で使うボタン */
+   
   .ingredient-action-btn {
     padding: 10px 20px;
     font-size: 16px;
@@ -1510,7 +1510,7 @@
   .ingredient-action-sub:hover {
     background-color: #f0f4fa;
   }
-  /* 食材を選ぶダイアログの横幅と高さ */
+   
   .modal-box-wide {
     width: 640px;
     max-width: 92vw;
@@ -1529,7 +1529,7 @@
     background-color: #f3f3f3;
     color: #777;
   }
-  /* 画面切り替え確認ダイアログの本文 */
+   
   .confirm-modal-text {
     font-size: 17px;
     margin-bottom: 24px;
@@ -1596,7 +1596,7 @@
     border: 1px dashed #ccc;
     border-radius: 8px;
   }
-  /* 業者名など、押すと別の表示に移る文字 */
+   
   .order-link {
     padding: 0;
     font-size: inherit;
@@ -1610,7 +1610,7 @@
   .order-link:hover {
     color: #23477a;
   }
-  /* 発注する食材 */
+   
   .order-cart-list {
     display: flex;
     flex-direction: column;
@@ -1706,7 +1706,7 @@
   .order-upcoming-table { min-width: 640px; width: 100%; }
   .order-upcoming-table th, .order-upcoming-table td { white-space: nowrap; }
   #skill_discard_overlay .modal-footer { flex-wrap: wrap; }
-  /* 発注内容確認 */
+   
   .order-confirm-list {
     display: flex;
     flex-direction: column;
@@ -1792,7 +1792,7 @@
   .order-send-status.error {
     color: #e53935;
   }
-  /* 発注履歴 */
+   
   .order-history-list {
     display: flex;
     flex-direction: column;
@@ -1829,7 +1829,7 @@
     color: #555;
     line-height: 1.7;
   }
-  /* 業者詳細：スキル管理の配置・選択色を共有する */
+   
   .order-vendor-layout {
     grid-template-columns: 280px minmax(0, 1fr);
     max-width: 1120px;
@@ -1885,7 +1885,7 @@
   .order-detail-value.unset {
     color: #888;
   }
-  /* 食材を追加するダイアログ */
+   
   .order-item-choices {
     max-height: 46vh;
     overflow-y: auto;

@@ -1,6 +1,6 @@
-// 出退勤・休憩・労働時間・給与計算を行う
+ 
 
-// 画面を開き直しても、日本時間の当日履歴から打刻状態を復元する。
+ 
 function getTodayClockState(empId, authToken) {
   requireLoggedIn_(authToken);
   requireActiveClockEmployee_(empId);
@@ -22,7 +22,7 @@ function allowedClockTypes_(state) {
   return [];
 }
 
-// 不正な順序は null。同日の再出勤は認めず、休憩終了後は勤務中に戻す。
+ 
 function nextClockState_(state, type) {
   if (allowedClockTypes_(state).indexOf(type) === -1) return null;
   if (type === '退勤') return 'clocked_out';
@@ -40,7 +40,7 @@ function recordClock(empId, type, ticket, authToken) {
   return recordClockWithValidation_(empId, type, ticket, authToken);
 }
 
-// 通常打刻と共有メモ付き退勤で、状態の確認から保存まで同じロックを使う。
+ 
 function recordClockWithValidation_(empId, type, ticket, authToken, beforeRecord) {
   requireLoggedIn_(authToken);
   if (CLOCK_TYPES.indexOf(type) === -1) throw new Error('不正な打刻種別です');
@@ -58,7 +58,7 @@ function recordClockWithValidation_(empId, type, ticket, authToken, beforeRecord
     if (next === null) throw new Error('現在の打刻状態では「' + type + '」を記録できません。本日の打刻状態を確認してください');
     consumeClockPinTicket_(empId, type, ticket, authToken, now);
 
-    // 状態検証後にメモを保存する。保存に失敗した場合は打刻を行わない。
+     
     if (beforeRecord) {
       beforeRecord(activeNameByEmpId);
       SpreadsheetApp.flush();
@@ -76,12 +76,12 @@ function recordClockWithValidation_(empId, type, ticket, authToken, beforeRecord
   }
 }
 
-//
+ 
 function resetClockRecords() {
   const sheet = getSheet(SHEET_NAMES.TIME_CLOCKS);
   const lastRow = sheet.getLastRow();
 
-  //対象の範囲をすべて削除
+   
   if (lastRow >= 2) {
     sheet.getRange(2, 1, lastRow - 1, 3).clearContent();
     const adjustmentColumn = getAttendanceAdjustmentColumn_(sheet, false);
@@ -96,12 +96,12 @@ function getTodayAttendances(authToken) {
 
   const now = new Date();
   
-  //プログラム内部用の日付
+   
   const today = Utilities.formatDate(now, TIME_ZONE, 'yyyy/MM/dd');
   
   const weekdayLabels = ['日', '月', '火', '水', '木', '金', '土'];
 
-  //now.getDay()で数字を取得。日曜日なら0。
+   
   const dateLabel = Utilities.formatDate(now, TIME_ZONE, 'yyyy年M月d日') +
     `（${weekdayLabels[now.getDay()]}）`;
 
@@ -115,7 +115,7 @@ function getTodayAttendances(authToken) {
 function buildAttendances(targetDate) {
   const eventsByEmpId = new Map();
   const shiftDate = targetDate.replace(/\//g, '-');
-  // 通常シフトの従業員だけを起点にし、未打刻でも勤怠行を用意する。
+   
   readShiftStore_().records.forEach(function (record) {
     if (record.date === shiftDate && record.workType !== 'unavailable') {
       eventsByEmpId.set(String(record.employeeId), []);
@@ -268,15 +268,15 @@ function formatEstimatedWage(actualMinutes, rate, isHolidayRate) {
   if (actualMinutes === null) {
     return NO_VALUE_LABEL;
   }
-  // 曜日ごとの時給の決め方はこれまでどおりで、スキル手当だけを1時間あたりに上乗せする
-  // 平日は 基本時給＋スキル手当、土日祝は 基本時給＋休日加給＋スキル手当 になる
+   
+   
   const hourlyRate = rate.base + (isHolidayRate ? rate.holidayBonus : 0) + (rate.skillAllowance || 0);
   const wage = Math.floor(actualMinutes / 60 * hourlyRate);
   return wage.toLocaleString('ja-JP') + '円';
 }
 
 
-/** 時刻が同じ場合も出勤→休憩→退勤の順で扱う（分単位の修正に対応）。 */
+ 
 function compareClockEvents_(a, b) {
   const priority = function (type) { return type === '出勤' ? -1 : type === '退勤' ? 1 : 0; };
   return a.time.getTime() - b.time.getTime() || priority(a.type) - priority(b.type) ||
@@ -295,7 +295,7 @@ function getAttendanceAdjustmentColumn_(sheet, create) {
   return column;
 }
 
-/** 既存の3列を維持し、追加列がない旧データの休憩補正は0分として読む。 */
+ 
 function readAttendanceEvents_(sheet, dateKey) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) { return []; }
@@ -351,7 +351,7 @@ function parseAttendanceTime_(value, dateKey, original, label) {
   if (typeof value !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) {
     throw new Error(label + 'は時:分の形式で入力してください');
   }
-  // 未変更の時刻は秒も保持し、保存だけで労働時間が変わらないようにする。
+   
   if (original && formatClockTime(original) === value) { return original; }
   const date = Utilities.parseDate(dateKey + ' ' + value, TIME_ZONE, 'yyyy/MM/dd HH:mm');
   if (Utilities.formatDate(date, TIME_ZONE, 'yyyy/MM/dd HH:mm') !== dateKey + ' ' + value) {
@@ -360,7 +360,7 @@ function parseAttendanceTime_(value, dateKey, original, label) {
   return date;
 }
 
-/** 店長の行編集。通常打刻と同じロックで競合を確認し、対象従業員・対象日だけを書き換える。 */
+ 
 function saveAttendance(input, authToken) {
   requireManagerRole_(authToken);
   const payload = input || {};
@@ -402,7 +402,7 @@ function saveAttendance(input, authToken) {
       rowNumber: clockIns.length ? clockIns[0].rowNumber : nextRow++, breakAdjustment: 0 };
     edited.push(inEvent);
     if (clockOut) {
-      // 休憩中の退勤漏れを修正した場合は、その退勤時刻で休憩も終了させる。
+       
       if (original.breakOngoing) {
         edited.push({ employeeId: payload.id, type: '休憩終了', time: clockOut, rowNumber: nextRow++, breakAdjustment: 0 });
       }

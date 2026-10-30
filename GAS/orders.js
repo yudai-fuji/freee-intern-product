@@ -1,31 +1,31 @@
-// 発注管理（電話・FAXでやっていた食材の発注を、アプリの中でまとめて行う）を扱う
-//
-// 扱い方の前提
-// ・業者と食材のマスタは「食材業者・食材マスタ」シートで管理する
-// ・「どの食材をどの業者へ発注するか」は食材マスタの業者IDで決まるので、利用者が業者を選ぶ必要はない
-// ・1通のメールにまとめた食材は同じ発注番号を持つ。発注履歴はこの発注番号で業者ごとにまとめて表示する
-// ・メール本文は業者マスタの内容から組み立てる。画面から受け取った文章をそのまま送ることはしない
+ 
+ 
+ 
+ 
+ 
+ 
+ 
 
-// 発注履歴の一覧に出す最大件数（古い記録はシートに残る）
+ 
 const ORDER_HISTORY_LIMIT = 100;
 
-/**
- * 発注管理画面に必要な情報をまとめて返す（画面から呼ぶ入口）
- * 発注は店長画面の機能なので、ここで店長かどうかを確認する
- * @param {string} authToken ログイントークン
- * @return {Object} 業者・食材・発注履歴・設定値
- */
+ 
+
+
+
+
+
 function getOrderBoard(authToken) {
   requireManagerRole_(authToken);
   ensureOrderMasterData_();
   return buildOrderBoard_();
 }
 
-/**
- * 発注管理画面に渡す情報を組み立てる
- * 送信処理からも呼ぶため、ここでは権限を確認しない
- * @return {Object} 業者・食材・発注履歴・設定値
- */
+ 
+
+
+
+
 function buildOrderBoard_() {
   const now = new Date();
   const suppliers = getIngredientSuppliers();
@@ -43,10 +43,10 @@ function buildOrderBoard_() {
   for (let i = 0; i < masters.length; i++) {
     const master = masters[i];
     if (!master.active) {
-      continue; // 使わなくなった食材は発注できないようにする
+      continue;  
     }
     if (master.category !== ORDER_DEFAULT_ITEM_CATEGORY) {
-      continue; // 仕込み済みの品は店内で作るものなので発注の対象にしない
+      continue;  
     }
     const supplier = supplierById[master.supplierId];
     items.push({
@@ -78,10 +78,10 @@ function buildOrderBoard_() {
   };
 }
 
-/**
- * 業者1件を画面に出す形に整える
- * 未登録の項目は推測せず、画面側で「未登録」と出せるよう空文字のまま渡す
- */
+ 
+
+
+
 function buildOrderVendorView_(supplier, now) {
   return {
     'id': supplier.id,
@@ -91,16 +91,16 @@ function buildOrderVendorView_(supplier, now) {
     'email': supplier.email,
     'businessHours': supplier.businessHours,
     'closedDays': supplier.closedDays,
-    // 発注締切は業者マスタに登録した「受注締切時刻」と「受注営業日」をそのまま使う
+     
     'deadlineText': buildOrderDeadlineText_(supplier),
     'leadTimeText': buildOrderLeadTimeText_(supplier),
     'planText': buildIngredientSupplierPlan(supplier, now).text
   };
 }
 
-/**
- * 発注締切の表示文を作る（未設定のときは推測しない）
- */
+ 
+
+
 function buildOrderDeadlineText_(supplier) {
   if (supplier.deadlineTime === '') {
     return '';
@@ -111,9 +111,9 @@ function buildOrderDeadlineText_(supplier) {
   return formatIngredientWeekdayList(supplier.orderDays) + 'の' + supplier.deadlineTime + 'まで';
 }
 
-/**
- * 通常納品日数の表示文を作る
- */
+ 
+
+
 function buildOrderLeadTimeText_(supplier) {
   if (supplier.leadTimeDays === null) {
     return '';
@@ -122,12 +122,12 @@ function buildOrderLeadTimeText_(supplier) {
   return supplier.leadTimeDays + countText;
 }
 
-/**
- * 実際にメールを送る宛先を求める
- * 動作確認用の宛先が設定されている間は、業者マスタのアドレスではなくそちらへ送る
- * @param {Object} supplier 業者
- * @return {string} 宛先アドレス（どちらも未設定なら空文字）
- */
+ 
+
+
+
+
+
 function resolveOrderRecipient_(supplier) {
   if (normalizeIngredientText(ORDER_TEST_RECIPIENT_EMAIL) !== '') {
     return ORDER_TEST_RECIPIENT_EMAIL;
@@ -135,15 +135,15 @@ function resolveOrderRecipient_(supplier) {
   return supplier.email;
 }
 
-// ここから下は発注履歴（食材発注シート）の読み取り
+ 
 
-/**
- * 発注の記録を、1通の発注（業者ごと）にまとめ直して新しい順に並べる
- * 発注番号が空の行はメール送信を通さずに記録された発注なので、1件ずつのまとまりとして扱う
- * @param {Array<Object>} orders 食材発注シートの内容
- * @param {Object} supplierById 業者IDをキーにした業者の対応表
- * @return {Array<Object>} 発注履歴の配列（新しい順）
- */
+ 
+
+
+
+
+
+
 function buildOrderHistory_(orders, supplierById) {
   const groups = [];
   const groupByKey = {};
@@ -185,13 +185,13 @@ function buildOrderHistory_(orders, supplierById) {
     const timeB = parseIngredientDateTime(b.orderedAt);
     const valueA = timeA ? timeA.getTime() : 0;
     const valueB = timeB ? timeB.getTime() : 0;
-    return valueB - valueA; // 新しい発注を上にする
+    return valueB - valueA;  
   });
 
   return groups.slice(0, ORDER_HISTORY_LIMIT);
 }
 
-/** 履歴を削除せず、当日以降の入荷予定を食材ごとに取り出す。 */
+ 
 function buildOrderUpcoming_(orders, supplierById, now) {
   const today = formatIngredientDate(now);
   return orders.map(function (order) {
@@ -214,7 +214,7 @@ function buildOrderUpcoming_(orders, supplierById, now) {
   });
 }
 
-/** 発注日時（yyyy/MM/dd HH:mm）を一覧用の短い表示（9/16 21:05）にする。 */
+ 
 function formatOrderHistoryLabel_(orderedAt) {
   const date = parseIngredientDateTime(orderedAt);
   if (!date) {
@@ -223,14 +223,14 @@ function formatOrderHistoryLabel_(orderedAt) {
   return Utilities.formatDate(date, TIME_ZONE, 'M/d HH:mm');
 }
 
-// ここから下はメールの組み立て
+ 
 
-/**
- * 画面から届いた発注内容を確かめ、食材マスタの内容で組み立て直す
- * 食材名・業者・単位はマスタの値を使い、画面から届いた値は信用しない
- * @param {Array<Object>} items [{ ingredientId, quantity }] の配列
- * @return {Array<Object>} { master, supplier, quantity, unit } の配列
- */
+ 
+
+
+
+
+
 function normalizeOrderItems_(items) {
   const list = Array.isArray(items) ? items : [];
   if (list.length === 0) {
@@ -278,13 +278,13 @@ function normalizeOrderItems_(items) {
   return normalized;
 }
 
-/**
- * 発注内容を業者ごとにまとめ、業者ごとのメール（件名・本文・宛先）を組み立てる
- * 確認画面の表示にも送信にも同じこの関数を使うので、確認した内容とそのまま同じメールが送られる
- * @param {Array<Object>} items [{ ingredientId, quantity }] の配列
- * @param {Date} now 現在日時
- * @return {Array<Object>} 業者ごとの発注メールの配列
- */
+ 
+
+
+
+
+
+
 function buildOrderDrafts_(items, now) {
   const normalized = normalizeOrderItems_(items);
 
@@ -322,17 +322,17 @@ function buildOrderDrafts_(items, now) {
   return drafts;
 }
 
-/**
- * 件名を作る（例：9月16日 発注依頼）
- */
+ 
+
+
 function buildOrderMailSubject_(now) {
   return (now.getMonth() + 1) + '月' + now.getDate() + '日 発注依頼';
 }
 
-/**
- * 本文を作る
- * 業者名・商品・数量は登録された内容から組み立て、利用者に文章を入力させない
- */
+ 
+
+
+
 function buildOrderMailBody_(draft) {
   const parts = [];
   parts.push(draft.vendorName + ' 御中');
@@ -356,11 +356,11 @@ function buildOrderMailBody_(draft) {
   return parts.join('\n');
 }
 
-/**
- * 発注内容確認の画面に出す内容を作る（メールはまだ送らない）
- * @param {Object} input { authToken, items }
- * @return {Object} { drafts: 業者ごとの発注メール, vendorCount: 業者数 }
- */
+ 
+
+
+
+
 function getOrderDrafts(input) {
   const payload = input || {};
   requireManagerRole_(payload.authToken);
@@ -368,14 +368,14 @@ function getOrderDrafts(input) {
   return { 'drafts': drafts, 'vendorCount': drafts.length };
 }
 
-// ここから下は送信と発注履歴の保存
+ 
 
-/**
- * 発注メールを業者ごとに送り、送れた分を発注履歴として保存する
- * 途中の業者で失敗しても、送信できた業者の記録は残す（同じ内容を二重に送らないため）
- * @param {Object} input { authToken, operationKey, items }
- * @return {Object} { message, detail, board }
- */
+ 
+
+
+
+
+
 function sendOrderMails(input) {
   const payload = input || {};
   requireManagerRole_(payload.authToken);
@@ -411,7 +411,7 @@ function sendOrderMails(input) {
         failures.push(draft.vendorName + '：' + error.message);
         continue;
       }
-      // 送れた業者の分だけを記録する。ここで失敗しても、送ったメールは取り消せないので例外にしない
+       
       appendOrderHistoryRows_(sheet, draft, supplierById[draft.vendorId], orderedAt, actor, now);
       sentVendorIds.push(draft.vendorId);
       sentVendorNames.push(draft.vendorName);
@@ -438,10 +438,10 @@ function sendOrderMails(input) {
   });
 }
 
-/**
- * 発注メールを1通送る
- * 差出人に使いたいアドレスがGmailの別名に登録されていればその名前で送る
- */
+ 
+
+
+
 function sendOrderMail_(draft) {
   MailApp.sendEmail({
     to: draft.to,
@@ -451,10 +451,10 @@ function sendOrderMail_(draft) {
   });
 }
 
-/**
- * 送信できた1業者分を食材発注シートへ追記する（食材1つにつき1行）
- * 入荷予定日は、発注日時と業者の発注条件から自動算出して保存する
- */
+ 
+
+
+
 function appendOrderHistoryRows_(sheet, draft, supplier, orderedAt, actor, now) {
   const orderNo = newIngredientId('ODR');
   const expectedDate = resolveOrderExpectedDate_(supplier, now);
@@ -473,20 +473,20 @@ function appendOrderHistoryRows_(sheet, draft, supplier, orderedAt, actor, now) 
   appendIngredientRows(sheet, rows, INGREDIENT_ORDER_SHEET_HEADER.length);
 }
 
-/**
- * 入荷予定日を求める（分からないときは空欄のままにして、推測で埋めない）
- */
+ 
+
+
 function resolveOrderExpectedDate_(supplier, now) {
   if (!supplier || !now) { return ''; }
   const plan = buildIngredientSupplierPlan(supplier, now);
   return plan.available ? plan.deliveryDateKey : '';
 }
 
-/**
- * 発注した人を求める
- * 発注管理は店長画面の機能なので役割名を残し、実行中のGoogleアカウントが分かれば併記する
- * @return {string} 発注者
- */
+ 
+
+
+
+
 function resolveOrderActor_() {
   try {
     const email = Session.getActiveUser().getEmail();
@@ -494,19 +494,19 @@ function resolveOrderActor_() {
       return ROLE_MANAGER + '（' + email + '）';
     }
   } catch (error) {
-    // 実行者を取得できない設定のときは役割名だけを残す
+     
   }
   return ROLE_MANAGER;
 }
 
-/**
- * 送信処理の共通の入れ物
- * 同時実行を締め出し、同じ操作キーの再送では二重に送らない
- * @param {string} operationKey 画面が1回の送信ごとに発行する操作キー
- * @param {string} type 履歴に残す操作の種別
- * @param {Function} executor 実際の送信処理
- * @return {Object} { message: 画面に出す文言, detail: 送信結果, board: 最新の発注管理情報 }
- */
+ 
+
+
+
+
+
+
+
 function runOrderOperation_(operationKey, type, executor) {
   const key = normalizeIngredientText(operationKey);
   if (key === '') {
@@ -527,13 +527,13 @@ function runOrderOperation_(operationKey, type, executor) {
     if (existing) {
       const status = existing.values['処理状態'];
       if (status === '完了') {
-        // 通信のやり直しで同じ送信が届いた場合。メールは送らず、前回の結果をそのまま返す
+         
         message = existing.values['内容'] + '（この発注はすでに送信済みです）';
         isDuplicated = true;
       } else if (status === '処理中') {
         throw new Error('前回の送信が完了していない可能性があります。発注履歴を確認してください');
       }
-      // '失敗' のときはメールを送っていないので、同じ操作キーのままやり直せる
+       
     }
 
     if (!isDuplicated) {
@@ -545,7 +545,7 @@ function runOrderOperation_(operationKey, type, executor) {
         failIngredientEvent(eventSheet, eventRowNumber, error);
         throw error;
       }
-      SpreadsheetApp.flush(); // 発注履歴の書き込みを確定させてから履歴を完了にする
+      SpreadsheetApp.flush();  
       completeIngredientEvent(eventSheet, eventRowNumber, result);
       message = result.message;
       detail = result;
@@ -557,17 +557,17 @@ function runOrderOperation_(operationKey, type, executor) {
   return { 'message': message, 'detail': detail, 'board': buildOrderBoard_() };
 }
 
-// ここから下は初期データの用意
+ 
 
-/**
- * 発注に必要なマスタがそろっていない場合だけ、初期データを入れる
- * すでに入っている値は書き換えず、空欄のところだけを埋める
- * @return {void} 戻り値なし
- */
+ 
+
+
+
+
 function ensureOrderMasterData_() {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) {
-    return; // ほかの処理が動いているときは初期データを入れず、いまある内容で画面を出す
+    return;  
   }
   try {
     const supplierSheet = ensureIngredientSupplierSheet();
@@ -609,7 +609,7 @@ function ensureOrderMasterData_() {
         ]);
         continue;
       }
-      // すでにある食材は、空欄の項目だけを埋める（店長が設定した内容は書き換えない）
+       
       const values = row.values;
       let changed = false;
       if (values['業者ID'] === '' && vendorId !== '') {
@@ -633,9 +633,9 @@ function ensureOrderMasterData_() {
   }
 }
 
-/**
- * 業者マスタへ入れる初期データの行を作る
- */
+ 
+
+
 function buildOrderDefaultVendorRows_() {
   const rows = [];
   const updatedAt = formatIngredientDateTime(new Date());
@@ -653,14 +653,14 @@ function buildOrderDefaultVendorRows_() {
   return rows;
 }
 
-/**
- * 見出し名をキーにした値で、シートの1行を書き直す
- * @param {Sheet} sheet 対象シート
- * @param {number} rowNumber 書き直す行番号
- * @param {Array<string>} header 見出し行
- * @param {Object} values 見出し名をキーにした値
- * @return {void} 戻り値なし
- */
+ 
+
+
+
+
+
+
+
 function writeOrderSheetRow_(sheet, rowNumber, header, values) {
   const row = [];
   for (let i = 0; i < header.length; i++) {

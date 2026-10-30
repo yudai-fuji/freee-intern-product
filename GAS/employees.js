@@ -1,16 +1,16 @@
-// 従業員の取得・追加・削除・氏名管理を行う
-// 削除は名簿の行や氏名を消さず「状態」列を『削除済み』にするだけなので、
-// 過去の勤怠・スキルの記録と氏名はそのまま残り、従業員番号も別の人に使い回されない
+ 
+ 
+ 
 
-/**
- * 従業員名簿に「状態」「削除日時」の列を用意する
- * 既存の列・データは書き換えず、見出しが見つからないときだけ名簿の右端に足す
- * @return {Object} { sheet: 従業員名簿シート, statusColumn: 状態列の列番号, deletedAtColumn: 削除日時列の列番号 }
- */
+ 
+
+
+
+
 function ensureEmployeeStatusColumns_() {
   const sheet = getSheet(SHEET_NAMES.EMPLOYEES);
 
-  // 見出し行を読み、状態・削除日時の列がすでにあるかを調べる
+   
   const lastColumn = Math.max(sheet.getLastColumn(), EMPLOYEE_COL_PART_TIME_MARK);
   const header = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
   let statusColumn = 0;
@@ -24,7 +24,7 @@ function ensureEmployeeStatusColumns_() {
     }
   }
 
-  // 見つからなかった列だけを、既存の列より右側に新しく割り当てる
+   
   let nextColumn = lastColumn;
   if (statusColumn === 0) {
     nextColumn++;
@@ -35,7 +35,7 @@ function ensureEmployeeStatusColumns_() {
     deletedAtColumn = nextColumn;
   }
 
-  // 割り当てた列がシートの列数を超える場合は、足りない分だけ列を増やしてから見出しを書く
+   
   if (nextColumn > sheet.getMaxColumns()) {
     sheet.insertColumnsAfter(sheet.getMaxColumns(), nextColumn - sheet.getMaxColumns());
   }
@@ -59,7 +59,7 @@ function getEmployeeIdentityColumns_(sheet) {
   }
   const id = findColumn(['従業員番号', '従業員ID'], EMPLOYEE_COL_ID);
   const name = findColumn(['氏名'], EMPLOYEE_COL_NAME);
-  // 旧名簿の並びは維持し、列が移動した場合は見出しを優先する。
+   
   return {
     id: id,
     name: name,
@@ -68,18 +68,18 @@ function getEmployeeIdentityColumns_(sheet) {
   };
 }
 
-/**
- * 従業員名簿の全行を、削除済みかどうかも含めて読み取る
- * 一覧・氏名の対応表・追加・削除は、すべてこの関数が読んだ内容をもとに判断する
- * @return {Array} [{ id: 従業員番号, name: 氏名, rowNumber: シート上の行番号, isDeleted: 削除済みなら true }, ...]
- */
+ 
+
+
+
+
 function readEmployeeRows_() {
   const columns = ensureEmployeeStatusColumns_();
   const sheet = columns.sheet;
   const lastRow = sheet.getLastRow();
   const rows = [];
   if (lastRow < 2) {
-    return rows; // 見出し行しかない
+    return rows;  
   }
 
   const identity = getEmployeeIdentityColumns_(sheet);
@@ -88,26 +88,26 @@ function readEmployeeRows_() {
   for (let i = 0; i < values.length; i++) {
     const empId = values[i][identity.id - 1];
     if (empId === '') {
-      continue; // 従業員番号が無い行はそもそも使わない
+      continue;  
     }
-    // 状態列が空欄の従業員は、これまでどおり有効として扱う
+     
     const status = String(values[i][columns.statusColumn - 1] || '').trim();
     rows.push({
       'id': empId,
       'name': String(values[i][identity.name - 1] || '').trim(),
-      'rowNumber': i + 2, // 見出し行の分だけ、シート上の行番号は配列の添字より2大きい
+      'rowNumber': i + 2,  
       'isDeleted': (status === EMPLOYEE_STATUS_DELETED)
     });
   }
   return rows;
 }
 
-/**
- * 画面に表示する従業員番号の文字列を作る
- * 名簿の値そのものは変えず、表示のときだけ「01」「001」のゼロ埋めを外して「1」にする
- * @param {*} empId 名簿に入っている従業員番号
- * @return {string} 表示用の従業員番号
- */
+ 
+
+
+
+
+
 function formatEmployeeNumber(empId) {
   const text = String(empId === null || empId === undefined ? '' : empId).trim();
   if (/^[0-9]+$/.test(text)) {
@@ -116,17 +116,17 @@ function formatEmployeeNumber(empId) {
   return text;
 }
 
-/**
- * 有効な従業員（削除済みでなく、氏名が入っている人）の一覧を取得する
- * 従業員画面の一覧・本日の業務設定・スキル管理の対象は、すべてこの一覧に揃える
- * @return {Array} [{ id: 従業員番号, name: 氏名, number: 表示用の従業員番号 }, ...]
- */
+ 
+
+
+
+
 function getEmployees() {
   const rows = readEmployeeRows_();
   const employees = [];
   for (let i = 0; i < rows.length; i++) {
     if (rows[i].isDeleted || rows[i].name === '') {
-      continue; // 削除済みの人と、まだ氏名が入っていない番号は一覧に出さない
+      continue;  
     }
     employees.push({
       'id': rows[i].id,
@@ -137,12 +137,12 @@ function getEmployees() {
   return employees;
 }
 
-/**
- * 画面用に有効な従業員の一覧を返す（ログインしている人だけが取得できる）
- * 追加・削除のあとも、この関数で取り直した一覧を表示すれば最新の内容になる
- * @param {string} authToken ログイントークン
- * @return {Array} getEmployees() と同じ形式の一覧
- */
+ 
+
+
+
+
+
 function getActiveEmployeeList(authToken) {
   requireLoggedIn_(authToken);
   return getEmployees();
@@ -165,11 +165,11 @@ function getEmployeeDirectory(authToken) {
   });
 }
 
-/**
- * 従業員番号と氏名の対応表をつくる（削除済みの人も含む）
- * 過去の勤怠に残っている記録の氏名を表示するために使う
- * @return {Object} { '3': '川村 祐大', ... }
- */
+ 
+
+
+
+
 function getEmployeeNameMap() {
   const rows = readEmployeeRows_();
   const nameByEmpId = {};
@@ -182,11 +182,11 @@ function getEmployeeNameMap() {
   return nameByEmpId;
 }
 
-/**
- * 有効な従業員だけの、従業員番号と氏名の対応表をつくる
- * 打刻・本日の業務・スキルの保存先として選んでよい人かどうかの確認に使う
- * @return {Object} { '3': '川村 祐大', ... }
- */
+ 
+
+
+
+
 function getActiveEmployeeNameMap() {
   const employees = getEmployees();
   const nameByEmpId = {};
@@ -196,12 +196,12 @@ function getActiveEmployeeNameMap() {
   return nameByEmpId;
 }
 
-/**
- * 従業員名簿から、指定した従業員番号の行を探す
- * @param {Array} rows readEmployeeRows_() が返した一覧
- * @param {*} empId 探したい従業員番号
- * @return {Object} 見つかった行。見つからなければ null
- */
+ 
+
+
+
+
+
 function findEmployeeRow_(rows, empId) {
   for (let i = 0; i < rows.length; i++) {
     if (String(rows[i].id) === String(empId)) {
@@ -211,7 +211,7 @@ function findEmployeeRow_(rows, empId) {
   return null;
 }
 
-// PINは名簿の末尾に文字列として保存する。従業員一覧の戻り値には含めない。
+ 
 function ensureEmployeePinColumn_() {
   const sheet = ensureEmployeeStatusColumns_().sheet;
   const lastColumn = sheet.getLastColumn();
@@ -256,15 +256,15 @@ function changeEmployeePin(empId, newPin, confirmPin, authToken) {
   });
 }
 
-/**
- * 従業員を追加する（店長だけが実行できる）
- * 削除済み・未使用の番号も含む最大番号の次を、新しい行へ登録する。
- * @param {string} lastName 姓
- * @param {string} firstName 名
- * @param {string} pin 打刻用の半角数字6桁
- * @param {string} authToken ログイントークン
- * @return {Object} { message: 画面に出す文言, employees: 追加後の有効な従業員一覧 }
- */
+ 
+
+
+
+
+
+
+
+
 function addEmployee(lastName, firstName, pin, authToken) {
   requireManagerRole_(authToken);
   requireValidEmployeePin_(pin);
@@ -273,7 +273,7 @@ function addEmployee(lastName, firstName, pin, authToken) {
 
 function addEmployee_(lastName, firstName, pin) {
 
-  // .trim() で文字列に含まれる余分な空白を削除する
+   
   lastName = String(lastName === null || lastName === undefined ? '' : lastName).trim();
   firstName = String(firstName === null || firstName === undefined ? '' : firstName).trim();
   if (lastName === '' || firstName === '') {
@@ -314,12 +314,12 @@ function addEmployee_(lastName, firstName, pin) {
   };
 }
 
-/**
- * 削除する前に、対象の従業員と削除の影響を確認するための情報を返す（店長だけが実行できる）
- * @param {*} empId 削除しようとしている従業員番号
- * @param {string} authToken ログイントークン
- * @return {Object} { id, name, number }
- */
+ 
+
+
+
+
+
 function getEmployeeDeletionPreview(empId, authToken) {
   requireManagerRole_(authToken);
 
@@ -338,13 +338,13 @@ function getEmployeeDeletionPreview(empId, authToken) {
   };
 }
 
-/**
- * 従業員を削除済みにする（店長だけが実行できる）
- * 名簿の行と氏名はそのまま残し、状態列と削除日時列だけを書き換える
- * @param {*} empId 削除する従業員番号
- * @param {string} authToken ログイントークン
- * @return {Object} { message: 画面に出す文言, employees: 削除後の有効な従業員一覧 }
- */
+ 
+
+
+
+
+
+
 function deleteEmployee(empId, authToken) {
   requireManagerRole_(authToken);
 
@@ -366,21 +366,21 @@ function deleteEmployee(empId, authToken) {
   };
 }
 
-// ここから下はスキル手当（円/時）を従業員名簿で持つための処理
-// スキル手当は「一度到達したら下げない」ため、そのときどきの習得済の数から計算し直すのではなく、
-// 到達した金額そのものを名簿に残しておく必要がある
+ 
+ 
+ 
 
-/**
- * 従業員名簿に「スキル手当」の列を用意する
- * 状態・削除日時と同じ考え方で、既存の列・データは書き換えず、見出しが見つからないときだけ名簿の右端に足す
- * @return {Object} { sheet: 従業員名簿シート, column: スキル手当列の列番号 }
- */
+ 
+
+
+
+
 function ensureEmployeeSkillAllowanceColumn_() {
-  // 先に状態・削除日時の列を用意しておくことで、どの処理が先に動いても列の並びが変わらない
+   
   const statusColumns = ensureEmployeeStatusColumns_();
   const sheet = statusColumns.sheet;
 
-  // 見出し行を読み、スキル手当の列がすでにあるかを調べる
+   
   const lastColumn = Math.max(sheet.getLastColumn(), statusColumns.deletedAtColumn);
   const header = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
   let allowanceColumn = 0;
@@ -392,7 +392,7 @@ function ensureEmployeeSkillAllowanceColumn_() {
     }
   }
 
-  // 見つからなかったときだけ、既存の列より右側に新しく割り当てる
+   
   if (allowanceColumn === 0) {
     allowanceColumn = lastColumn + 1;
     if (allowanceColumn > sheet.getMaxColumns()) {
@@ -404,12 +404,12 @@ function ensureEmployeeSkillAllowanceColumn_() {
   return { 'sheet': sheet, 'column': allowanceColumn };
 }
 
-/**
- * スキル手当として読んだ値を金額（数値）に直す
- * 列を足した直後の空欄や、数値として読めない値は「まだ手当なし」の 0 円として扱う
- * @param {*} rawValue 名簿のスキル手当列に入っている値
- * @return {number} スキル手当（円/時）
- */
+ 
+
+
+
+
+
 function normalizeSkillAllowance_(rawValue) {
   const amount = Number(rawValue);
   if (!isFinite(amount) || amount <= 0) {
@@ -418,18 +418,18 @@ function normalizeSkillAllowance_(rawValue) {
   return amount;
 }
 
-/**
- * 従業員番号ごとのスキル手当（円/時）の対応表をつくる
- * 給与計算と、スキル保存時の「今より下げない」判定の両方でこの対応表を使う
- * @return {Object} { '3': 50, ... }
- */
+ 
+
+
+
+
 function getEmployeeSkillAllowanceMap() {
   const columns = ensureEmployeeSkillAllowanceColumn_();
   const sheet = columns.sheet;
   const lastRow = sheet.getLastRow();
   const allowanceByEmpId = {};
   if (lastRow < 2) {
-    return allowanceByEmpId; // 見出し行しかない
+    return allowanceByEmpId;  
   }
 
   const empIdValues = sheet.getRange(2, getEmployeeIdentityColumns_(sheet).id, lastRow - 1, 1).getValues();
@@ -443,23 +443,23 @@ function getEmployeeSkillAllowanceMap() {
   return allowanceByEmpId;
 }
 
-/**
- * 従業員1人のスキル手当（円/時）を取得する
- * @param {*} empId 従業員番号
- * @return {number} 名簿に保存されているスキル手当。未設定なら 0
- */
+ 
+
+
+
+
 function getEmployeeSkillAllowance(empId) {
   const amount = getEmployeeSkillAllowanceMap()[String(empId)];
   return (amount === undefined) ? SKILL_ALLOWANCE_DEFAULT : amount;
 }
 
-/**
- * 従業員1人のスキル手当（円/時）を名簿に書き込む
- * 金額を決めるのは呼び出し側なので、ここでは下げないための判定はしない
- * @param {*} empId 従業員番号
- * @param {number} amount 保存するスキル手当
- * @return {boolean} 書き込めたら true、名簿に行が見つからなければ false
- */
+ 
+
+
+
+
+
+
 function saveEmployeeSkillAllowance_(empId, amount) {
   const columns = ensureEmployeeSkillAllowanceColumn_();
   const targetRow = findEmployeeRow_(readEmployeeRows_(), empId);

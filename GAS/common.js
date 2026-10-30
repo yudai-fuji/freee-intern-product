@@ -1,4 +1,4 @@
-//　複数の機能から共通して使う処理をまとめる
+ 
 
 function getSheet(sheetName) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
@@ -8,7 +8,7 @@ function getSheet(sheetName) {
   return sheet;
 }
 
-// 設定更新・データ移行も打刻と同じScriptLockを使う。呼び出しを入れ子にしない。
+ 
 function withAppLock_(callback) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) {

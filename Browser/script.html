@@ -2,7 +2,7 @@
       let selectedEmpId = null;
       let clockIntervalId = null;
 
-      // 選択中の従業員の打刻状態。通信中・未取得時は操作できない。
+       
       let employeeClockState = null;
       let clockStateRequestId = 0;
       const pendingClockRequests = new Set();
@@ -12,30 +12,30 @@
       let isClockPinSubmitting = false;
       let sharedNotePinGrant = null;
 
-      // 従業員画面の一覧に出す、有効な従業員の一覧（{ id, name, number } の配列）
-      // 従業員画面と従業員編集で同じ有効な従業員一覧を使う
+       
+       
       let employeeListItems = [];
 
-      // 現在サーバーとの通信に使っているログイントークン（従業員用・店長用のどちらか一方）
+       
       let authToken = '';
 
-      // 起動時にGASが自動発行した従業員用トークン。店長画面から従業員画面へ戻るときにこれへ戻す
+       
       let employeeAuthToken = '';
 
-      // 表示中の画面。'employee' か 'manager'
+       
       let currentScreen = 'employee';
       let currentManagerSection = '';
 
-      // トークンを切り替えるたびに増やす通し番号。切り替え前に届いた通信結果を画面へ反映しないために使う
+       
       let loginSessionId = 0;
 
-      // 打刻がまだ無いことを表す表示文字列（code.js の UNRECORDED_LABEL と揃える）
+       
       const UNRECORDED_LABEL = '未打刻';
 
-      // ポジション候補（code.js の POSITION_ITEMS をそのまま埋め込み、二重管理しない）
+       
       const POSITION_ITEMS = <?!= JSON.stringify(POSITION_ITEMS) ?>;
 
-      // 役割名（config.js の定数をそのまま埋め込み、二重管理しない）
+       
       const ROLE_MANAGER = <?!= JSON.stringify(ROLE_MANAGER) ?>;
 
       window.addEventListener('load', function () {
@@ -65,11 +65,11 @@
         initApp();
       });
 
-      /**
-       * アプリ起動時の処理。GASに従業員用トークンを自動発行してもらい、従業員画面を開く
-       * パスワード入力は求めない
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function initApp() {
         google.script.run
           .withSuccessHandler(function (result) {
@@ -91,27 +91,27 @@
           .createEmployeeSession();
       }
 
-      /**
-       * 従業員画面・店長画面を切り替える
-       * ページ遷移はせず表示/非表示を操作するだけなので、選択中の従業員などの状態は保持される
-       * @param {string} screenName 'employee' / 'manager'
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
+
       function showScreen(screenName) {
         currentScreen = screenName;
         const isEmployee = (screenName === 'employee');
         document.getElementById('employee_screen').style.display = isEmployee ? 'block' : 'none';
         document.getElementById('manager_screen').style.display = isEmployee ? 'none' : 'block';
 
-        // 画面切り替えボタンは、いま出ていない方の画面名を表示する
+         
         document.getElementById('screen_switch_btn').textContent = isEmployee ? '店長画面へ' : '従業員画面へ';
       }
 
-      /**
-       * ヘッダーの画面切り替えボタンが押されたときの処理
-       * 従業員画面からは店長認証モーダルを、店長画面からは切り替え確認モーダルを開く
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function handleScreenSwitchButtonClick() {
         if (pendingClockRequests.size > 0 || isSharedNoteSubmitting) { return; }
         if (shiftSaving || attendancePendingSaves.size) { return; }
@@ -126,10 +126,10 @@
         }
       }
 
-      /**
-       * 店長認証モーダルを開く
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
       function openManagerLoginModal() {
         document.getElementById('manager_password_input').value = '';
         showManagerLoginError('');
@@ -137,35 +137,35 @@
         document.getElementById('manager_password_input').focus();
       }
 
-      /**
-       * 店長認証モーダルを閉じる
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
       function closeManagerLoginModal() {
         document.getElementById('manager_login_overlay').style.display = 'none';
         document.getElementById('manager_password_input').value = '';
       }
 
-      /**
-       * 店長認証モーダルの背景クリックを受け取る
-       * @param {Event} event クリックイベント
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function handleManagerLoginOverlayClick(event) {
-        // 暗い背景そのものをクリックしたときだけ閉じる（モーダル本体のクリックは無視）
+         
         if (event.target === event.currentTarget) {
           closeManagerLoginModal();
         }
       }
 
-      /**
-       * 入力された店長用パスワードをGASへ照合しにいく
-       * 判定はGAS側（login()）で行い、成功したときだけ店長用トークンを受け取る
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function submitManagerLogin() {
         const passwordInput = document.getElementById('manager_password_input');
-        // 先頭の 0 を保持するため、数値に変換せず文字列のまま渡す
+         
         const password = passwordInput.value;
         const submitBtn = document.getElementById('manager_login_submit_btn');
         if (submitBtn.disabled) { return; }
@@ -198,96 +198,96 @@
           .login(password);
       }
 
-      /**
-       * 店長認証モーダルのエラー文言を出し分ける
-       * @param {string} message 表示する文言（空文字で消す）
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function showManagerLoginError(message) {
         document.getElementById('manager_login_error').textContent = message;
       }
 
-      /**
-       * 店長認証成功後に、店長用トークンへ切り替えて店長画面を開く
-       * @param {string} token GASが発行した店長用ログイントークン
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function startManagerSession(token) {
         authToken = token;
-        loginSessionId++; // これ以降に遅れて届いた従業員画面側の通信結果は画面へ反映しない
+        loginSessionId++;  
 
         closeAllModals();
-        // 店長はどのメニューも選んでいない状態から始める（右側の内容表示領域は空欄）
+         
         resetManagerScreen();
         showScreen('manager');
       }
 
-      /**
-       * 従業員画面への切り替え確認モーダルを開く
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
       function openScreenSwitchModal() {
         document.getElementById('screen_switch_overlay').style.display = 'flex';
       }
 
-      /**
-       * 従業員画面への切り替え確認モーダルを閉じる（キャンセルのときは店長画面に留まる）
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
       function closeScreenSwitchModal() {
         document.getElementById('screen_switch_overlay').style.display = 'none';
       }
 
-      /**
-       * 従業員画面への切り替え確認モーダルの背景クリックを受け取る
-       * @param {Event} event クリックイベント
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function handleScreenSwitchOverlayClick(event) {
         if (event.target === event.currentTarget) {
           closeScreenSwitchModal();
         }
       }
 
-      /**
-       * 確認モーダルで切り替えが確定されたときの処理
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
       function confirmScreenSwitch() {
         closeScreenSwitchModal();
         switchToEmployeeScreen();
       }
 
-      /**
-       * 店長画面から従業員画面へ切り替える（パスワードは不要）
-       * 起動時に発行済みの従業員用トークンへ戻し、使い終えた店長用トークンはサーバー側で無効化する
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function switchToEmployeeScreen() {
         if (attendancePendingSaves.size) { return; }
         if (!confirmLeaveSkillEditor(switchToEmployeeScreen)) { return; }
         if (!confirmLeaveShiftEditor(switchToEmployeeScreen)) { return; }
         const managerToken = authToken;
         authToken = employeeAuthToken;
-        loginSessionId++; // これ以降に遅れて届いた店長画面側の通信結果は画面へ反映しない
+        loginSessionId++;  
 
         closeAllModals();
-        // 店長画面での従業員の追加・削除が反映された一覧を取り直す
+         
         resetEmployeeScreen();
         loadEmployeeList();
         resetManagerScreen();
         showScreen('employee');
 
-        // 店長用トークンは使い終わったら無効化する（結果は画面に影響しないので待たない）
+         
         if (managerToken !== '' && managerToken !== employeeAuthToken) {
           google.script.run.logout(managerToken);
         }
       }
 
-      /**
-       * 開いているダイアログをすべて閉じる
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
       function closeAllModals() {
         closeClockPinDialog();
         closeSharedNoteModal();
@@ -298,11 +298,11 @@
         }
       }
 
-      /**
-       * 従業員画面の一時的な表示（一覧・選択中の従業員・打刻メッセージ・本日の業務）を消す
-       * 打刻済みのデータには触れない
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function resetEmployeeScreen() {
         isSharedNoteSubmitting = false;
         closeSharedNoteModal();
@@ -314,11 +314,11 @@
         showEmployeeListMessage('');
       }
 
-      /**
-       * 店長画面を、どのメニューも選んでいない状態（右側の内容表示領域が空欄）に戻す
-       * 読み込み済みの内容も残さない
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function resetManagerScreen() {
         document.getElementById('manager_screen').classList.remove('skill-section-active', 'order-section-active', 'attendance-section-active');
         document.getElementById('manager_screen').classList.remove('shift-section-active');
@@ -352,22 +352,22 @@
         document.getElementById('order_body').style.display = 'none';
       }
 
-      /**
-       * 通信を始めたときのトークンがいまも使われているかを調べる
-       * 画面を切り替えたあとに遅れて届いた結果で、以前の画面を出し直さないために使う
-       * @param {number} sessionId 通信を始めた時点の loginSessionId
-       * @return {boolean} 同じトークンがまだ使われていれば true
-       */
+       
+
+
+
+
+
       function isSameLoginSession(sessionId) {
         return authToken !== '' && sessionId === loginSessionId;
       }
 
-      /**
-       * 有効な従業員の一覧をGASから取り直し、画面の一覧を描き直す
-       * ログインのたびに呼ぶので、ログインし直せば追加・削除が反映された一覧が表示される
-       * @param {Function} onFailed 取得に失敗したときに実行したい処理（省略できる）
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
+
       function loadEmployeeList(onFailed) {
         const sessionId = loginSessionId;
         google.script.run
@@ -389,12 +389,12 @@
           .getActiveEmployeeList(authToken);
       }
 
-      /**
-       * 受け取った従業員一覧を画面へ反映する
-       * 従業員画面の一覧と、店長画面の削除対象一覧の両方を同じ内容に揃える
-       * @param {Array} employees [{ id, name, number }, ...]
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
+
       function applyEmployeeList(employees) {
         employeeListItems = employees || [];
         renderEmployeeList();
@@ -406,12 +406,12 @@
         }
       }
 
-      /**
-       * 有効な従業員を全員、一覧に描く
-       * 先頭の人を自動選択はしない。描いたあとに選択中の従業員が一覧から消えていたら、
-       * 選択と打刻欄も解除して、見えていない従業員への誤打刻を防ぐ
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
+
       function renderEmployeeList() {
         const list = document.getElementById('employee_list');
         list.innerHTML = '';
@@ -439,11 +439,11 @@
         }
       }
 
-      /**
-       * 一覧に並べる従業員1人分の項目を作る
-       * @param {Object} employee { id, name, number }
-       * @return {Element} 一覧の項目
-       */
+       
+
+
+
+
       function createEmployeeListItem(employee) {
         const item = document.createElement('li');
         item.className = 'employee-item';
@@ -455,12 +455,12 @@
         return item;
       }
 
-      /**
-       * 氏名（フルネーム）と、その下の「従業員番号 : 3」を指定の場所に描く
-       * @param {Element} container 描き込む場所
-       * @param {Object} employee { id, name, number }
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
+
       function renderEmployeeNameBlock(container, employee) {
         container.innerHTML = '';
 
@@ -475,21 +475,21 @@
         container.appendChild(numberEl);
       }
 
-      /**
-       * 一覧の上に出す一行メッセージ（未登録・エラーなど）を切り替える
-       * @param {string} message 表示する文言（空文字で消す）
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function showEmployeeListMessage(message) {
         document.getElementById('employee_list_message').textContent = message;
       }
 
-      /**
-       * 打刻する従業員を選び、打刻欄を表示する
-       * @param {Object} employee 選ばれた従業員 { id, name, number }
-       * @param {Element} item 一覧の項目
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
+
       function selectEmployee(employee, item) {
         if (isSharedNoteSubmitting) { return; }
         closeClockPinDialog();
@@ -505,22 +505,22 @@
         }
         item.classList.add('selected');
 
-        // 打刻対象者にも氏名と従業員番号を出し、誰の打刻かを確認できるようにする
+         
         renderEmployeeNameBlock(document.getElementById('selected_emp_name'), employee);
         document.getElementById('record_message').textContent = '';
-        hideTodayWorkCard(); // 前の従業員の本日の業務情報を新しい従業員の画面に残さない
-        hideSharedNoteCard(); // 前の従業員の共有メモを新しい従業員の画面に残さない
+        hideTodayWorkCard();  
+        hideSharedNoteCard();  
         document.getElementById('right_panel').style.display = 'block';
         startClock();
-        loadSharedNotesForSelection(selectedEmpId); // その日すでに表示済みの共有メモがあれば出す
+        loadSharedNotesForSelection(selectedEmpId);  
         loadEmployeeClockState(selectedEmpId);
       }
 
-      /**
-       * 従業員の選択を解除し、打刻欄を隠す
-       * 選択中の従業員が削除されて一覧から外れたときにも呼ぶ
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function clearEmployeeSelection() {
         closeClockPinDialog();
         closeSharedNoteModal();
@@ -546,10 +546,10 @@
         hideSharedNoteCard();
       }
 
-      /**
-       * 「本日の業務」カードを非表示にし、表示していたポジション・確認事項をクリアする
-       * 従業員を切り替えた直後に必ず呼び出す
-       */
+       
+
+
+
       function hideTodayWorkCard() {
         document.getElementById('today_work_card').style.display = 'none';
         document.getElementById('today_work_card_body').innerHTML = '';
@@ -632,7 +632,7 @@
 
       function startClockSubmission(empId) {
         pendingClockRequests.add(clockRequestKey(empId, loginSessionId));
-        clockStateRequestId++; // 保存前の状態取得結果を保存後に反映しない。
+        clockStateRequestId++;  
         renderClockButtons();
       }
 
@@ -658,7 +658,7 @@
         return typeof pin === 'string' && pin.length === 6 && !/[^0-9]/.test(pin);
       }
 
-      // resumeWithNoteを渡したときは、下書きを残したまま退勤だけを再認証する。
+       
       function openClockPinDialog(type, resumeWithNote) {
         if (clockPinContext !== null || currentScreen !== 'employee' || !canRecordClock(type)) { return; }
         clockPinContext = {
@@ -765,11 +765,11 @@
         document.getElementById('record_message').textContent = 'エラー: ' + error.message;
       }
 
-      /**
-       * 出勤成功後、本日の業務情報（ポジション・確認事項）を取得する
-       * 打刻結果を反映したあとに、業務情報を別処理として取得する
-       * 取得中に従業員が切り替えられていた場合は、結果が戻ってきても表示しない（安全のためのガード）
-       */
+       
+
+
+
+
       function loadTodayWorkInfo(empId) {
         const sessionId = loginSessionId;
         google.script.run
@@ -788,10 +788,10 @@
           .getTodayWorkInfo(empId);
       }
 
-      /**
-       * 本日の業務カードへポジション・確認事項を描画する
-       * ポジション・確認事項それぞれの有無に応じて表示内容を出し分ける
-       */
+       
+
+
+
       function renderTodayWorkCard(info) {
         const card = document.getElementById('today_work_card');
         const body = document.getElementById('today_work_card_body');
@@ -843,10 +843,10 @@
         card.style.display = 'block';
       }
 
-      /**
-       * 本日の業務情報の取得に失敗したことをカード内に表示する
-       * 打刻自体は成功しているため、record_message（出勤の成功メッセージ）は書き換えない
-       */
+       
+
+
+
       function showTodayWorkFetchError() {
         const card = document.getElementById('today_work_card');
         const body = document.getElementById('today_work_card_body');
@@ -858,15 +858,15 @@
         card.style.display = 'block';
       }
 
-      // 共有メモ：本日の業務の隣に出すカード
-      // 共有メモが1件も無いときは、不自然に空のカードを出さずそのまま非表示にする
+       
+       
 
-      /**
-       * 従業員一覧から名前を選んだときに呼ぶ。その日すでに表示済みの共有メモがあれば取得する
-       * （出勤ボタンを押した瞬間しか見られない、という実装にはしない）
-       * @param {string} empId 選択された従業員番号
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
+
       function loadSharedNotesForSelection(empId) {
         const sessionId = loginSessionId;
         google.script.run
@@ -885,11 +885,11 @@
           .getSharedNotesForSelection(empId);
       }
 
-      /**
-       * 出勤に成功した直後に呼ぶ。まだ表示していない共有メモを、今日はじめて表示したことにして取得する
-       * @param {string} empId 出勤した従業員番号
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function loadSharedNotesForClockIn(empId) {
         const sessionId = loginSessionId;
         google.script.run
@@ -908,11 +908,11 @@
           .getSharedNotesForClockIn(empId);
       }
 
-      /**
-       * 共有メモカードへ、送信日時・送信者名・本文を縦に並べて描画する
-       * @param {Array} notes [{ senderName, body, createdAtLabel }, ...]
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function renderSharedNoteCard(notes) {
         const card = document.getElementById('shared_note_card');
         const body = document.getElementById('shared_note_card_body');
@@ -948,23 +948,23 @@
         document.getElementById('shared_note_card_body').innerHTML = '';
       }
 
-      // 共有メモ：退勤ボタンを押したときのダイアログ
-      // ダイアログを開いている間は退勤時刻をまだ記録しない。「入力せず退勤」か
-      // 確認画面の「退勤」を押した時点の時刻で、はじめて退勤を記録する
+       
+       
+       
 
-      // ダイアログの対象となっている従業員番号（開いていない間は null）
+       
       let sharedNoteEmpId = null;
 
-      // 共有先を誰も選んでいないときに、プルダウンの枠内へ出す案内文
+       
       const SHARED_NOTE_SELECT_PLACEHOLDER = '共有したいスタッフを選択してください（複数選択可）';
 
-      // 確認画面の「退勤」・「入力せず退勤」の二重送信を防ぐフラグ
+       
       let isSharedNoteSubmitting = false;
 
-      /**
-       * 退勤ボタンが押されたときに、共有メモダイアログを入力画面から開く
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
       function openSharedNoteDialog() {
         if (!canRecordClock('退勤') || isSharedNoteSubmitting || sharedNoteEmpId !== null) {
           return;
@@ -999,13 +999,13 @@
           .getSharedNoteRecipientCandidates(empId, authToken);
       }
 
-      /**
-       * 共有先のチェックボックス一覧（プルダウンの中身）を作る
-       * 店長は名簿に含まれないため対象に出てこない。本人はサーバー側で除外済み
-       * 従業員番号は出さず、氏名だけを並べる
-       * @param {Array} candidates [{ id, name, number }, ...]
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
+
+
       function renderSharedNoteRecipientList(candidates) {
         const list = document.getElementById('shared_note_recipient_list');
         list.innerHTML = '';
@@ -1037,10 +1037,10 @@
         }
       }
 
-      /**
-       * チェックされている共有先を取り出す
-       * @return {Array} [{ id, name }, ...]
-       */
+       
+
+
+
       function getSharedNoteCheckedRecipients() {
         const boxes = document.querySelectorAll('#shared_note_recipient_list input[type=checkbox]:checked');
         const result = [];
@@ -1050,11 +1050,11 @@
         return result;
       }
 
-      /**
-       * 共有先プルダウンを開閉する（閉じた枠自体を押したときに呼ぶ）
-       * 共有メモダイアログの開閉とは別処理で、ここでダイアログが閉じることはない
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function toggleSharedNoteRecipientDropdown() {
         document.getElementById('shared_note_select').classList.toggle('open');
       }
@@ -1063,11 +1063,11 @@
         document.getElementById('shared_note_select').classList.remove('open');
       }
 
-      /**
-       * プルダウンの外側がクリックされたときに、一覧だけを閉じる（共有メモダイアログは閉じない）
-       * @param {Event} event クリックイベント
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function handleDocumentClickForSharedNoteDropdown(event) {
         const selectBox = document.getElementById('shared_note_select');
         if (!selectBox.classList.contains('open') || selectBox.contains(event.target)) {
@@ -1076,11 +1076,11 @@
         closeSharedNoteRecipientDropdown();
       }
 
-      /**
-       * 閉じた状態の枠内の表示を、選ばれている人数に合わせて更新する
-       * 1人以上選ばれていれば氏名を並べず「○名選択中」と出す
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function updateSharedNoteSelectLabel() {
         const label = document.getElementById('shared_note_select_label');
         const count = getSharedNoteCheckedRecipients().length;
@@ -1111,12 +1111,12 @@
         document.getElementById('shared_note_confirm_error').textContent = message;
       }
 
-      /**
-       * 「確認画面へ」が押されたときの入力チェックと、確認画面への切り替え
-       * 共有先が1人以上・本文ありの両方がそろわないと進めない
-       * 「戻る」で入力画面に戻っても選択内容・本文はDOMに残ったままなので消えない
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
+
       function goToSharedNoteConfirm() {
         const checked = getSharedNoteCheckedRecipients();
         const noteText = document.getElementById('shared_note_text').value.trim();
@@ -1140,19 +1140,19 @@
         showSharedNoteConfirmView();
       }
 
-      /**
-       * 確認画面の「戻る」。入力画面へ戻すだけで、選択内容・本文には触れない
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
       function backToSharedNoteInput() {
         showSharedNoteInputView();
       }
 
-      /**
-       * ダイアログを閉じる（「×」・「入力せず退勤」・退勤処理の完了時だけ呼ぶ）
-       * 誤って入力内容を失わないよう、背景クリックでは閉じない
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function closeSharedNoteModal() {
         if (isSharedNoteSubmitting) { return; }
         sharedNotePinGrant = null;
@@ -1167,12 +1167,12 @@
         renderClockButtons();
       }
 
-      /** メモを保存せず、ボタンを押した時点で退勤する。 */
+       
       function submitClockOutWithoutSharedNote() {
         submitSharedNoteClockOut(false);
       }
 
-      /** メモの保存後に退勤する。サーバー側でも打刻順序を検証する。 */
+       
       function submitClockOutWithSharedNote() {
         submitSharedNoteClockOut(true);
       }
@@ -1193,7 +1193,7 @@
           return;
         }
         const ticket = sharedNotePinGrant.ticket;
-        sharedNotePinGrant = null; // 送信後の再試行には新しいPIN認証が必要。
+        sharedNotePinGrant = null;  
         isSharedNoteSubmitting = true;
         startClockSubmission(empId);
         showSharedNoteInputError('');
@@ -1231,19 +1231,19 @@
         document.getElementById('shared_note_confirm_submit_btn').disabled = disabled;
       }
 
-      // 店長画面：従業員編集（追加・削除・PIN変更）
-      // 通信中に同じ操作を二重に送らないためのフラグ
+       
+       
       let isEmployeeEditSubmitting = false;
 
-      // 削除しようとしている従業員。対象を選ぶまでは null
+       
       let employeeDeleteTarget = null;
       let employeePinRequestId = 0;
       let employeeDirectoryRequestId = 0;
 
-      /**
-       * 従業員編集を、どの操作も選んでいない状態に戻す
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
       function resetEmployeeEditSection() {
         finishEmployeeAdding();
         finishEmployeeDeleting();
@@ -1323,10 +1323,10 @@
         });
       }
 
-      /**
-       * 「従業員の追加」を押したとき、登録フォームを表示する
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
       function showEmployeeAddForm() {
         if (isEmployeeEditSubmitting) {
           return;
@@ -1343,11 +1343,11 @@
         document.getElementById('add_last_name').focus();
       }
 
-      /**
-       * 「従業員の削除」を押したとき、その下に削除対象を選ぶ従業員一覧を表示する
-       * 対象は自動で選ばず、店長が選んで初めて詳細と削除確認を出す
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function showEmployeeDeleteList() {
         if (isEmployeeEditSubmitting) {
           return;
@@ -1361,7 +1361,7 @@
         employeeDeleteTarget = null;
         showEmployeeEditStatus('employee_delete_status', '', false);
 
-        // 削除対象は必ず最新の一覧から選ぶ
+         
         showAppMessage('employee_delete_message', '読み込み中...', false);
         document.getElementById('employee_delete_list').innerHTML = '';
         loadEmployeeList(function (error) {
@@ -1369,10 +1369,10 @@
         });
       }
 
-      /**
-       * 削除対象として選べる従業員（有効な従業員）を一覧に描く
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
       function renderEmployeeDeleteList() {
         const list = document.getElementById('employee_delete_list');
         list.innerHTML = '';
@@ -1388,11 +1388,11 @@
         }
       }
 
-      /**
-       * 削除対象の一覧に並べる、従業員1人分の項目を作る
-       * @param {Object} employee { id, name, number }
-       * @return {Element} 一覧の項目
-       */
+       
+
+
+
+
       function createEmployeeDeleteItem(employee) {
         const item = document.createElement('li');
         item.className = 'employee-delete-item';
@@ -1404,12 +1404,12 @@
         return item;
       }
 
-      /**
-       * 削除対象の従業員を選び、氏名・従業員番号と削除の影響を画面内に表示する
-       * @param {Object} employee 選ばれた従業員
-       * @param {Element} item 一覧の項目
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
+
       function selectEmployeeDeleteTarget(employee, item) {
         if (isEmployeeEditSubmitting) {
           return;
@@ -1447,20 +1447,20 @@
           .getEmployeeDeletionPreview(employee.id, authToken);
       }
 
-      /**
-       * その従業員が、今まさに削除確認を出している対象かどうかを返す
-       * 読み込み中に別の従業員が選ばれていた場合、古い結果を画面に出さないために使う
-       * @param {string} empId 確かめたい従業員番号（文字列）
-       * @return {boolean} 対象なら true
-       */
+       
+
+
+
+
+
       function isEmployeeDeleteTarget(empId) {
         return employeeDeleteTarget !== null && String(employeeDeleteTarget.id) === empId;
       }
 
-      /**
-       * 従業員を削除した場合の影響を表示する
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
       function renderEmployeeDeleteImpact() {
         const container = document.getElementById('employee_delete_impact');
         container.innerHTML = '';
@@ -1479,10 +1479,10 @@
 
       }
 
-      /**
-       * 削除を実行せずに、削除対象の選択へ戻る
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
       function backToEmployeeDeleteList() {
         if (isEmployeeEditSubmitting) {
           return;
@@ -1497,11 +1497,11 @@
         }
       }
 
-      /**
-       * 確認した内容で従業員を削除する
-       * 名簿の行や氏名は消えず、削除済みとして扱われるだけなので過去の記録は残る
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function submitDeleteEmployee() {
         if (isEmployeeEditSubmitting || employeeDeleteTarget === null) {
           return;
@@ -1522,8 +1522,8 @@
             finishEmployeeDeleting();
             employeeDeleteTarget = null;
             document.getElementById('employee_delete_confirm').style.display = 'none';
-            applyEmployeeList(result.employees); // 削除後の一覧に更新する
-            // 削除結果は、一覧を描き直したあとに出す（描き直しで文言が消えないようにする）
+            applyEmployeeList(result.employees);  
+             
             showEmployeeEditStatus('employee_delete_status', result.message, false);
           })
           .withFailureHandler(function (error) {
@@ -1536,10 +1536,10 @@
           .deleteEmployee(employeeDeleteTarget.id, authToken);
       }
 
-      /**
-       * 削除の通信が終わったときに、ボタンを押せる状態へ戻す
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
       function finishEmployeeDeleting() {
         isEmployeeEditSubmitting = false;
         const submitBtn = document.getElementById('employee_delete_submit_btn');
@@ -1547,11 +1547,11 @@
         submitBtn.textContent = '削除する';
       }
 
-      /**
-       * 入力した姓・名で従業員を追加する
-       * 追加後もページは読み込み直さず、店長画面で操作を続けられるようにする
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function submitAddEmployee() {
         if (isEmployeeEditSubmitting) {
           return;
@@ -1589,7 +1589,7 @@
             document.getElementById('add_last_name').value = '';
             document.getElementById('add_first_name').value = '';
             showEmployeeEditStatus('add_employee_status', result.message, false);
-            applyEmployeeList(result.employees); // 追加した従業員を一覧にも反映する
+            applyEmployeeList(result.employees);  
           })
           .withFailureHandler(function (error) {
             if (!isSameLoginSession(sessionId)) {
@@ -1723,10 +1723,10 @@
           .changeManagerPassword(currentPassword, newPassword, confirmPassword, authToken);
       }
 
-      /**
-       * 追加の通信が終わったときに、ボタンを押せる状態へ戻す
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
       function finishEmployeeAdding() {
         isEmployeeEditSubmitting = false;
         document.getElementById('add_employee_pin').value = '';
@@ -1735,13 +1735,13 @@
         submitBtn.textContent = '登録';
       }
 
-      /**
-       * 従業員編集の状態（登録中・完了・エラー）を表示する
-       * @param {string} elementId 表示先の要素のID
-       * @param {string} message 表示する文言（空文字で消す）
-       * @param {boolean} isError エラーとして赤く出すなら true
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
+
+
       function showAppMessage(elementId, message, isError) {
         const element = document.getElementById(elementId);
         element.textContent = message;
@@ -1753,10 +1753,10 @@
         showAppMessage(elementId, message, isError);
       }
 
-      /**
-       * 店長画面のサイドバーで選ばれた機能をメイン領域に表示する
-       * メニューを押すまでは何も表示しないので、ログイン直後のメイン領域は空欄のままになる
-       */
+       
+
+
+
       function showManagerSection(navItem) {
         if (isEmployeeEditSubmitting || isManagerPasswordSubmitting || attendancePendingSaves.size) { return; }
         const sectionName = navItem.dataset.section;
@@ -1795,13 +1795,13 @@
           document.getElementById('section_employee_edit').style.display = 'block';
         } else if (sectionName === 'dashboard') {
           document.getElementById('section_dashboard').style.display = 'block';
-          loadTodayWork(); // 開くたびに最新の本日の業務設定を読み直す
+          loadTodayWork();  
         } else if (sectionName === 'attendance') {
           document.getElementById('section_attendance').style.display = 'block';
-          loadAttendances(); // 開くたびに最新の打刻を読み直す
+          loadAttendances();  
         } else if (sectionName === 'skill') {
           document.getElementById('section_skill').style.display = 'block';
-          loadSkills(); // 開くたびに最新のスキル情報を読み直す
+          loadSkills();  
         } else if (sectionName === 'shift_confirm') {
           document.getElementById('section_shift_confirm').style.display = 'block';
           loadShiftMonth(shiftYear, shiftMonth);
@@ -1811,17 +1811,17 @@
           loadShiftWeek(shiftWeekStart);
         } else if (sectionName === 'order') {
           document.getElementById('section_order').style.display = 'block';
-          changeOrderView('cart'); // 開いたときは必ず「発注する食材」から始める
-          loadOrderBoard(); // 開くたびに最新の業者・食材・発注履歴を読み直す
+          changeOrderView('cart');  
+          loadOrderBoard();  
         } else if (sectionName === 'password_change') {
           document.getElementById('section_password_change').style.display = 'block';
           document.getElementById('current_manager_password').focus();
         }
       }
 
-      /**
-       * 店長ダッシュボードの本日の業務設定をサーバーから取得する
-       */
+       
+
+
       function loadTodayWork() {
         document.getElementById('today_work_table').style.display = 'none';
         showTodayWorkMessage('読み込み中...', false);
@@ -1843,9 +1843,9 @@
           .getTodayWorkSettings(authToken);
       }
 
-      /**
-       * 取得した本日の業務設定を表に描画する
-       */
+       
+
+
       function renderTodayWork(result) {
         document.getElementById('today_work_date').textContent = result.date;
 
@@ -1865,9 +1865,9 @@
         document.getElementById('today_work_table').style.display = 'table';
       }
 
-      /**
-       * 本日の業務設定の1行分（氏名・ポジションselect・確認事項textarea・保存ボタン）を作る
-       */
+       
+
+
       function createTodayWorkRow(setting) {
         const row = document.createElement('tr');
 
@@ -1916,10 +1916,10 @@
         return row;
       }
 
-      /**
-       * 1人分の本日の業務（ポジション・確認事項）を保存する
-       * 他の従業員の行には影響しない。保存ボタンを押した行だけをサーバーへ送信する
-       */
+       
+
+
+
       function saveTodayWorkRow(empId, select, textarea, saveBtn, statusSpan) {
         saveBtn.disabled = true;
         statusSpan.textContent = '保存中...';
@@ -1950,9 +1950,9 @@
         showTodayWorkMessage('エラー: ' + error.message, true);
       }
 
-      /**
-       * 表の代わりに出す一行メッセージ（読み込み中・従業員なし・エラー）を切り替える
-       */
+       
+
+
       function showTodayWorkMessage(message, isError) {
         showAppMessage('today_work_message', message, isError);
       }
@@ -1974,7 +1974,7 @@
         showAttendanceMessage('', false);
       }
 
-      /** 本日の保存済み勤怠を取得する。 */
+       
       function loadAttendances() {
         if (attendancePendingSaves.size) { return; }
         const requestId = ++attendanceRequestId;
@@ -2161,15 +2161,15 @@
       }
 
 
-      /**
-       * 勤怠一覧のセルを作る
-       * 氏名はシートに入力された値なので、HTMLとして解釈されないよう textContent で入れる
-       */
+       
+
+
+
       function createAttendanceCell(text) {
         const cell = document.createElement('td');
         cell.textContent = text;
         if (text === UNRECORDED_LABEL) {
-          cell.classList.add('unrecorded'); // 未打刻は店長がすぐ気付けるよう色を変える
+          cell.classList.add('unrecorded');  
         }
         return cell;
       }
@@ -2179,32 +2179,32 @@
         showAttendanceMessage('エラー: ' + error.message, true);
       }
 
-      /**
-       * 表の代わりに出す一行メッセージ（読み込み中・打刻なし・エラー）を切り替える
-       */
+       
+
+
       function showAttendanceMessage(message, isError) {
         showAppMessage('attendance_message', message, isError);
       }
 
-      // スキル項目・評価値（config.js の SKILL_ITEMS / SKILL_LEVELS をそのまま埋め込み、二重管理しない）
-      // スライダーと保存値は同じF/B/Aの順序を使う。
+       
+       
       const SKILL_ITEMS = <?!= JSON.stringify(SKILL_ITEMS) ?>;
       const SKILL_LEVELS = <?!= JSON.stringify(SKILL_LEVELS) ?>;
       const SKILL_LEVEL_LABELS = <?!= JSON.stringify(SKILL_LEVEL_LABELS) ?>;
 
-      let skillMatrix = []; // サーバーから取得した、有効な従業員ごとのスキル情報
-      let skillSelectedEmpId = null; // 右側に出している従業員（文字列にした従業員番号）
+      let skillMatrix = [];  
+      let skillSelectedEmpId = null;  
       let skillEditing = false;
       let skillSaving = false;
-      const skillDrafts = new Map(); // 従業員IDごとの未保存評価。skillMatrixは保存済みの状態を保つ。
+      const skillDrafts = new Map();  
       let skillLeaveAction = null;
       let skillDiscardFocus = null;
       let skillRequestId = 0;
 
-      /**
-       * 従業員ごとのスキル情報をサーバーから取得する
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
       function loadSkills() {
         if (skillEditing || skillSaving) { return; }
         const requestId = ++skillRequestId;
@@ -2228,11 +2228,11 @@
           .getSkillMatrix(authToken);
       }
 
-      /**
-       * 取得したスキル情報を、左の従業員一覧と右のスキル詳細に描画する
-       * @param {Array} matrix [{ id, name, number, skills, updatedAt }, ...]
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function renderSkills(matrix) {
         if (skillEditing || skillSaving) { return; }
         closeSkillDiscardDialog();
@@ -2244,7 +2244,7 @@
           return;
         }
 
-        // 取得し直した一覧から選択中の従業員が消えていたら、右側の表示も解除する
+         
         if (skillSelectedEmpId !== null && findSkillEmployee(skillSelectedEmpId) === null) {
           skillSelectedEmpId = null;
         }
@@ -2255,11 +2255,11 @@
         document.getElementById('skill_layout').style.display = 'grid';
       }
 
-      /**
-       * 左側の従業員一覧（氏名・従業員番号）を描く
-       * 削除済みの従業員はサーバーの getSkillMatrix が返さないので、この一覧には出てこない
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function renderSkillEmployeeList() {
         const list = document.getElementById('skill_employee_list');
         list.innerHTML = '';
@@ -2269,16 +2269,16 @@
         }
       }
 
-      /**
-       * 従業員一覧の1人分の項目を作る
-       * @param {Object} employeeSkill { id, name, number, skills, updatedAt }
-       * @return {Element} 一覧の項目
-       */
+       
+
+
+
+
       function createSkillEmployeeListItem(employeeSkill) {
         const item = document.createElement('li');
         item.className = 'skill-employee-item';
         item.dataset.empId = String(employeeSkill.id);
-        renderEmployeeNameBlock(item, employeeSkill); // 従業員画面の一覧と同じ見た目にそろえる
+        renderEmployeeNameBlock(item, employeeSkill);  
         if (skillSelectedEmpId !== null && String(employeeSkill.id) === skillSelectedEmpId) {
           item.classList.add('selected');
         }
@@ -2288,11 +2288,11 @@
         return item;
       }
 
-      /**
-       * 一覧で押された従業員を選択状態にし、右側にその人のスキルを出す
-       * @param {string} empId 文字列にした従業員番号
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function selectSkillEmployee(empId) {
         if (skillSelectedEmpId === empId || !findSkillEmployee(empId)) { return; }
         skillSelectedEmpId = empId;
@@ -2399,11 +2399,11 @@
         }
       }
 
-      /**
-       * 画面が持っているスキル情報から、指定した従業員を探す
-       * @param {string} empId 文字列にした従業員番号
-       * @return {Object} 見つかった従業員のスキル情報。見つからなければ null
-       */
+       
+
+
+
+
       function findSkillEmployee(empId) {
         for (let i = 0; i < skillMatrix.length; i++) {
           if (String(skillMatrix[i].id) === String(empId)) {
@@ -2413,11 +2413,11 @@
         return null;
       }
 
-      /**
-       * 右側に、選択中の従業員1人分のスキルを描く
-       * 誰も選んでいないときは案内文だけを出す
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function renderSkillDetail() {
         const detail = document.getElementById('skill_detail');
         const emptyMessage = document.getElementById('skill_detail_empty');
@@ -2429,7 +2429,7 @@
           return;
         }
 
-        // 上部に氏名と従業員番号を出し、誰のスキルを編集しているかを確認できるようにする
+         
         renderEmployeeNameBlock(document.getElementById('skill_detail_name'), employeeSkill);
 
         const itemsEl = document.getElementById('skill_detail_items');
@@ -2449,13 +2449,13 @@
         detail.style.display = 'block';
       }
 
-      /**
-       * スキル1項目分の行（スキル名・3段階のバー・最終更新日）を作る
-       * バーを動かしただけでは保存せず、保存ボタンで6項目をまとめて送る
-       * @param {string} item スキル名
-       * @param {Object} employeeSkill { id, name, number, skills, updatedAt }
-       * @return {Element} スキル1項目分の行
-       */
+       
+
+
+
+
+
+
       function createSkillDetailItem(item, employeeSkill) {
         const row = document.createElement('div');
         row.className = 'skill-detail-item';
@@ -2513,11 +2513,11 @@
         return row;
       }
 
-      /**
-       * 更新日（'yyyy/MM/dd'形式、未保存なら空文字）を「最終更新：8/19」の形にする
-       * @param {string} dateStr サーバーから届いた更新日
-       * @return {string} 表示用の文字列
-       */
+       
+
+
+
+
       function formatSkillUpdatedAtLabel(dateStr) {
         if (!dateStr) {
           return '最終更新：-';
@@ -2529,11 +2529,11 @@
         return '最終更新：' + Number(parts[1]) + '/' + Number(parts[2]);
       }
 
-      /**
-       * 複数従業員の下書きをまとめて保存し、成功したときだけ下書きを消す
-       * 変えていない項目の更新日はサーバー側でも動かさないので、変えた項目だけ日付が新しくなる
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function saveSelectedEmployeeSkills(onSaved) {
         if (!skillEditing || skillSaving) { return; }
         if (!hasUnsavedSkillChanges()) {
@@ -2569,14 +2569,14 @@
           .saveEmployeeSkillsBatch(changes, authToken);
       }
 
-      /**
-       * 保存できた内容を、画面が持っているスキル情報にも反映する
-       * 従業員を切り替えて戻ってきたときに、保存前の内容が出てしまうのを防ぐ
-       * @param {string} empId 保存した従業員番号
-       * @param {Array} skillValues 保存した評価（SKILL_ITEMS と同じ並び）
-       * @param {Object} updatedAt サーバーが返した最新の更新日
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
+
+
+
       function applySavedSkills(empId, skillValues, updatedAt) {
         const employeeSkill = findSkillEmployee(empId);
         if (employeeSkill === null) {
@@ -2588,10 +2588,10 @@
         }
       }
 
-      /**
-       * スキル管理画面の表示を初期状態に戻す（ログインし直したときに前の内容を残さない）
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
       function resetSkillSection() {
         skillRequestId++;
         skillSaving = false;
@@ -2610,12 +2610,12 @@
         showSkillMessage('', false);
       }
 
-      /**
-       * 保存ボタンのそばに出す短い通知（保存中・保存しました・エラー）を切り替える
-       * @param {string} message 表示する文言（空文字で消す）
-       * @param {boolean} isError エラーとして赤字にするなら true
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
+
       function showSkillSaveStatus(message, isError) {
         const statusEl = document.getElementById('skill_save_status');
         statusEl.textContent = message;
@@ -2630,14 +2630,14 @@
         showSkillMessage('エラー: ' + error.message, true);
       }
 
-      /**
-       * 一覧・詳細の代わりに出す一行メッセージ（読み込み中・従業員なし・エラー）を切り替える
-       */
+       
+
+
       function showSkillMessage(message, isError) {
         showAppMessage('skill_message', message, isError);
       }
 
-      // シフト確認は保存済みデータだけを表示し、編集の下書きとは分離する。
+       
       let shiftYear = null;
       let shiftMonth = null;
       let shiftSelectedDate = null;
@@ -2778,7 +2778,7 @@
         }
       }
 
-      // 日付はタイムゾーン変換で日がずれないよう、UTCで暦日だけを計算する。
+       
       function parseShiftDate(dateKey) {
         return new Date(dateKey + 'T00:00:00Z');
       }
@@ -2863,7 +2863,7 @@
         loadShiftMonth(date.getUTCFullYear(), date.getUTCMonth() + 1);
       }
 
-      // 作成状態と人数の過不足は分け、定休日を判定対象に含めない。
+       
       function getShiftDayStatus(dateKey, records) {
         if (isShiftClosedDate(dateKey)) { return 'closed'; }
         return records.some(function (record) { return record.workType !== 'unavailable'; }) ? 'created' : 'uncreated';
@@ -3420,7 +3420,7 @@
           workType: shiftEditMode, startTime: '', endTime: '' };
         if (shiftEditMode === 'delete') {
           if (!saved) {
-            // 未登録の新規追加を削除する場合は、保存要求を作らず元の空欄へ戻す。
+             
             if (previous) { shiftDrafts.delete(key); }
             renderShiftWeek();
             return;
@@ -3449,7 +3449,7 @@
         }
         showShiftEditMessage('', false);
         renderShiftWeek();
-        // 描き直し後も同じセルへフォーカスを戻し、キーボードでも連続操作できるようにする。
+         
         document.querySelectorAll('.shift-edit-cell').forEach(function (button) {
           if (button.dataset.employeeId === String(employeeId) && button.dataset.dateKey === dateKey) { button.focus(); }
         });
@@ -3472,7 +3472,7 @@
             });
             shiftDrafts.clear();
             shiftSaving = false;
-            // 確認画面は次回表示時にサーバーから読み直す。
+             
             shiftMonthRequestId++;
             shiftMonthRecords = [];
             renderShiftWeek();
@@ -3487,8 +3487,8 @@
           .saveShiftDrafts(changes, authToken);
       }
 
-      // 店長画面：発注管理で使う共通のダイアログ操作
-      // 食材選択の確定前に閉じた場合は、一時選択を破棄する
+       
+       
 
       function closeIngredientModal(overlayId) {
         document.getElementById(overlayId).style.display = 'none';
@@ -3498,49 +3498,49 @@
       }
 
       function handleIngredientOverlayClick(event) {
-        // 暗い背景そのものをクリックしたときだけ閉じる（モーダル本体のクリックは無視）
+         
         if (event.target === event.currentTarget) {
           closeIngredientModal(event.currentTarget.id);
         }
       }
 
-      /**
-       * 1回の保存を表す操作キーを作る
-       * 通信が途中で切れて再送になっても、サーバー側で同じ操作と分かるようにするために使う
-       */
+       
+
+
+
       function createIngredientOperationKey() {
         return 'op-' + Date.now() + '-' + Math.random().toString(36).substring(2, 10);
       }
 
-      // 店長画面：発注管理
-      // サーバーから受け取った最新の発注管理情報（業者・食材・発注履歴）。送信のたびに丸ごと入れ替える
+       
+       
       let orderBoard = null;
 
-      // 表示中の画面。confirm は発注一覧の確認ボタンからのみ開く
+       
       let orderView = 'cart';
 
-      // これから発注する食材（[{ ingredientId, quantity }]）。送信できるまで画面の中だけで持つ
+       
       let orderCart = [];
 
-      // ダイアログ内だけの選択。追加を押すまで発注一覧には反映しない。
+       
       let orderItemSelection = null;
 
-      // 業者詳細で選択中の業者ID（未選択なら取得順の先頭を表示）
+       
       let orderSelectedVendorId = '';
 
-      // 確認画面で組み立てた、業者ごとの発注メール
+       
       let orderDrafts = [];
 
-      // 送信1回分の操作キー。通信のやり直しで同じメールを二重に送らないために使う
+       
       let orderSendKey = '';
 
-      // 送信中かどうか。送信中に確認内容を描き直しても、送信ボタンを押せる状態に戻さないために使う
+       
       let orderSending = false;
 
-      /**
-       * 発注管理の情報をサーバーから取得する
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
       function loadOrderBoard() {
         document.getElementById('order_body').style.display = 'none';
         showOrderMessage('読み込み中...', false);
@@ -3564,12 +3564,12 @@
           .getOrderBoard(authToken);
       }
 
-      /**
-       * 受け取った発注管理情報で画面を作り直す
-       * 一覧から消えた食材は、発注する食材からも外す
-       * @param {Object} board サーバーから届いた発注管理情報
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
+
       function applyOrderBoard(board) {
         orderBoard = board;
         document.getElementById('order_body').style.display = 'block';
@@ -3592,12 +3592,12 @@
         showAppMessage('order_message', message, isError);
       }
 
-      /**
-       * 表示項目を切り替える
-       * 4つの表示のうち、選ばれた1つだけを出す
-       * @param {string} viewName 'cart' / 'confirm' / 'history' / 'vendor'
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
+
       function changeOrderView(viewName) {
         orderView = viewName;
         renderOrderView();
@@ -3637,9 +3637,9 @@
         }
       }
 
-      /**
-       * 要素を1つ作る（class名と表示文字をまとめて指定する）
-       */
+       
+
+
       function createOrderElement(tagName, className, text) {
         const element = document.createElement(tagName);
         if (className) {
@@ -3651,9 +3651,9 @@
         return element;
       }
 
-      /**
-       * 押すと別の表示に移る文字（業者名など）を作る
-       */
+       
+
+
       function createOrderLinkButton(text, onClick) {
         const button = createOrderElement('button', 'order-link', text);
         button.type = 'button';
@@ -3688,17 +3688,17 @@
         return null;
       }
 
-      // 数量は小数第1位までにそろえる（キロ単位の食材を 0.5 きざみで発注できるようにする）
+       
       function roundOrderQuantity(quantity) {
         return Math.round(quantity * 10) / 10;
       }
 
-      // 発注する食材
+       
 
-      /**
-       * 発注する食材の一覧を描き直す
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
       function renderOrderCart() {
 
         const list = document.getElementById('order_cart_list');
@@ -3722,9 +3722,9 @@
         document.getElementById('order_cart_footer').style.display = 'flex';
       }
 
-      /**
-       * 発注する食材1件分のカードを作る
-       */
+       
+
+
       function createOrderCartCard(item, cartItem) {
         const card = createOrderElement('div', 'order-cart-card');
         card.appendChild(createOrderElement('div', 'order-cart-name', item.name));
@@ -3755,7 +3755,7 @@
         quantityBox.appendChild(createOrderElement('span', 'order-cart-unit', item.unit));
         card.appendChild(quantityBox);
 
-        // 業者は食材マスタの設定から自動で決まる。押すとその業者の詳細を開く
+         
         const vendorBox = createOrderElement('div', 'order-cart-vendor');
         vendorBox.appendChild(document.createTextNode('業者：'));
         if (item.vendorId === '') {
@@ -3774,10 +3774,10 @@
         return card;
       }
 
-      /**
-       * ＋ / − ボタンで数量を変える
-       * 0以下にはしない（やめるときは削除ボタンを使う）
-       */
+       
+
+
+
       function changeOrderQuantity(ingredientId, delta) {
         const cartItem = findOrderCartItem(ingredientId);
         if (!cartItem) {
@@ -3791,9 +3791,9 @@
         renderOrderCart();
       }
 
-      /**
-       * 数量欄に直接入力された値を反映する
-       */
+       
+
+
       function setOrderQuantity(ingredientId, value) {
         const cartItem = findOrderCartItem(ingredientId);
         if (!cartItem) {
@@ -3803,7 +3803,7 @@
         if (isFinite(quantity) && quantity > 0 && quantity <= orderBoard.maxQuantity) {
           cartItem.quantity = quantity;
         }
-        renderOrderCart(); // 入力できない値だったときは、いまの数量に戻す
+        renderOrderCart();  
       }
 
       function removeOrderCartItem(ingredientId) {
@@ -3822,9 +3822,9 @@
         renderOrderCart();
       }
 
-      // 食材を追加するダイアログ
+       
 
-      /** 現在の食材構成を一時選択へコピーして開く。 */
+       
       function openOrderItemModal() {
         if (!orderBoard) {
           showOrderMessage('発注の情報を読み込めていません。発注管理を開き直してください', true);
@@ -3835,7 +3835,7 @@
         document.getElementById('order_item_overlay').style.display = 'flex';
       }
 
-      /** 既存数量を保ったまま、選択された食材構成をまとめて反映する。 */
+       
       function applyOrderItemSelection() {
         if (!orderBoard || orderItemSelection === null) { return; }
         const nextCart = orderCart.filter(function (item) {
@@ -3852,10 +3852,10 @@
         renderOrderCart();
       }
 
-      /**
-       * ダイアログの中に、選べる食材を業者ごとに並べる
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
       function renderOrderItemChoices() {
         const container = document.getElementById('order_item_choices');
         container.innerHTML = '';
@@ -3879,7 +3879,7 @@
           button.setAttribute('aria-pressed', String(selected));
           button.type = 'button';
           if (item.vendorId === '') {
-            button.disabled = true; // 業者が決まっていない食材は、どこへ発注するか判断できないので選べない
+            button.disabled = true;  
           } else {
             button.addEventListener('click', function () {
               if (orderItemSelection.has(item.id)) {
@@ -3901,13 +3901,13 @@
         }
       }
 
-      // 発注内容確認
+       
 
-      /**
-       * いまの発注内容を業者ごとにまとめ直し、送るメールの内容をサーバーに組み立ててもらう
-       * 確認した内容とそのまま同じメールを送るため、文面は画面では作らない
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function refreshOrderConfirm() {
         const list = document.getElementById('order_confirm_list');
         list.innerHTML = '';
@@ -3951,11 +3951,11 @@
         }
       }
 
-      /**
-       * 業者ごとにまとめた発注内容と、送るメールの内容を描く
-       * @param {Array<Object>} drafts サーバーが組み立てた業者ごとの発注メール
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function renderOrderConfirm(drafts) {
         orderDrafts = drafts;
         const list = document.getElementById('order_confirm_list');
@@ -3973,9 +3973,9 @@
         footer.style.display = drafts.length > 0 ? 'flex' : 'none';
       }
 
-      /**
-       * 業者1社分の確認カードを作る
-       */
+       
+
+
       function createOrderConfirmCard(draft) {
         const card = createOrderElement('div', 'order-vendor-card');
 
@@ -4003,11 +4003,11 @@
         return card;
       }
 
-      /**
-       * 送信ボタンの文言と押せるかどうかを、いまの状態に合わせる
-       * 例：2業者なら「2社へ発注する」と表示する
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function updateOrderSendButton() {
         const sendBtn = document.getElementById('order_send_btn');
         sendBtn.textContent = orderSending ? '送信中...' : (orderDrafts.length + '社へ発注する');
@@ -4024,13 +4024,13 @@
         }
       }
 
-      /**
-       * 業者ごとの発注メールを送り、送れた分を発注履歴に保存する
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
       function submitOrderMails() {
         if (orderSending || orderDrafts.length === 0) {
-          return; // 送信中の連打は無視する
+          return;  
         }
         if (orderSendKey === '') {
           orderSendKey = createIngredientOperationKey();
@@ -4048,7 +4048,7 @@
             }
             orderSending = false;
             updateOrderSendButton();
-            orderSendKey = ''; // 送信が終わったので、次の発注では新しい操作キーを使う
+            orderSendKey = '';  
             applyOrderAfterSend(result);
           })
           .withFailureHandler(function (error) {
@@ -4057,7 +4057,7 @@
             }
             orderSending = false;
             updateOrderSendButton();
-            // 送れていないので発注内容はそのまま残し、同じ操作キーでやり直せるようにする
+             
             showOrderSendStatus('エラー: ' + error.message, true);
           })
           .sendOrderMails({
@@ -4067,16 +4067,16 @@
           });
       }
 
-      /**
-       * 送信結果を画面に反映する
-       * 送れた業者の食材だけを発注一覧から外し、送れなかった分は残す
-       * @param {Object} result サーバーから届いた送信結果
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
+
       function applyOrderAfterSend(result) {
         const detail = result.detail;
         if (!detail) {
-          // 同じ送信が二重に届いたとき（サーバーはメールを送り直していない）
+           
           orderCart = [];
         } else {
           const keptCart = [];
@@ -4094,13 +4094,13 @@
         showOrderMessage(result.message, hasFailure);
 
         if (!hasFailure && orderCart.length === 0) {
-          changeOrderView('history'); // 保存された発注履歴をそのまま確認できるようにする
+          changeOrderView('history');  
         } else {
           showOrderSendStatus(result.message, hasFailure);
         }
       }
 
-      // 入荷予定は日付が過ぎた行だけ非表示にし、発注履歴は変更しない。
+       
       let orderUpcomingToday = '';
 
       function getOrderToday() {
@@ -4134,12 +4134,12 @@
             orderBoard && orderUpcomingToday !== getOrderToday()) { renderOrderUpcoming(); }
       }
 
-      // 発注履歴
+       
 
-      /**
-       * 発注履歴を新しい順に描く
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
       function renderOrderHistory() {
         const list = document.getElementById('order_history_list');
         list.innerHTML = '';
@@ -4155,9 +4155,9 @@
         }
       }
 
-      /**
-       * 発注履歴1件分のカードを作る
-       */
+       
+
+
       function createOrderHistoryCard(history) {
         const card = createOrderElement('div', 'order-history-card');
 
@@ -4196,9 +4196,9 @@
         return card;
       }
 
-      // 業者詳細
+       
 
-      /** 一覧と詳細を同時表示し、初回は取得順の先頭業者を選ぶ。 */
+       
       function renderOrderVendor() {
         const vendor = findOrderVendorById(orderSelectedVendorId) || orderBoard.vendors[0];
         orderSelectedVendorId = vendor ? vendor.id : '';
@@ -4228,17 +4228,17 @@
         listEl.scrollTop = scrollTop;
       }
 
-      /**
-       * 業者詳細を開く（ほかの表示から業者名を押したときにも使う）
-       * @param {string} vendorId 業者ID
-       * @return {void} 戻り値なし
-       */
+       
+
+
+
+
       function openOrderVendorDetail(vendorId) {
         orderSelectedVendorId = vendorId;
         changeOrderView('vendor');
       }
 
-      /** 選んだ業者の連絡先と発注条件を表示する。 */
+       
       function renderOrderVendorDetail(vendor) {
         const container = document.getElementById('order_vendor_detail');
         container.innerHTML = '';
@@ -4246,9 +4246,9 @@
         container.appendChild(createOrderVendorDetailGrid(vendor));
       }
 
-      /**
-       * 業者の登録内容を表にする（未登録の項目は「未登録」と出し、推測で埋めない）
-       */
+       
+
+
       function createOrderVendorDetailGrid(vendor) {
         const rows = [
           ['業者名', vendor.name],

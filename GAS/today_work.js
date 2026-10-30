@@ -1,4 +1,4 @@
-// その日の担当ポジション・確認事項を管理する
+ 
 
 function ensureTodayWorkSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -27,7 +27,7 @@ function findTodayWorkRow(sheet, dateKey, empId) {
   if (lastRow < 2) {
     return -1;
   }
-  const values = sheet.getRange(2, 1, lastRow - 1, 2).getValues(); // A:日付 B:従業員ID
+  const values = sheet.getRange(2, 1, lastRow - 1, 2).getValues();  
   for (let i = 0; i < values.length; i++) {
     const rowDate = values[i][0];
     const rowEmpId = values[i][1];
@@ -36,7 +36,7 @@ function findTodayWorkRow(sheet, dateKey, empId) {
     }
     const rowDateKey = (rowDate instanceof Date) ? Utilities.formatDate(rowDate, TIME_ZONE, 'yyyy/MM/dd') : String(rowDate);
     if (rowDateKey === dateKey && String(rowEmpId) === String(empId)) {
-      return i + 2; // ヘッダー行の分だけシート上の行番号は配列の添字より2大きい
+      return i + 2;  
     }
   }
   return -1;
@@ -59,7 +59,7 @@ function getTodayWorkMapForDate(dateKey) {
     }
     const rowDateKey = (rowDate instanceof Date) ? Utilities.formatDate(rowDate, TIME_ZONE, 'yyyy/MM/dd') : String(rowDate);
     if (rowDateKey !== dateKey) {
-      continue; // 対象日以外の行は無視する
+      continue;  
     }
     map[String(rowEmpId)] = {
       'position': values[i][2] || '',
@@ -116,7 +116,7 @@ function getTodayWorkSettings(authToken) {
 function saveTodayWork(empId, position, noticesText, authToken) {
   requireManagerRole_(authToken);
 
-  // 有効な従業員だけを保存先にする（削除済みの人は本日の業務の設定対象から外す）
+   
   const nameByEmpId = getActiveEmployeeNameMap();
   const empName = nameByEmpId[String(empId)];
   console.log(empName)
@@ -150,7 +150,7 @@ function getTodayWorkInfo(empId) {
 
   const position = saved ? saved.position : '';
   const notices = splitNoticesText(saved ? saved.noticesText : '');
-  // 引継ぎ連携（未実装）は、実装時にここで notices へ追加する
+   
 
   return {
     'position': position,
