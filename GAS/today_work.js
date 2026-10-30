@@ -1,3 +1,7 @@
+/**
+ * 本日の業務シートを用意し、日付・従業員ID・ポジション・確認事項の見出しをそろえる。
+ * 戻り値 - GoogleAppsScript.Spreadsheet.Sheet
+ */
 function ensureTodayWorkSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(SHEET_NAMES.TODAY_WORK);
@@ -16,10 +20,21 @@ function ensureTodayWorkSheet() {
   return sheet;
 }
 
+/**
+ * 今日を日本時間のyyyy/MM/ddとして取得する。
+ * 戻り値 - string
+ */
 function getTodayDateKey() {
   return Utilities.formatDate(new Date(), TIME_ZONE, 'yyyy/MM/dd');
 }
 
+/**
+ * 日付と従業員IDの両方が一致する業務行を探す。
+ * sheet - GoogleAppsScript.Spreadsheet.Sheet
+ * dateKey - string
+ * empId - unknown
+ * 戻り値 - number
+ */
 function findTodayWorkRow(sheet, dateKey, empId) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) {
@@ -40,6 +55,11 @@ function findTodayWorkRow(sheet, dateKey, empId) {
   return -1;
 }
 
+/**
+ * 指定日の業務だけを取り出し、従業員IDで引ける対応表にする。
+ * dateKey - string
+ * 戻り値 - {[key: string]: {position: unknown, noticesText: unknown}}
+ */
 function getTodayWorkMapForDate(dateKey) {
   const sheet = ensureTodayWorkSheet();
   const lastRow = sheet.getLastRow();
@@ -67,6 +87,11 @@ function getTodayWorkMapForDate(dateKey) {
   return map;
 }
 
+/**
+ * 確認事項を改行で分割し、前後の空白と空行を除いて配列にする。
+ * noticesText - unknown
+ * 戻り値 - string[]
+ */
 function splitNoticesText(noticesText) {
   if (!noticesText) {
     return [];
@@ -82,6 +107,11 @@ function splitNoticesText(noticesText) {
   return notices;
 }
 
+/**
+ * 店長向けに、有効な全従業員と今日の担当・確認事項をまとめて返す。
+ * authToken - string
+ * 戻り値 - {date: string, settings: ({id: unknown, name: string, position: unknown, noticesText: unknown})[]}
+ */
 function getTodayWorkSettings(authToken) {
   requireManagerRole_(authToken);
 
@@ -111,6 +141,14 @@ function getTodayWorkSettings(authToken) {
   };
 }
 
+/**
+ * 従業員とポジションを検証し、今日の担当・確認事項を保存する。
+ * empId - unknown
+ * position - string
+ * noticesText - string
+ * authToken - string
+ * 戻り値 - string
+ */
 function saveTodayWork(empId, position, noticesText, authToken) {
   requireManagerRole_(authToken);
 
@@ -141,6 +179,11 @@ function saveTodayWork(empId, position, noticesText, authToken) {
   return empName + 'さんの本日の業務を保存しました';
 }
 
+/**
+ * 従業員1人の今日のポジションと確認事項配列を返す。
+ * empId - unknown
+ * 戻り値 - {position: unknown, notices: string[]}
+ */
 function getTodayWorkInfo(empId) {
   const todayMap = getTodayWorkMapForDate(getTodayDateKey());
   const saved = todayMap[String(empId)];

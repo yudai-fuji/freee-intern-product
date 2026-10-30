@@ -6,6 +6,12 @@ const INGREDIENT_MAX_QUANTITY = 100000;
 
 const INGREDIENT_PLAN_SEARCH_DAYS = 120;
 
+/**
+ * 指定シートを取得または作成し、見出しを整える。
+ * sheetName - unknown
+ * header - string[]
+ * 戻り値 - GoogleAppsScript.Spreadsheet.Sheet
+ */
 function ensureIngredientSheet(sheetName, header) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(sheetName);
@@ -36,6 +42,10 @@ function ensureIngredientSheet(sheetName, header) {
   return sheet;
 }
 
+/**
+ * 食材マスタのシートを用意する（新規作成したときだけ初期候補の食材名を入れる） すでに行があるシートには追記しない。
+ * 戻り値 - GoogleAppsScript.Spreadsheet.Sheet
+ */
 function ensureIngredientMasterSheet() {
   const sheet = ensureIngredientSheet(SHEET_NAMES.INGREDIENT_MASTERS, INGREDIENT_MASTER_SHEET_HEADER);
   if (sheet.getLastRow() >= 2) {
@@ -55,18 +65,37 @@ function ensureIngredientMasterSheet() {
   return sheet;
 }
 
+/**
+ * 食材在庫履歴シートを取得し、なければ必要な見出し付きで作る。
+ * 戻り値 - GoogleAppsScript.Spreadsheet.Sheet
+ */
 function ensureIngredientEventSheet() {
   return ensureIngredientSheet(SHEET_NAMES.INGREDIENT_EVENTS, INGREDIENT_EVENT_SHEET_HEADER);
 }
 
+/**
+ * 食材業者シートを取得し、なければ必要な見出し付きで作る。
+ * 戻り値 - GoogleAppsScript.Spreadsheet.Sheet
+ */
 function ensureIngredientSupplierSheet() {
   return ensureIngredientSheet(SHEET_NAMES.INGREDIENT_SUPPLIERS, INGREDIENT_SUPPLIER_SHEET_HEADER);
 }
 
+/**
+ * 食材発注シートを取得し、なければ必要な見出し付きで作る。
+ * 戻り値 - GoogleAppsScript.Spreadsheet.Sheet
+ */
 function ensureIngredientOrderSheet() {
   return ensureIngredientSheet(SHEET_NAMES.INGREDIENT_ORDERS, INGREDIENT_ORDER_SHEET_HEADER);
 }
 
+/**
+ * シートの末尾に行をまとめて追記する 追記先の行数が足りないときは必要な分だけ行を増やし、書き込む前に文字列書式にしておく。
+ * sheet - GoogleAppsScript.Spreadsheet.Sheet
+ * rows - (string[])[] または ((undefined または string)[])[] または (unknown[])[]
+ * columnCount - number
+ * 戻り値 - number
+ */
 function appendIngredientRows(sheet, rows, columnCount) {
   if (rows.length === 0) {
     return -1;
@@ -82,6 +111,12 @@ function appendIngredientRows(sheet, rows, columnCount) {
   return startRow;
 }
 
+/**
+ * シートのデータを行番号と見出し別の文字列に変換する。
+ * sheet - GoogleAppsScript.Spreadsheet.Sheet
+ * header - string[]
+ * 戻り値 - ({rowNumber: number, values: {[key: string]: string}})[]
+ */
 function readIngredientRows(sheet, header) {
   const lastRow = sheet.getLastRow();
   const rows = [];
@@ -107,6 +142,11 @@ function readIngredientRows(sheet, header) {
   return rows;
 }
 
+/**
+ * セルの値を日付や日時を考慮した文字列に変換する。
+ * value - unknown
+ * 戻り値 - string
+ */
 function toIngredientCellText(value) {
   if (value === null || value === undefined) {
     return '';
@@ -118,18 +158,38 @@ function toIngredientCellText(value) {
   return String(value).trim();
 }
 
+/**
+ * Dateを日本時間のyyyy/MM/dd形式へ整える。
+ * date - Date
+ * 戻り値 - string
+ */
 function formatIngredientDate(date) {
   return Utilities.formatDate(date, TIME_ZONE, 'yyyy/MM/dd');
 }
 
+/**
+ * Dateを日本時間のyyyy/MM/dd HH:mm形式へ整える。
+ * date - Date
+ * 戻り値 - string
+ */
 function formatIngredientDateTime(date) {
   return Utilities.formatDate(date, TIME_ZONE, 'yyyy/MM/dd HH:mm');
 }
 
+/**
+ * 新しいIDを作る（種類が分かるよう接頭辞を付ける）。
+ * prefix - string
+ * 戻り値 - string
+ */
 function newIngredientId(prefix) {
   return prefix + '-' + Utilities.getUuid().replace(/-/g, '').substring(0, 12);
 }
 
+/**
+ * 値を文字列にそろえて前後の空白を取り除く。
+ * value - unknown
+ * 戻り値 - string
+ */
 function normalizeIngredientText(value) {
   if (value === null || value === undefined) {
     return '';
@@ -137,6 +197,12 @@ function normalizeIngredientText(value) {
   return String(value).trim();
 }
 
+/**
+ * 入力された日付を共通の日付形式に変換する。
+ * value - unknown
+ * label - unknown
+ * 戻り値 - string
+ */
 function normalizeIngredientDateInput(value, label) {
   const raw = normalizeIngredientText(value);
   const text = raw.replace(/-/g, '/');
@@ -152,6 +218,11 @@ function normalizeIngredientDateInput(value, label) {
   return text;
 }
 
+/**
+ * 'yyyy/MM/dd' を日本時間の Date（0時0分）に変換する。
+ * dateText - unknown
+ * 戻り値 - null または Date
+ */
 function parseIngredientDate(dateText) {
   if (!INGREDIENT_DATE_PATTERN.test(dateText)) {
     return null;
@@ -167,6 +238,11 @@ function parseIngredientDate(dateText) {
   return date;
 }
 
+/**
+ * 'yyyy/MM/dd HH:mm' を日本時間の Date に変換する。
+ * dateTimeText - unknown
+ * 戻り値 - null または Date
+ */
 function parseIngredientDateTime(dateTimeText) {
   if (!INGREDIENT_DATE_TIME_PATTERN.test(dateTimeText)) {
     return null;
@@ -180,6 +256,13 @@ function parseIngredientDateTime(dateTimeText) {
   return date;
 }
 
+/**
+ * 目視の概数として数量を受け取る。
+ * value - number
+ * label - string
+ * allowZero - boolean
+ * 戻り値 - number
+ */
 function parseIngredientQuantity(value, label, allowZero) {
   const text = normalizeIngredientText(value);
   if (text === '') {
@@ -201,24 +284,49 @@ function parseIngredientQuantity(value, label, allowZero) {
   return roundIngredientQuantity(quantity);
 }
 
+/**
+ * 目視の概数どうしの足し引きで誤差が出ないよう、小数第3位までに丸める。
+ * quantity - unknown
+ * 戻り値 - number
+ */
 function roundIngredientQuantity(quantity) {
   return Math.round(quantity * 1000) / 1000;
 }
 
+/**
+ * 数量を画面表示用の文字列にする（1.000 のような余分な0を付けない）。
+ * quantity - unknown
+ * 戻り値 - string
+ */
 function formatIngredientQuantity(quantity) {
   return String(roundIngredientQuantity(quantity));
 }
 
+/**
+ * 元の日付をコピーし、指定日数だけ進めた日付を返す。
+ * date - Date
+ * days - unknown
+ * 戻り値 - Date
+ */
 function addIngredientDays(date, days) {
   const result = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   result.setDate(result.getDate() + days);
   return result;
 }
 
+/**
+ * 日付に曜日を添えた表示文字列を作る（曜日は固定値ではなく日付から求める）。
+ * date - Date
+ * 戻り値 - string
+ */
 function formatIngredientDateWithWeekday(date) {
   return formatIngredientDate(date) + '（' + INGREDIENT_WEEKDAY_LABELS[date.getDay()] + '）';
 }
 
+/**
+ * 食材マスタを読み込む。
+ * 戻り値 - ({id: string, name: string, category: string, defaultUnit: string, supplierId: string, active: boolean, orderUnit: string, rowNumber: number})[]
+ */
 function getIngredientMasters() {
   const sheet = ensureIngredientMasterSheet();
   const rows = readIngredientRows(sheet, INGREDIENT_MASTER_SHEET_HEADER);
@@ -243,6 +351,11 @@ function getIngredientMasters() {
   return masters;
 }
 
+/**
+ * 旧マスタの廃止済み指示を表示・本文追記へ持ち込まない。
+ * value - string
+ * 戻り値 - string
+ */
 function normalizeIngredientSupplierNote_(value) {
   const retiredInstruction = /商品コード|product\s*code|item\s*code/i;
   return normalizeIngredientText(value).split(/\r\n|\r|\n/).map(function (line) {
@@ -256,12 +369,21 @@ function normalizeIngredientSupplierNote_(value) {
   }).filter(function (line) { return line.trim() !== ''; }).join('\n');
 }
 
+/**
+ * IDを変えず、旧業者名を現在の名称へ揃える。
+ * name - string
+ * 戻り値 - string
+ */
 function normalizeOrderSupplierName_(name) {
   if (name === '○○青果') { return 'freee青果'; }
   if (name === '△△食品') { return 'freee食品'; }
   return name;
 }
 
+/**
+ * 業者と発注条件を読み込む。
+ * 戻り値 - ({id: string, name: string, deadlineTime: string, orderDays: number[], shipDays: number[], deliveryDays: number[], leadTimeDays: null または number, leadTimeCount: string, closedDates: string[], pickupDays: number[], note: string, address: string, phone: string, email: string, businessHours: string, closedDays: string, mainItems: string, orderNote: string, rowNumber: number})[]
+ */
 function getIngredientSuppliers() {
   const sheet = ensureIngredientSupplierSheet();
   const rows = readIngredientRows(sheet, INGREDIENT_SUPPLIER_SHEET_HEADER);
@@ -297,6 +419,10 @@ function getIngredientSuppliers() {
   return suppliers;
 }
 
+/**
+ * 発注の記録を読み込む。
+ * 戻り値 - ({id: string, ingredientId: string, name: string, supplierId: string, quantity: number, unit: string, orderedAt: string, expectedDate: string, status: string, note: string, orderNo: string, orderedBy: string, mailTo: string, rowNumber: number})[]
+ */
 function getIngredientOrders() {
   const sheet = ensureIngredientOrderSheet();
   const rows = readIngredientRows(sheet, INGREDIENT_ORDER_SHEET_HEADER);
@@ -328,6 +454,11 @@ function getIngredientOrders() {
   return orders;
 }
 
+/**
+ * 曜日の文字列を曜日番号の配列に変換する。
+ * text - string
+ * 戻り値 - number[]
+ */
 function parseIngredientWeekdayList(text) {
   const days = [];
   if (normalizeIngredientText(text) === '') {
@@ -344,6 +475,11 @@ function parseIngredientWeekdayList(text) {
   return days;
 }
 
+/**
+ * 曜日番号の配列を曜日名の表示に変換する。
+ * days - number[]
+ * 戻り値 - string
+ */
 function formatIngredientWeekdayList(days) {
   const labels = [];
   for (let i = 0; i < days.length; i++) {
@@ -352,6 +488,11 @@ function formatIngredientWeekdayList(days) {
   return labels.join('・');
 }
 
+/**
+ * 日付一覧の文字列を日付文字列の配列に変換する。
+ * text - string
+ * 戻り値 - string[]
+ */
 function parseIngredientDateList(text) {
   const dates = [];
   if (normalizeIngredientText(text) === '') {
@@ -367,10 +508,22 @@ function parseIngredientDateList(text) {
   return dates;
 }
 
+/**
+ * その日が業者の臨時休業日かどうか。
+ * supplier - unknown
+ * date - Date
+ * 戻り値 - boolean
+ */
 function isIngredientClosedDate(supplier, date) {
   return supplier.closedDates.indexOf(formatIngredientDate(date)) !== -1;
 }
 
+/**
+ * 発注してから納品できる日を求める 出荷できる最初の日を探し、そこからリードタイムを数え、納品できる日かつ店舗が受け取れる日まで後ろへずらす。
+ * supplier - unknown
+ * orderDate - Date
+ * 戻り値 - null または Date
+ */
 function findIngredientDeliveryDate(supplier, orderDate) {
   let shipDate = null;
   for (let i = 0; i < INGREDIENT_PLAN_SEARCH_DAYS; i++) {
@@ -424,6 +577,12 @@ function findIngredientDeliveryDate(supplier, orderDate) {
   return null;
 }
 
+/**
+ * 業者ごとに「次に納品できる日」と「それに間に合う発注締切」を求める 条件が未設定のときは推測せず、設定が必要な項目を返す。
+ * supplier - unknown
+ * now - Date
+ * 戻り値 - {available: boolean, missing: string[], text: string, orderDate?: undefined, deadline?: undefined, deliveryDate?: undefined, deliveryDateKey?: undefined, closedWeekdayText?: undefined} または {available: boolean, missing: unknown[], orderDate: string, deadline: string, deliveryDate: string, deliveryDateKey: string, closedWeekdayText: string, text: string}
+ */
 function buildIngredientSupplierPlan(supplier, now) {
   const missing = [];
   if (!INGREDIENT_TIME_PATTERN.test(supplier.deadlineTime)) {
@@ -488,6 +647,11 @@ function buildIngredientSupplierPlan(supplier, now) {
   };
 }
 
+/**
+ * 納品できない曜日を説明する文言を作る（曜日は設定から求め、固定値にしない）。
+ * supplier - unknown
+ * 戻り値 - string
+ */
 function buildIngredientClosedWeekdayText(supplier) {
   const closedDays = [];
   for (let day = 0; day < INGREDIENT_WEEKDAY_LABELS.length; day++) {
@@ -501,6 +665,12 @@ function buildIngredientClosedWeekdayText(supplier) {
   return formatIngredientWeekdayList(closedDays) + 'は納品休業です';
 }
 
+/**
+ * 操作キーから履歴の行を探す（再送の判定に使う）。
+ * eventSheet - GoogleAppsScript.Spreadsheet.Sheet
+ * operationKey - string
+ * 戻り値 - null または {rowNumber: number, values: {[key: string]: string}}
+ */
 function findIngredientEventByKey(eventSheet, operationKey) {
   const rows = readIngredientRows(eventSheet, INGREDIENT_EVENT_SHEET_HEADER);
   for (let i = rows.length - 1; i >= 0; i--) {
@@ -511,6 +681,13 @@ function findIngredientEventByKey(eventSheet, operationKey) {
   return null;
 }
 
+/**
+ * 履歴に「処理中」の行を先に作る 途中で失敗した操作をあとから見分けられるようにするため、保存の前に記録する。
+ * eventSheet - GoogleAppsScript.Spreadsheet.Sheet
+ * operationKey - string
+ * type - string
+ * 戻り値 - number
+ */
 function startIngredientEvent(eventSheet, operationKey, type) {
   const row = [
     newIngredientId('EVT'), operationKey, formatIngredientDateTime(new Date()), type,
@@ -519,6 +696,13 @@ function startIngredientEvent(eventSheet, operationKey, type) {
   return appendIngredientRows(eventSheet, [row], INGREDIENT_EVENT_SHEET_HEADER.length);
 }
 
+/**
+ * 履歴の行を「完了」にし、何をどれだけ動かしたかを書き残す。
+ * eventSheet - GoogleAppsScript.Spreadsheet.Sheet
+ * rowNumber - number
+ * result - {message: string, actor: string, sentVendorIds: string[], sentCount: number, failures: string[]}
+ * 戻り値 - なし
+ */
 function completeIngredientEvent(eventSheet, rowNumber, result) {
   const values = [
     result.lotId || '', result.partnerLotId || '', result.ingredientId || '',
@@ -530,12 +714,25 @@ function completeIngredientEvent(eventSheet, rowNumber, result) {
   range.setValues([values]);
 }
 
+/**
+ * 操作履歴にエラー内容と失敗状態を書き込む。
+ * eventSheet - GoogleAppsScript.Spreadsheet.Sheet
+ * rowNumber - number
+ * error - unknown
+ * 戻り値 - なし
+ */
 function failIngredientEvent(eventSheet, rowNumber, error) {
   const range = eventSheet.getRange(rowNumber, 10, 1, 3);
   range.setNumberFormat('@');
   range.setValues([['保存できませんでした: ' + error.message, '', '失敗']]);
 }
 
+/**
+ * 食材IDから食材マスタの1件を取り出す。
+ * masters - ({id: string, name: string, category: string, defaultUnit: string, supplierId: string, active: boolean, orderUnit: string, rowNumber: number})[]
+ * ingredientId - string
+ * 戻り値 - {id: string, name: string, category: string, defaultUnit: string, supplierId: string, active: boolean, orderUnit: string, rowNumber: number}
+ */
 function findIngredientMasterById(masters, ingredientId) {
   const id = normalizeIngredientText(ingredientId);
   for (let i = 0; i < masters.length; i++) {

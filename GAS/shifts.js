@@ -11,6 +11,13 @@ const SHIFT_HEADER_ALIASES = {
 const SHIFT_TIME_PATTERN = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
 const SHIFT_CUSTOM_TIME_PATTERN = /^(1[1-9]|2[0-2]):[0-5][0-9]$/;
 
+/**
+ * 月の保存済みシフトを返す。
+ * year - unknown
+ * month - unknown
+ * authToken - string
+ * 戻り値 - {year: number, month: number, today: string, employees: ({id: string, name: string, number: string, isDeleted: boolean, skills: {[key: string]: string}})[], holidays: string[], shifts: ({employeeId: string, date: string, workType: string, startTime: string, endTime: string})[]}
+ */
 function getShiftMonth(year, month, authToken) {
   requireManagerRole_(authToken);
   const today = getTodayDateKey().replace(/\//g, '-');
@@ -41,6 +48,12 @@ function getShiftMonth(year, month, authToken) {
   };
 }
 
+/**
+ * 省略時は店舗の今日を含む日曜からの7日間。
+ * weekStart - unknown
+ * authToken - string
+ * 戻り値 - {weekStart: unknown, today: string, employees: ({id: string, name: string, number: string})[], shifts: ({employeeId: string, date: string, workType: string, startTime: string, endTime: string})[]}
+ */
 function getShiftWeek(weekStart, authToken) {
   requireManagerRole_(authToken);
   const today = getTodayDateKey().replace(/\//g, '-');
@@ -67,6 +80,12 @@ function getShiftWeek(weekStart, authToken) {
   };
 }
 
+/**
+ * 全変更を検証してから、従業員IDと日付が一致する行を更新する。
+ * changes - unknown[]
+ * authToken - string
+ * 戻り値 - {savedCount: number, shifts: ({employeeId: string, date: string, workType: string, startTime: string, endTime: string})[]}
+ */
 function saveShiftDrafts(changes, authToken) {
   requireManagerRole_(authToken);
   const normalized = validateShiftChanges_(changes);
@@ -105,6 +124,11 @@ function saveShiftDrafts(changes, authToken) {
   });
 }
 
+/**
+ * 従業員・日付・勤務区分・時刻を確認し、保存用の変更配列を作る。
+ * changes - unknown[]
+ * 戻り値 - ({employeeId: string, date: unknown, operation: unknown})[]
+ */
 function validateShiftChanges_(changes) {
   if (!Array.isArray(changes)) throw new Error('登録するシフトの形式が不正です');
   const seen = Object.create(null);
@@ -152,6 +176,10 @@ function validateShiftChanges_(changes) {
   });
 }
 
+/**
+ * 表示は読み取りのみ。
+ * 戻り値 - {spreadsheet: unknown, sheet: null または GoogleAppsScript.Spreadsheet.Sheet, columns: {[key: string]: number}, records: ({employeeId: string, date: string, workType: string, startTime: string, endTime: string, rowNumber: number})[]}
+ */
 function readShiftStore_() {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   if (!spreadsheet) throw new Error('対象のスプレッドシートが見つかりません');
@@ -205,6 +233,11 @@ function readShiftStore_() {
   return store;
 }
 
+/**
+ * シフト保存に必要なシート・見出しを用意する。
+ * store - {spreadsheet: unknown, sheet: null または GoogleAppsScript.Spreadsheet.Sheet, columns: {[key: string]: number}, records: ({employeeId: string, date: string, workType: string, startTime: string, endTime: string, rowNumber: number})[]}
+ * 戻り値 - なし
+ */
 function prepareShiftStoreForWrite_(store) {
   if (!store.sheet) store.sheet = store.spreadsheet.insertSheet(SHIFT_SHEET_NAME);
   const sheet = store.sheet;
@@ -221,6 +254,12 @@ function prepareShiftStoreForWrite_(store) {
   }
 }
 
+/**
+ * 変更対象の行とシフトの5列だけを書き込み、他の列の値や数式を保持する。
+ * store - {spreadsheet: unknown, sheet: null または GoogleAppsScript.Spreadsheet.Sheet, columns: {[key: string]: number}, records: ({employeeId: string, date: string, workType: string, startTime: string, endTime: string, rowNumber: number})[]}
+ * writes - unknown[]
+ * 戻り値 - なし
+ */
 function writeShiftChanges_(store, writes) {
   writes.sort(function (a, b) { return a.rowNumber - b.rowNumber; });
   const lastRow = writes[writes.length - 1].rowNumber;
@@ -275,16 +314,31 @@ function writeShiftChanges_(store, writes) {
   }
 }
 
+/**
+ * 内部処理用のシフト情報から画面へ返す項目を取り出す。
+ * record - {employeeId: string, date: string, workType: string, startTime: string, endTime: string, rowNumber: number} または {employeeId: string, date: unknown, operation: unknown}
+ * 戻り値 - {employeeId: string, date: string, workType: string, startTime: string, endTime: string}
+ */
 function shiftPublicRecord_(record) {
   const result = {};
   SHIFT_FIELDS.forEach(function (field) { result[field] = record[field]; });
   return result;
 }
 
+/**
+ * 従業員IDと日付の組を文字列にし、同じ人・同じ日の勤務を識別するキーを作る。
+ * record - {employeeId: string, date: string, workType: string, startTime: string, endTime: string, rowNumber: number} または {employeeId: string, date: unknown, operation: unknown}
+ * 戻り値 - string
+ */
 function shiftRecordKey_(record) {
   return JSON.stringify([record.employeeId, record.date]);
 }
 
+/**
+ * yyyy-MM-ddの日付文字列を検証してDateにする。
+ * value - unknown
+ * 戻り値 - null または Date
+ */
 function parseShiftDate_(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const date = new Date(value + 'T00:00:00Z');
@@ -293,10 +347,21 @@ function parseShiftDate_(value) {
   return date;
 }
 
+/**
+ * UTCで扱うDateをyyyy-MM-ddの日付文字列にする。
+ * date - null または Date
+ * 戻り値 - string
+ */
 function shiftDateText_(date) {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * シートの時刻をHH:mmへそろえる。
+ * value - unknown
+ * rowNumber - number
+ * 戻り値 - string
+ */
 function readShiftTime_(value, rowNumber) {
   if (value === '' || value === null || value === undefined) return '';
   if (value instanceof Date) return Utilities.formatDate(value, TIME_ZONE, 'HH:mm');

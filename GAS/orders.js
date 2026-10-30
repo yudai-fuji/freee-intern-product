@@ -1,11 +1,20 @@
 const ORDER_HISTORY_LIMIT = 100;
 
+/**
+ * 店長権限を確認し、発注管理画面の情報を取得する。
+ * authToken - string
+ * 戻り値 - {today: string, todayInput: string, nowText: string, storeName: string, testRecipient: string, maxQuantity: number, vendors: ({id: string, name: string, address: string, phone: string, email: string, businessHours: string, closedDays: string, deadlineText: string, leadTimeText: string, planText: string})[], items: ({id: string, name: string, unit: string, vendorId: string, vendorName: unknown})[], history: ({orderNo: string, orderedAt: string, orderedAtLabel: string, vendorId: string, vendorName: string, orderedBy: string, mailTo: string, channelText: string, expectedDate: string, note: string, statusTexts: string[], lines: ({name: string, quantityText: string, status: string})[]})[], upcoming: ({id: string, name: string, orderedAt: string, quantityText: string, expectedDate: string, vendorId: string, vendorName: unknown, status: string})[]}
+ */
 function getOrderBoard(authToken) {
   requireManagerRole_(authToken);
   ensureOrderMasterData_();
   return buildOrderBoard_();
 }
 
+/**
+ * 発注管理画面の業者、食材、履歴、入荷予定を組み立てる。
+ * 戻り値 - {today: string, todayInput: string, nowText: string, storeName: string, testRecipient: string, maxQuantity: number, vendors: ({id: string, name: string, address: string, phone: string, email: string, businessHours: string, closedDays: string, deadlineText: string, leadTimeText: string, planText: string})[], items: ({id: string, name: string, unit: string, vendorId: string, vendorName: unknown})[], history: ({orderNo: string, orderedAt: string, orderedAtLabel: string, vendorId: string, vendorName: string, orderedBy: string, mailTo: string, channelText: string, expectedDate: string, note: string, statusTexts: string[], lines: ({name: string, quantityText: string, status: string})[]})[], upcoming: ({id: string, name: string, orderedAt: string, quantityText: string, expectedDate: string, vendorId: string, vendorName: unknown, status: string})[]}
+ */
 function buildOrderBoard_() {
   const now = new Date();
   const suppliers = getIngredientSuppliers();
@@ -58,6 +67,12 @@ function buildOrderBoard_() {
   };
 }
 
+/**
+ * 業者の連絡先と発注条件を表示用に整える。
+ * supplier - {id: string, name: string, deadlineTime: string, orderDays: number[], shipDays: number[], deliveryDays: number[], leadTimeDays: null または number, leadTimeCount: string, closedDates: string[], pickupDays: number[], note: string, address: string, phone: string, email: string, businessHours: string, closedDays: string, mainItems: string, orderNote: string, rowNumber: number}
+ * now - Date
+ * 戻り値 - {id: string, name: string, address: string, phone: string, email: string, businessHours: string, closedDays: string, deadlineText: string, leadTimeText: string, planText: string}
+ */
 function buildOrderVendorView_(supplier, now) {
   return {
     'id': supplier.id,
@@ -74,6 +89,11 @@ function buildOrderVendorView_(supplier, now) {
   };
 }
 
+/**
+ * 発注締切の表示文を作る（未設定のときは推測しない）。
+ * supplier - {id: string, name: string, deadlineTime: string, orderDays: number[], shipDays: number[], deliveryDays: number[], leadTimeDays: null または number, leadTimeCount: string, closedDates: string[], pickupDays: number[], note: string, address: string, phone: string, email: string, businessHours: string, closedDays: string, mainItems: string, orderNote: string, rowNumber: number}
+ * 戻り値 - string
+ */
 function buildOrderDeadlineText_(supplier) {
   if (supplier.deadlineTime === '') {
     return '';
@@ -84,6 +104,11 @@ function buildOrderDeadlineText_(supplier) {
   return formatIngredientWeekdayList(supplier.orderDays) + 'の' + supplier.deadlineTime + 'まで';
 }
 
+/**
+ * 通常納品日数の表示文を作る。
+ * supplier - {id: string, name: string, deadlineTime: string, orderDays: number[], shipDays: number[], deliveryDays: number[], leadTimeDays: null または number, leadTimeCount: string, closedDates: string[], pickupDays: number[], note: string, address: string, phone: string, email: string, businessHours: string, closedDays: string, mainItems: string, orderNote: string, rowNumber: number}
+ * 戻り値 - string
+ */
 function buildOrderLeadTimeText_(supplier) {
   if (supplier.leadTimeDays === null) {
     return '';
@@ -92,6 +117,11 @@ function buildOrderLeadTimeText_(supplier) {
   return supplier.leadTimeDays + countText;
 }
 
+/**
+ * 実際にメールを送る宛先を求める 動作確認用の宛先が設定されている間は、業者マスタのアドレスではなくそちらへ送る。
+ * supplier - unknown
+ * 戻り値 - unknown
+ */
 function resolveOrderRecipient_(supplier) {
   if (normalizeIngredientText(ORDER_TEST_RECIPIENT_EMAIL) !== '') {
     return ORDER_TEST_RECIPIENT_EMAIL;
@@ -99,6 +129,12 @@ function resolveOrderRecipient_(supplier) {
   return supplier.email;
 }
 
+/**
+ * 発注記録を業者別のメール単位にまとめ、新しい順に並べる。
+ * orders - ({id: string, ingredientId: string, name: string, supplierId: string, quantity: number, unit: string, orderedAt: string, expectedDate: string, status: string, note: string, orderNo: string, orderedBy: string, mailTo: string, rowNumber: number})[]
+ * supplierById - unknown
+ * 戻り値 - ({orderNo: string, orderedAt: string, orderedAtLabel: string, vendorId: string, vendorName: string, orderedBy: string, mailTo: string, channelText: string, expectedDate: string, note: string, statusTexts: string[], lines: ({name: string, quantityText: string, status: string})[]})[]
+ */
 function buildOrderHistory_(orders, supplierById) {
   const groups = [];
   const groupByKey = {};
@@ -146,6 +182,13 @@ function buildOrderHistory_(orders, supplierById) {
   return groups.slice(0, ORDER_HISTORY_LIMIT);
 }
 
+/**
+ * 履歴を削除せず、当日以降の入荷予定を食材ごとに取り出す。
+ * orders - ({id: string, ingredientId: string, name: string, supplierId: string, quantity: number, unit: string, orderedAt: string, expectedDate: string, status: string, note: string, orderNo: string, orderedBy: string, mailTo: string, rowNumber: number})[]
+ * supplierById - unknown
+ * now - Date
+ * 戻り値 - ({id: string, name: string, orderedAt: string, quantityText: string, expectedDate: string, vendorId: string, vendorName: unknown, status: string})[]
+ */
 function buildOrderUpcoming_(orders, supplierById, now) {
   const today = formatIngredientDate(now);
   return orders.map(function (order) {
@@ -168,6 +211,11 @@ function buildOrderUpcoming_(orders, supplierById, now) {
   });
 }
 
+/**
+ * 発注日時を一覧表示用の短い文字列に変換する。
+ * orderedAt - string
+ * 戻り値 - string
+ */
 function formatOrderHistoryLabel_(orderedAt) {
   const date = parseIngredientDateTime(orderedAt);
   if (!date) {
@@ -176,6 +224,11 @@ function formatOrderHistoryLabel_(orderedAt) {
   return Utilities.formatDate(date, TIME_ZONE, 'M/d HH:mm');
 }
 
+/**
+ * 画面から届いた発注内容を確かめ、食材マスタの内容で組み立て直す 食材名・業者・単位はマスタの値を使い、画面から届いた値は信用しない。
+ * items - ({ingredientId: string, quantity: number})[]
+ * 戻り値 - ({master: {id: string, name: string, category: string, defaultUnit: string, supplierId: string, active: boolean, orderUnit: string, rowNumber: number}, supplier: unknown, quantity: number, unit: string})[]
+ */
 function normalizeOrderItems_(items) {
   const list = Array.isArray(items) ? items : [];
   if (list.length === 0) {
@@ -223,6 +276,12 @@ function normalizeOrderItems_(items) {
   return normalized;
 }
 
+/**
+ * 発注内容から業者別のメール下書きを生成する。
+ * items - ({ingredientId: string, quantity: number})[]
+ * now - Date
+ * 戻り値 - ({vendorId: string, vendorName: string, to: string, vendorEmail: string, lines: ({ingredientId: string, name: string, quantity: number, unit: string, quantityText: string})[], subject: string, body: string, canSend: boolean, sendBlockReason: string})[]
+ */
 function buildOrderDrafts_(items, now) {
   const normalized = normalizeOrderItems_(items);
 
@@ -260,10 +319,20 @@ function buildOrderDrafts_(items, now) {
   return drafts;
 }
 
+/**
+ * 件名を作る（例：9月16日 発注依頼）。
+ * now - Date
+ * 戻り値 - string
+ */
 function buildOrderMailSubject_(now) {
   return (now.getMonth() + 1) + '月' + now.getDate() + '日 発注依頼';
 }
 
+/**
+ * 本文を作る 業者名・商品・数量は登録された内容から組み立て、利用者に文章を入力させない。
+ * draft - {vendorId: string, vendorName: string, to: string, vendorEmail: string, lines: {ingredientId: string, name: string, quantity: number, unit: string, quantityText: string}[], subject: string, body: string, canSend: boolean, sendBlockReason: string}
+ * 戻り値 - string
+ */
 function buildOrderMailBody_(draft) {
   const parts = [];
   parts.push(draft.vendorName + ' 御中');
@@ -287,6 +356,11 @@ function buildOrderMailBody_(draft) {
   return parts.join('\n');
 }
 
+/**
+ * 発注内容確認の画面に出す内容を作る（メールはまだ送らない）。
+ * input - {authToken: string, items: {ingredientId: string, quantity: number}[]}
+ * 戻り値 - {drafts: ({vendorId: string, vendorName: string, to: string, vendorEmail: string, lines: ({ingredientId: string, name: string, quantity: number, unit: string, quantityText: string})[], subject: string, body: string, canSend: boolean, sendBlockReason: string})[], vendorCount: number}
+ */
 function getOrderDrafts(input) {
   const payload = input || {};
   requireManagerRole_(payload.authToken);
@@ -294,6 +368,11 @@ function getOrderDrafts(input) {
   return { 'drafts': drafts, 'vendorCount': drafts.length };
 }
 
+/**
+ * 業者別に発注メールを送り、送信できた食材の発注履歴を保存する。
+ * input - {authToken: string, operationKey: string, items: {ingredientId: string, quantity: number}[]}
+ * 戻り値 - {message: string, detail: null または {message: string, actor: string, sentVendorIds: string[], sentCount: number, failures: string[]}, board: {today: string, todayInput: string, nowText: string, storeName: string, testRecipient: string, maxQuantity: number, vendors: ({id: string, name: string, address: string, phone: string, email: string, businessHours: string, closedDays: string, deadlineText: string, leadTimeText: string, planText: string})[], items: ({id: string, name: string, unit: string, vendorId: string, vendorName: unknown})[], history: ({orderNo: string, orderedAt: string, orderedAtLabel: string, vendorId: string, vendorName: string, orderedBy: string, mailTo: string, channelText: string, expectedDate: string, note: string, statusTexts: string[], lines: ({name: string, quantityText: string, status: string})[]})[], upcoming: ({id: string, name: string, orderedAt: string, quantityText: string, expectedDate: string, vendorId: string, vendorName: unknown, status: string})[]}}
+ */
 function sendOrderMails(input) {
   const payload = input || {};
   requireManagerRole_(payload.authToken);
@@ -356,6 +435,11 @@ function sendOrderMails(input) {
   });
 }
 
+/**
+ * MailApp.sendEmailで業者別に組み立てたメールを送る。
+ * draft - {vendorId: string, vendorName: string, to: string, vendorEmail: string, lines: {ingredientId: string, name: string, quantity: number, unit: string, quantityText: string}[], subject: string, body: string, canSend: boolean, sendBlockReason: string}
+ * 戻り値 - なし
+ */
 function sendOrderMail_(draft) {
   MailApp.sendEmail({
     to: draft.to,
@@ -365,6 +449,16 @@ function sendOrderMail_(draft) {
   });
 }
 
+/**
+ * 送信した1業者分を食材ごとの行として食材発注へ追加する。
+ * sheet - GoogleAppsScript.Spreadsheet.Sheet
+ * draft - {vendorId: string, vendorName: string, to: string, vendorEmail: string, lines: {ingredientId: string, name: string, quantity: number, unit: string, quantityText: string}[], subject: string, body: string, canSend: boolean, sendBlockReason: string}
+ * supplier - unknown
+ * orderedAt - string
+ * actor - string
+ * now - Date
+ * 戻り値 - なし
+ */
 function appendOrderHistoryRows_(sheet, draft, supplier, orderedAt, actor, now) {
   const orderNo = newIngredientId('ODR');
   const expectedDate = resolveOrderExpectedDate_(supplier, now);
@@ -383,12 +477,22 @@ function appendOrderHistoryRows_(sheet, draft, supplier, orderedAt, actor, now) 
   appendIngredientRows(sheet, rows, INGREDIENT_ORDER_SHEET_HEADER.length);
 }
 
+/**
+ * 入荷予定日を求める（分からないときは空欄のままにして、推測で埋めない）。
+ * supplier - unknown
+ * now - null または Date
+ * 戻り値 - undefined または string
+ */
 function resolveOrderExpectedDate_(supplier, now) {
   if (!supplier || !now) { return ''; }
   const plan = buildIngredientSupplierPlan(supplier, now);
   return plan.available ? plan.deliveryDateKey : '';
 }
 
+/**
+ * 発注した人を求める 発注管理は店長画面の機能なので役割名を残し、実行中のGoogleアカウントが分かれば併記する。
+ * 戻り値 - string
+ */
 function resolveOrderActor_() {
   try {
     const email = Session.getActiveUser().getEmail();
@@ -401,6 +505,13 @@ function resolveOrderActor_() {
   return ROLE_MANAGER;
 }
 
+/**
+ * ロック下で操作キーの履歴を照合し、完了済みの同じキーなら送信を省く。
+ * operationKey - string
+ * type - string
+ * executor - (() => {message: string, actor: string, sentVendorIds: string[], sentCount: number, failures: string[]})
+ * 戻り値 - {message: string, detail: null または {message: string, actor: string, sentVendorIds: string[], sentCount: number, failures: string[]}, board: {today: string, todayInput: string, nowText: string, storeName: string, testRecipient: string, maxQuantity: number, vendors: ({id: string, name: string, address: string, phone: string, email: string, businessHours: string, closedDays: string, deadlineText: string, leadTimeText: string, planText: string})[], items: ({id: string, name: string, unit: string, vendorId: string, vendorName: unknown})[], history: ({orderNo: string, orderedAt: string, orderedAtLabel: string, vendorId: string, vendorName: string, orderedBy: string, mailTo: string, channelText: string, expectedDate: string, note: string, statusTexts: string[], lines: ({name: string, quantityText: string, status: string})[]})[], upcoming: ({id: string, name: string, orderedAt: string, quantityText: string, expectedDate: string, vendorId: string, vendorName: unknown, status: string})[]}}
+ */
 function runOrderOperation_(operationKey, type, executor) {
   const key = normalizeIngredientText(operationKey);
   if (key === '') {
@@ -451,6 +562,10 @@ function runOrderOperation_(operationKey, type, executor) {
   return { 'message': message, 'detail': detail, 'board': buildOrderBoard_() };
 }
 
+/**
+ * 発注に必要なマスタがそろっていない場合だけ、初期データを入れる すでに入っている値は書き換えず、空欄のところだけを埋める。
+ * 戻り値 - なし
+ */
 function ensureOrderMasterData_() {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) {
@@ -520,6 +635,10 @@ function ensureOrderMasterData_() {
   }
 }
 
+/**
+ * 業者マスタへ入れる初期データの行を作る。
+ * 戻り値 - (string[])[]
+ */
 function buildOrderDefaultVendorRows_() {
   const rows = [];
   const updatedAt = formatIngredientDateTime(new Date());
@@ -537,6 +656,14 @@ function buildOrderDefaultVendorRows_() {
   return rows;
 }
 
+/**
+ * 見出し名をキーにした値で、シートの1行を書き直す。
+ * sheet - GoogleAppsScript.Spreadsheet.Sheet
+ * rowNumber - unknown
+ * header - string[]
+ * values - unknown
+ * 戻り値 - なし
+ */
 function writeOrderSheetRow_(sheet, rowNumber, header, values) {
   const row = [];
   for (let i = 0; i < header.length; i++) {

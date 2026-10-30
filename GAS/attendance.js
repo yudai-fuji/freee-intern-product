@@ -1,9 +1,20 @@
+/**
+ * 従業員の当日の打刻状態を取得する。
+ * empId - unknown
+ * authToken - string
+ * 戻り値 - {employeeId: string, date: string, state: string, allowedTypes: string[], error?: undefined または string}
+ */
 function getTodayClockState(empId, authToken) {
   requireLoggedIn_(authToken);
   requireActiveClockEmployee_(empId);
   return readTodayClockState_(empId, getSheet(SHEET_NAMES.TIME_CLOCKS), new Date());
 }
 
+/**
+ * 従業員が名簿に存在し、削除済みでないことを確認する。
+ * empId - unknown
+ * 戻り値 - {[key: string]: string}
+ */
 function requireActiveClockEmployee_(empId) {
   const activeNameByEmpId = getActiveEmployeeNameMap();
   if (!activeNameByEmpId[String(empId)]) {
@@ -12,6 +23,11 @@ function requireActiveClockEmployee_(empId) {
   return activeNameByEmpId;
 }
 
+/**
+ * 今の打刻状態から、次に押してよいボタンの種類を配列で返す。
+ * state - string
+ * 戻り値 - string[]
+ */
 function allowedClockTypes_(state) {
   if (state === 'not_clocked_in') return ['出勤'];
   if (state === 'working') return ['退勤', '休憩開始'];
@@ -19,6 +35,12 @@ function allowedClockTypes_(state) {
   return [];
 }
 
+/**
+ * 現在の打刻状態と操作から次の状態を判定する。
+ * state - string
+ * type - unknown
+ * 戻り値 - null または string
+ */
 function nextClockState_(state, type) {
   if (allowedClockTypes_(state).indexOf(type) === -1) return null;
   if (type === '退勤') return 'clocked_out';
@@ -26,16 +48,40 @@ function nextClockState_(state, type) {
   return 'working';
 }
 
+/**
+ * 指定した従業員の今日の打刻だけを集め、現在が未出勤・勤務中・休憩中・退勤済みのどれかを返す。
+ * empId - unknown
+ * sheet - GoogleAppsScript.Spreadsheet.Sheet
+ * now - Date
+ * 戻り値 - {employeeId: string, date: string, state: string, allowedTypes: string[], error?: undefined または string}
+ */
 function readTodayClockState_(empId, sheet, now) {
   const date = Utilities.formatDate(now, TIME_ZONE, 'yyyy/MM/dd');
   const events = readAttendanceEvents_(sheet, date).filter(function (event) { return String(event.employeeId) === String(empId); });
   return Object.assign({ employeeId: String(empId), date: date }, getClockStateFromEvents_(events));
 }
 
+/**
+ * 認証済みの打刻を検証して保存する。
+ * empId - unknown
+ * type - unknown
+ * ticket - string
+ * authToken - string
+ * 戻り値 - {message: string, clockState: {employeeId: string, date: string, state: string, allowedTypes: string[], error?: undefined または string}}
+ */
 function recordClock(empId, type, ticket, authToken) {
   return recordClockWithValidation_(empId, type, ticket, authToken);
 }
 
+/**
+ * ロック内で打刻を検証し、必要な関連処理と打刻保存を行う。
+ * empId - unknown
+ * type - unknown
+ * ticket - unknown
+ * authToken - unknown
+ * beforeRecord - undefined または ((arg0: unknown) => void)
+ * 戻り値 - {message: string, clockState: {employeeId: string, date: string, state: string, allowedTypes: string[], error?: undefined または string}}
+ */
 function recordClockWithValidation_(empId, type, ticket, authToken, beforeRecord) {
   requireLoggedIn_(authToken);
   if (CLOCK_TYPES.indexOf(type) === -1) throw new Error('不正な打刻種別です');
@@ -70,6 +116,10 @@ function recordClockWithValidation_(empId, type, ticket, authToken, beforeRecord
   }
 }
 
+/**
+ * 打刻履歴のデータと休憩補正を消す管理用の処理。
+ * 戻り値 - なし
+ */
 function resetClockRecords() {
   const sheet = getSheet(SHEET_NAMES.TIME_CLOCKS);
   const lastRow = sheet.getLastRow();
@@ -81,6 +131,11 @@ function resetClockRecords() {
   }
 }
 
+/**
+ * 今日の日付・見出しと、通常シフトがある従業員の勤怠一覧をまとめて返す。
+ * authToken - string
+ * 戻り値 - {date: string, dateKey: string, attendances: ({id: string, dateKey: string, name: string, clockIn: string, clockOut: string, clockInInput: string, clockOutInput: string, breakMinutes: number, breakOngoing: boolean, breakTime: string, workingTime: string, estimatedWage: string, revision: string})[]}
+ */
 function getTodayAttendances(authToken) {
   requireManagerRole_(authToken);
 
@@ -100,6 +155,11 @@ function getTodayAttendances(authToken) {
   };
 }
 
+/**
+ * 対象日の通常シフトを起点に打刻をまとめ、氏名・勤務時間・給与見込みを作る。
+ * targetDate - string
+ * 戻り値 - ({id: string, dateKey: string, name: string, clockIn: string, clockOut: string, clockInInput: string, clockOutInput: string, breakMinutes: number, breakOngoing: boolean, breakTime: string, workingTime: string, estimatedWage: string, revision: string})[]
+ */
 function buildAttendances(targetDate) {
   const eventsByEmpId = new Map();
   const shiftDate = targetDate.replace(/\//g, '-');
@@ -127,6 +187,11 @@ function buildAttendances(targetDate) {
   });
 }
 
+/**
+ * 時刻順の打刻から最初の出勤、最後の退勤、休憩分数、休憩中かを求める。
+ * events - unknown
+ * 戻り値 - {clockInAt: null または Date, clockOutAt: null または Date, breakMinutes: number, breakOngoing: boolean}
+ */
 function summarizeDayEvents(events) {
   events.sort(compareClockEvents_);
 
@@ -164,6 +229,13 @@ function summarizeDayEvents(events) {
   };
 }
 
+/**
+ * 出勤から退勤までの分数から休憩分数を引く。
+ * clockInAt - Date または null
+ * clockOutAt - Date または null
+ * breakMinutes - number
+ * 戻り値 - null または number
+ */
 function calcActualWorkingMinutes(clockInAt, clockOutAt, breakMinutes) {
   if (clockInAt === null || clockOutAt === null) {
     return null;
@@ -176,6 +248,10 @@ function calcActualWorkingMinutes(clockInAt, clockOutAt, breakMinutes) {
   return actualMinutes;
 }
 
+/**
+ * 従業員ごとの基本時給、休日加給、スキル手当を取得する。
+ * 戻り値 - {[key: string]: {base: number, holidayBonus: number, skillAllowance: number}}
+ */
 function getEmployeeRateMap() {
   const rateByEmpId = {};
   const skillAllowanceByEmpId = getEmployeeSkillAllowanceMap();
@@ -191,6 +267,11 @@ function getEmployeeRateMap() {
   return rateByEmpId;
 }
 
+/**
+ * 土日、または祝日シートにある日付ならtrueを返す。
+ * targetDate - string
+ * 戻り値 - boolean
+ */
 function isHolidayDate(targetDate) {
   const date = new Date(targetDate);
   const isWeekend = (date.getDay() === 0 || date.getDay() === 6);
@@ -200,6 +281,10 @@ function isHolidayDate(targetDate) {
   return !!getHolidayDateSet()[targetDate];
 }
 
+/**
+ * 祝日シートA列の日付を検索用の対応表にする。
+ * 戻り値 - {[key: string]: boolean}
+ */
 function getHolidayDateSet() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.HOLIDAYS);
   if (!sheet) {
@@ -220,6 +305,11 @@ function getHolidayDateSet() {
   return holidaySet;
 }
 
+/**
+ * 日時を日本時間の時:分に整える。
+ * clockedAt - Date または null
+ * 戻り値 - string
+ */
 function formatClockTime(clockedAt) {
   if (clockedAt === null) {
     return UNRECORDED_LABEL;
@@ -227,6 +317,11 @@ function formatClockTime(clockedAt) {
   return Utilities.formatDate(clockedAt, TIME_ZONE, 'HH:mm');
 }
 
+/**
+ * 勤務分数を時間と分の表示に変換する。
+ * totalMinutes - null または number
+ * 戻り値 - string
+ */
 function formatMinutesLabel(totalMinutes) {
   if (totalMinutes === null) {
     return NO_VALUE_LABEL;
@@ -242,6 +337,12 @@ function formatMinutesLabel(totalMinutes) {
   return hours + '時間' + minutes + '分';
 }
 
+/**
+ * 休憩中・休憩なし・休憩分数に応じて画面の表示文字列を作る。
+ * breakMinutes - number
+ * breakOngoing - boolean
+ * 戻り値 - string
+ */
 function formatBreakTime(breakMinutes, breakOngoing) {
   if (breakOngoing) {
     return '休憩中';
@@ -252,6 +353,13 @@ function formatBreakTime(breakMinutes, breakOngoing) {
   return formatMinutesLabel(breakMinutes);
 }
 
+/**
+ * 勤務時間と時給情報から概算給与の表示を作る。
+ * actualMinutes - null または number
+ * rate - {base: number, holidayBonus: number, skillAllowance: number}
+ * isHolidayRate - boolean
+ * 戻り値 - string
+ */
 function formatEstimatedWage(actualMinutes, rate, isHolidayRate) {
   if (actualMinutes === null) {
     return NO_VALUE_LABEL;
@@ -262,12 +370,24 @@ function formatEstimatedWage(actualMinutes, rate, isHolidayRate) {
   return wage.toLocaleString('ja-JP') + '円';
 }
 
+/**
+ * 時刻が同じ場合も出勤→休憩→退勤の順で扱う（分単位の修正に対応）。
+ * a - {employeeId: unknown, type: unknown, time: Date, rowNumber: number, breakAdjustment: number}
+ * b - {employeeId: unknown, type: unknown, time: Date, rowNumber: number, breakAdjustment: number}
+ * 戻り値 - number
+ */
 function compareClockEvents_(a, b) {
   const priority = function (type) { return type === '出勤' ? -1 : type === '退勤' ? 1 : 0; };
   return a.time.getTime() - b.time.getTime() || priority(a.type) - priority(b.type) ||
     (a.rowNumber || 0) - (b.rowNumber || 0);
 }
 
+/**
+ * 休憩補正の列を探す。
+ * sheet - GoogleAppsScript.Spreadsheet.Sheet
+ * create - boolean
+ * 戻り値 - number
+ */
 function getAttendanceAdjustmentColumn_(sheet, create) {
   const width = Math.max(3, sheet.getLastColumn());
   const header = sheet.getRange(1, 1, 1, width).getValues()[0];
@@ -280,6 +400,12 @@ function getAttendanceAdjustmentColumn_(sheet, create) {
   return column;
 }
 
+/**
+ * 既存の3列を維持し、追加列がない旧データの休憩補正は0分として読む。
+ * sheet - GoogleAppsScript.Spreadsheet.Sheet
+ * dateKey - string
+ * 戻り値 - ({employeeId: unknown, type: unknown, time: Date, rowNumber: number, breakAdjustment: number})[]
+ */
 function readAttendanceEvents_(sheet, dateKey) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) { return []; }
@@ -294,12 +420,22 @@ function readAttendanceEvents_(sheet, dateKey) {
     });
 }
 
+/**
+ * 打刻情報を編集競合の検出用の文字列に変換する。
+ * events - unknown
+ * 戻り値 - string
+ */
 function getAttendanceRevision_(events) {
   return JSON.stringify(events.map(function (event) {
     return [event.rowNumber, event.type, event.time.getTime(), event.breakAdjustment];
   }));
 }
 
+/**
+ * 打刻履歴から現在の状態と許可される操作を判定する。
+ * events - ({employeeId: unknown, type: unknown, time: Date, rowNumber: number, breakAdjustment: number})[]
+ * 戻り値 - {state: string, allowedTypes: string[], error?: undefined または string}
+ */
 function getClockStateFromEvents_(events) {
   let state = 'not_clocked_in';
   const ordered = events.slice().sort(compareClockEvents_);
@@ -314,6 +450,16 @@ function getClockStateFromEvents_(events) {
   return { state: state, allowedTypes: allowedClockTypes_(state) };
 }
 
+/**
+ * 従業員1人分の打刻を集計し、表示文字列・編集欄の値・競合確認用の版情報に整える。
+ * id - unknown
+ * dateKey - string
+ * events - unknown
+ * name - string
+ * rate - {base: number, holidayBonus: number, skillAllowance: number}
+ * holiday - boolean
+ * 戻り値 - {id: string, dateKey: string, name: string, clockIn: string, clockOut: string, clockInInput: string, clockOutInput: string, breakMinutes: number, breakOngoing: boolean, breakTime: string, workingTime: string, estimatedWage: string, revision: string}
+ */
 function buildAttendanceView_(id, dateKey, events, name, rate, holiday) {
   const summary = summarizeDayEvents(events.slice());
   const actualMinutes = calcActualWorkingMinutes(summary.clockInAt, summary.clockOutAt, summary.breakMinutes);
@@ -330,6 +476,14 @@ function buildAttendanceView_(id, dateKey, events, name, rate, holiday) {
   };
 }
 
+/**
+ * 店長が入力した時:分を対象日の日時へ直す。
+ * value - unknown
+ * dateKey - string
+ * original - Date または null
+ * label - string
+ * 戻り値 - null または Date
+ */
 function parseAttendanceTime_(value, dateKey, original, label) {
   if (value === '') { return null; }
   if (typeof value !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) {
@@ -344,6 +498,12 @@ function parseAttendanceTime_(value, dateKey, original, label) {
   return date;
 }
 
+/**
+ * 店長の行編集。
+ * input - {id: string, dateKey: unknown, revision: unknown, clockIn: unknown, clockOut: unknown, breakMinutes: number}
+ * authToken - string
+ * 戻り値 - {attendance: {id: string, dateKey: string, name: string, clockIn: string, clockOut: string, clockInInput: string, clockOutInput: string, breakMinutes: number, breakOngoing: boolean, breakTime: string, workingTime: string, estimatedWage: string, revision: string}}
+ */
 function saveAttendance(input, authToken) {
   requireManagerRole_(authToken);
   const payload = input || {};
@@ -405,6 +565,13 @@ function saveAttendance(input, authToken) {
   });
 }
 
+/**
+ * 変更前の値を控えて、編集後の出勤・退勤・休憩補正を書き込む。
+ * sheet - GoogleAppsScript.Spreadsheet.Sheet
+ * original - ({employeeId: unknown, type: unknown, time: Date, rowNumber: number, breakAdjustment: number})[]
+ * edited - ({employeeId: unknown, type: unknown, time: Date, rowNumber: number, breakAdjustment: number})[]
+ * 戻り値 - なし
+ */
 function writeAttendanceEvents_(sheet, original, edited) {
   const adjustmentColumn = getAttendanceAdjustmentColumn_(sheet, true);
   const byRow = new Map();

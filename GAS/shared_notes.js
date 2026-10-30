@@ -1,3 +1,7 @@
+/**
+ * 共有メモシートを用意し、送信者・受信者・本文・表示日等の見出しをそろえる。
+ * 戻り値 - GoogleAppsScript.Spreadsheet.Sheet
+ */
 function ensureSharedNoteSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(SHEET_NAMES.SHARED_NOTES);
@@ -16,10 +20,20 @@ function ensureSharedNoteSheet() {
   return sheet;
 }
 
+/**
+ * 共有メモの各受信者行を識別する新しいIDを作る。
+ * 戻り値 - string
+ */
 function newSharedNoteId_() {
   return 'NOTE-' + Utilities.getUuid().replace(/-/g, '').substring(0, 12);
 }
 
+/**
+ * 本人を除く有効な従業員を共有先候補として取得する。
+ * empId - unknown
+ * authToken - string
+ * 戻り値 - ({id: unknown, name: string, number: string})[]
+ */
 function getSharedNoteRecipientCandidates(empId, authToken) {
   requireLoggedIn_(authToken);
 
@@ -34,6 +48,15 @@ function getSharedNoteRecipientCandidates(empId, authToken) {
   return candidates;
 }
 
+/**
+ * 共有メモを保存してから退勤を記録する（確認画面の「退勤」を押したときに呼ぶ） 保存に失敗した場合は退勤処理を行わない。
+ * empId - unknown
+ * recipientIds - unknown
+ * noteText - unknown
+ * authToken - unknown
+ * ticket - unknown
+ * 戻り値 - {message: string, clockState: {employeeId: string, date: string, state: string, allowedTypes: string[], error?: undefined または string}}
+ */
 function saveSharedNoteAndClockOut(empId, recipientIds, noteText, authToken, ticket) {
   requireLoggedIn_(authToken);
 
@@ -62,6 +85,15 @@ function saveSharedNoteAndClockOut(empId, recipientIds, noteText, authToken, tic
   });
 }
 
+/**
+ * 共有メモを受信者1人につき1行保存する。
+ * senderEmpId - unknown
+ * senderName - unknown
+ * recipientIds - string[]
+ * nameByEmpId - unknown
+ * noteText - unknown
+ * 戻り値 - なし
+ */
 function saveSharedNoteRows_(senderEmpId, senderName, recipientIds, nameByEmpId, noteText) {
   const sheet = ensureSharedNoteSheet();
   const now = new Date();
@@ -85,14 +117,30 @@ function saveSharedNoteRows_(senderEmpId, senderName, recipientIds, nameByEmpId,
   sheet.getRange(startRow, 1, rows.length, SHARED_NOTE_SHEET_HEADER.length).setValues(rows);
 }
 
+/**
+ * 出勤に成功した直後に呼ぶ。
+ * empId - unknown
+ * 戻り値 - ({senderName: unknown, body: unknown, createdAtLabel: string, createdAtMs: number})[]
+ */
 function getSharedNotesForClockIn(empId) {
   return collectSharedNotesForDisplay_(empId, true);
 }
 
+/**
+ * 従業員一覧から名前を選んだときに呼ぶ。
+ * empId - string
+ * 戻り値 - ({senderName: unknown, body: unknown, createdAtLabel: string, createdAtMs: number})[]
+ */
 function getSharedNotesForSelection(empId) {
   return collectSharedNotesForDisplay_(empId, false);
 }
 
+/**
+ * 受信者1人分の共有メモを集める。
+ * empId - unknown
+ * revealPending - boolean
+ * 戻り値 - ({senderName: unknown, body: unknown, createdAtLabel: string, createdAtMs: number})[]
+ */
 function collectSharedNotesForDisplay_(empId, revealPending) {
   const sheet = ensureSharedNoteSheet();
   const lastRow = sheet.getLastRow();
@@ -152,6 +200,11 @@ function collectSharedNotesForDisplay_(empId, revealPending) {
   return notes;
 }
 
+/**
+ * シート1行から送信者名・本文・作成日時の表示と並び替え用の時刻を取り出す。
+ * row - unknown[]
+ * 戻り値 - {senderName: unknown, body: unknown, createdAtLabel: string, createdAtMs: number}
+ */
 function buildSharedNoteView_(row) {
   const createdAt = row[6];
   return {

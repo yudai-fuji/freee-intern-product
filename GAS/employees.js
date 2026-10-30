@@ -1,3 +1,7 @@
+/**
+ * 従業員名簿に状態列と削除日時列を用意する。
+ * 戻り値 - {sheet: GoogleAppsScript.Spreadsheet.Sheet, statusColumn: number, deletedAtColumn: number}
+ */
 function ensureEmployeeStatusColumns_() {
   const sheet = getSheet(SHEET_NAMES.EMPLOYEES);
 
@@ -37,10 +41,21 @@ function ensureEmployeeStatusColumns_() {
   return { 'sheet': sheet, 'statusColumn': statusColumn, 'deletedAtColumn': deletedAtColumn };
 }
 
+/**
+ * 名簿の見出しからID・氏名・雇用区分の列位置を調べる。
+ * sheet - GoogleAppsScript.Spreadsheet.Sheet
+ * 戻り値 - {id: number, name: number, partTimeMark: number}
+ */
 function getEmployeeIdentityColumns_(sheet) {
   const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function (value) {
     return String(value).trim();
   });
+  /**
+   * 見出し候補のどれかに一致する列を探す。
+   * names - string[]
+   * fallback - number
+   * 戻り値 - number
+   */
   function findColumn(names, fallback) {
     const index = header.findIndex(function (title) { return names.indexOf(title) !== -1; });
     return index === -1 ? fallback : index + 1;
@@ -56,6 +71,10 @@ function getEmployeeIdentityColumns_(sheet) {
   };
 }
 
+/**
+ * 従業員名簿の全行を、削除済みかどうかも含めて読み取る 一覧・氏名の対応表・追加・削除は、すべてこの関数が読んだ内容をもとに判断する。
+ * 戻り値 - ({id: unknown, name: string, rowNumber: number, isDeleted: boolean})[]
+ */
 function readEmployeeRows_() {
   const columns = ensureEmployeeStatusColumns_();
   const sheet = columns.sheet;
@@ -85,6 +104,11 @@ function readEmployeeRows_() {
   return rows;
 }
 
+/**
+ * 画面に表示する従業員番号の文字列を作る 名簿の値そのものは変えず、表示のときだけ「01」「001」のゼロ埋めを外して「1」にする。
+ * empId - unknown
+ * 戻り値 - string
+ */
 function formatEmployeeNumber(empId) {
   const text = String(empId === null || empId === undefined ? '' : empId).trim();
   if (/^[0-9]+$/.test(text)) {
@@ -93,6 +117,10 @@ function formatEmployeeNumber(empId) {
   return text;
 }
 
+/**
+ * 削除済みでない有効な従業員の一覧を取得する。
+ * 戻り値 - ({id: unknown, name: string, number: string})[]
+ */
 function getEmployees() {
   const rows = readEmployeeRows_();
   const employees = [];
@@ -109,11 +137,21 @@ function getEmployees() {
   return employees;
 }
 
+/**
+ * ログイン状態を確認し、有効な従業員の一覧を返す。
+ * authToken - string
+ * 戻り値 - ({id: unknown, name: string, number: string})[]
+ */
 function getActiveEmployeeList(authToken) {
   requireLoggedIn_(authToken);
   return getEmployees();
 }
 
+/**
+ * 有効な従業員にスキルと時給を組み合わせ、店長の従業員一覧用に返す。
+ * authToken - string
+ * 戻り値 - ({id: unknown, number: string, name: string, skills: {[key: string]: string}, hourlyWage: number})[]
+ */
 function getEmployeeDirectory(authToken) {
   requireManagerRole_(authToken);
   const employees = getEmployees();
@@ -131,6 +169,10 @@ function getEmployeeDirectory(authToken) {
   });
 }
 
+/**
+ * 従業員番号と氏名の対応表をつくる（削除済みの人も含む） 過去の勤怠に残っている記録の氏名を表示するために使う。
+ * 戻り値 - {[key: string]: string}
+ */
 function getEmployeeNameMap() {
   const rows = readEmployeeRows_();
   const nameByEmpId = {};
@@ -143,6 +185,10 @@ function getEmployeeNameMap() {
   return nameByEmpId;
 }
 
+/**
+ * 有効な従業員だけの、従業員番号と氏名の対応表をつくる 打刻・本日の業務・スキルの保存先として選んでよい人かどうかの確認に使う。
+ * 戻り値 - {[key: string]: string}
+ */
 function getActiveEmployeeNameMap() {
   const employees = getEmployees();
   const nameByEmpId = {};
@@ -152,6 +198,12 @@ function getActiveEmployeeNameMap() {
   return nameByEmpId;
 }
 
+/**
+ * 従業員名簿から、指定した従業員番号の行を探す。
+ * rows - ({id: unknown, name: string, rowNumber: number, isDeleted: boolean})[]
+ * empId - unknown
+ * 戻り値 - null または {id: unknown, name: string, rowNumber: number, isDeleted: boolean}
+ */
 function findEmployeeRow_(rows, empId) {
   for (let i = 0; i < rows.length; i++) {
     if (String(rows[i].id) === String(empId)) {
@@ -161,6 +213,10 @@ function findEmployeeRow_(rows, empId) {
   return null;
 }
 
+/**
+ * PINは名簿の末尾に文字列として保存する。
+ * 戻り値 - {sheet: GoogleAppsScript.Spreadsheet.Sheet, column: number}
+ */
 function ensureEmployeePinColumn_() {
   const sheet = ensureEmployeeStatusColumns_().sheet;
   const lastColumn = sheet.getLastColumn();
@@ -174,6 +230,10 @@ function ensureEmployeePinColumn_() {
   return { sheet: sheet, column: column };
 }
 
+/**
+ * 名簿にPIN列を用意し、未設定の従業員に初期PINを入れる初期移行処理。
+ * 戻り値 - なし
+ */
 function migrateEmployeePins_() {
   const columns = ensureEmployeePinColumn_();
   const rows = readEmployeeRows_();
@@ -184,6 +244,11 @@ function migrateEmployeePins_() {
   }
 }
 
+/**
+ * 有効な従業員かを確かめ、名簿に保存されたPINを文字列として取得する。
+ * empId - unknown
+ * 戻り値 - string
+ */
 function readEmployeePin_(empId) {
   const row = findEmployeeRow_(readEmployeeRows_(), empId);
   if (!row || row.isDeleted || row.name === '') throw new Error('この従業員は選べません');
@@ -191,6 +256,14 @@ function readEmployeePin_(empId) {
   return String(columns.sheet.getRange(row.rowNumber, columns.column).getValue());
 }
 
+/**
+ * 店長権限・入力形式・確認欄の一致を確かめ、対象従業員のPINを書き換える。
+ * empId - string
+ * newPin - string
+ * confirmPin - string
+ * authToken - string
+ * 戻り値 - {message: string}
+ */
 function changeEmployeePin(empId, newPin, confirmPin, authToken) {
   requireManagerRole_(authToken);
   requireValidEmployeePin_(newPin);
@@ -205,12 +278,27 @@ function changeEmployeePin(empId, newPin, confirmPin, authToken) {
   });
 }
 
+/**
+ * 店長権限を確認し、新しい従業員を登録する。
+ * lastName - string
+ * firstName - string
+ * pin - string
+ * authToken - string
+ * 戻り値 - {message: string, employees: ({id: unknown, name: string, number: string})[]}
+ */
 function addEmployee(lastName, firstName, pin, authToken) {
   requireManagerRole_(authToken);
   requireValidEmployeePin_(pin);
   return withAppLock_(function () { return addEmployee_(lastName, firstName, pin); });
 }
 
+/**
+ * 氏名を検証し、全従業員の最大ID+1で新しい名簿行を作る。
+ * lastName - string
+ * firstName - string
+ * pin - string
+ * 戻り値 - {message: string, employees: ({id: unknown, name: string, number: string})[]}
+ */
 function addEmployee_(lastName, firstName, pin) {
 
   lastName = String(lastName === null || lastName === undefined ? '' : lastName).trim();
@@ -253,6 +341,12 @@ function addEmployee_(lastName, firstName, pin) {
   };
 }
 
+/**
+ * 削除する前に、対象の従業員と削除の影響を確認するための情報を返す（店長だけが実行できる）。
+ * empId - unknown
+ * authToken - string
+ * 戻り値 - {id: unknown, name: string, number: string}
+ */
 function getEmployeeDeletionPreview(empId, authToken) {
   requireManagerRole_(authToken);
 
@@ -271,6 +365,12 @@ function getEmployeeDeletionPreview(empId, authToken) {
   };
 }
 
+/**
+ * 従業員を削除済みにする（店長だけが実行できる） 名簿の行と氏名はそのまま残し、状態列と削除日時列だけを書き換える。
+ * empId - unknown
+ * authToken - string
+ * 戻り値 - {message: string, employees: ({id: unknown, name: string, number: string})[]}
+ */
 function deleteEmployee(empId, authToken) {
   requireManagerRole_(authToken);
 
@@ -292,6 +392,10 @@ function deleteEmployee(empId, authToken) {
   };
 }
 
+/**
+ * 従業員名簿にスキル手当列を用意する。
+ * 戻り値 - {sheet: GoogleAppsScript.Spreadsheet.Sheet, column: number}
+ */
 function ensureEmployeeSkillAllowanceColumn_() {
 
   const statusColumns = ensureEmployeeStatusColumns_();
@@ -319,6 +423,11 @@ function ensureEmployeeSkillAllowanceColumn_() {
   return { 'sheet': sheet, 'column': allowanceColumn };
 }
 
+/**
+ * スキル手当として読んだ値を金額（数値）に直す 列を足した直後の空欄や、数値として読めない値は「まだ手当なし」の 0 円として扱う。
+ * rawValue - unknown
+ * 戻り値 - number
+ */
 function normalizeSkillAllowance_(rawValue) {
   const amount = Number(rawValue);
   if (!isFinite(amount) || amount <= 0) {
@@ -327,6 +436,10 @@ function normalizeSkillAllowance_(rawValue) {
   return amount;
 }
 
+/**
+ * 従業員番号ごとのスキル手当（円/時）の対応表をつくる 給与計算と、スキル保存時の「今より下げない」判定の両方でこの対応表を使う。
+ * 戻り値 - {[key: string]: number}
+ */
 function getEmployeeSkillAllowanceMap() {
   const columns = ensureEmployeeSkillAllowanceColumn_();
   const sheet = columns.sheet;
@@ -347,11 +460,22 @@ function getEmployeeSkillAllowanceMap() {
   return allowanceByEmpId;
 }
 
+/**
+ * 従業員1人のスキル手当（円/時）を取得する。
+ * empId - unknown
+ * 戻り値 - number
+ */
 function getEmployeeSkillAllowance(empId) {
   const amount = getEmployeeSkillAllowanceMap()[String(empId)];
   return (amount === undefined) ? SKILL_ALLOWANCE_DEFAULT : amount;
 }
 
+/**
+ * 従業員1人のスキル手当（円/時）を名簿に書き込む 金額を決めるのは呼び出し側なので、ここでは下げないための判定はしない。
+ * empId - unknown
+ * amount - number
+ * 戻り値 - boolean
+ */
 function saveEmployeeSkillAllowance_(empId, amount) {
   const columns = ensureEmployeeSkillAllowanceColumn_();
   const targetRow = findEmployeeRow_(readEmployeeRows_(), empId);

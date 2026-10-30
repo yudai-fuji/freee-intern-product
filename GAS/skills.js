@@ -1,3 +1,8 @@
+/**
+ * スキル管理の見出しが期待する14列と一致するか確認し、違えば見出しを書き直す。
+ * sheet - GoogleAppsScript.Spreadsheet.Sheet
+ * 戻り値 - なし
+ */
 function ensureSkillSheetHeader(sheet) {
   const headerRange = sheet.getRange(1, 1, 1, SKILL_SHEET_HEADER.length);
   const currentHeader = headerRange.getValues()[0];
@@ -9,12 +14,20 @@ function ensureSkillSheetHeader(sheet) {
   }
 }
 
+/**
+ * スキル管理シートを取得して、期待する見出しになっているか確認する。
+ * 戻り値 - GoogleAppsScript.Spreadsheet.Sheet
+ */
 function getSkillSheet() {
   const sheet = getSheet(SHEET_NAMES.SKILLS);
   ensureSkillSheetHeader(sheet);
   return sheet;
 }
 
+/**
+ * 全6スキルを初期評価Fにした対応表を作る。
+ * 戻り値 - {[key: string]: string}
+ */
 function getDefaultSkills() {
   const skills = {};
   for (let i = 0; i < SKILL_ITEMS.length; i++) {
@@ -23,6 +36,11 @@ function getDefaultSkills() {
   return skills;
 }
 
+/**
+ * シートから読んだ旧評価もF/B/Aへ読み替える。
+ * rawValue - unknown
+ * 戻り値 - string
+ */
 function normalizeSkillLevel_(rawValue) {
   const text = String(rawValue === null || rawValue === undefined ? '' : rawValue).trim();
   if (SKILL_LEVELS.indexOf(text) !== -1) {
@@ -34,6 +52,11 @@ function normalizeSkillLevel_(rawValue) {
   return SKILL_LEVEL_DEFAULT;
 }
 
+/**
+ * スキルの対応表（{ 接客: 'A', ... }）を、SKILL_ITEMS の並び順の配列にする。
+ * skills - {[key: string]: string}
+ * 戻り値 - string[]
+ */
 function toSkillValueList_(skills) {
   const skillValues = [];
   for (let i = 0; i < SKILL_ITEMS.length; i++) {
@@ -42,10 +65,19 @@ function toSkillValueList_(skills) {
   return skillValues;
 }
 
+/**
+ * スキルの位置からシートの評価列番号を計算する。
+ * skillIndex - number
+ * 戻り値 - number
+ */
 function getSkillEvalColumn(skillIndex) {
   return 3 + skillIndex * 2;
 }
 
+/**
+ * 従業員IDごとに6スキルの評価をまとめる。
+ * 戻り値 - {[key: string]: {[key: string]: string}}
+ */
 function getEmployeeSkillMap() {
   const sheet = getSkillSheet();
   const lastRow = sheet.getLastRow();
@@ -70,6 +102,10 @@ function getEmployeeSkillMap() {
   return skillMapByEmpId;
 }
 
+/**
+ * 従業員IDごとに各スキルの更新日をまとめる。
+ * 戻り値 - {[key: string]: {[key: string]: string}}
+ */
 function getEmployeeSkillUpdatedAtMap() {
   const sheet = getSkillSheet();
   const lastRow = sheet.getLastRow();
@@ -94,6 +130,11 @@ function getEmployeeSkillUpdatedAtMap() {
   return updatedAtMapByEmpId;
 }
 
+/**
+ * 日付型ならyyyy/MM/ddの表示へ変換し、それ以外は空文字を返す。
+ * rawDate - unknown
+ * 戻り値 - string
+ */
 function formatSkillUpdatedAt(rawDate) {
   if (rawDate instanceof Date) {
     return Utilities.formatDate(rawDate, TIME_ZONE, 'yyyy/MM/dd');
@@ -101,6 +142,10 @@ function formatSkillUpdatedAt(rawDate) {
   return '';
 }
 
+/**
+ * 全スキルの更新日が未設定（空文字）の対応表を作る。
+ * 戻り値 - {[key: string]: string}
+ */
 function getDefaultSkillUpdatedAt() {
   const updatedAt = {};
   for (let i = 0; i < SKILL_ITEMS.length; i++) {
@@ -109,6 +154,11 @@ function getDefaultSkillUpdatedAt() {
   return updatedAt;
 }
 
+/**
+ * 有効な従業員に保存済みの評価・更新日を結び付け、画面へ返す。
+ * authToken - string
+ * 戻り値 - ({id: unknown, name: string, number: string, skills: {[key: string]: string}, updatedAt: {[key: string]: string}})[]
+ */
 function getSkillMatrix(authToken) {
   requireManagerRole_(authToken);
 
@@ -131,6 +181,12 @@ function getSkillMatrix(authToken) {
   return matrix;
 }
 
+/**
+ * 従業員IDが一致するスキルシートの行番号を探す。
+ * sheet - GoogleAppsScript.Spreadsheet.Sheet
+ * empId - unknown
+ * 戻り値 - number
+ */
 function findSkillRowByEmpId(sheet, empId) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) {
@@ -145,11 +201,25 @@ function findSkillRowByEmpId(sheet, empId) {
   return -1;
 }
 
+/**
+ * 従業員1人分の保存要求を、一括保存用の配列に包んで共通処理へ渡す。
+ * empId - unknown
+ * skillValues - unknown
+ * authToken - unknown
+ * 戻り値 - {message: string, updatedAt: unknown}
+ */
 function saveEmployeeSkills(empId, skillValues, authToken) {
   requireManagerRole_(authToken);
   return withAppLock_(function () { return saveEmployeeSkills_(empId, skillValues); });
 }
 
+/**
+ * 保存対象が有効な従業員か、評価が6個ありすべて許可された値かを検証する。
+ * empId - unknown
+ * skillValues - unknown
+ * nameByEmpId - {[key: string]: string}
+ * 戻り値 - string
+ */
 function validateEmployeeSkills_(empId, skillValues, nameByEmpId) {
 
   const empName = nameByEmpId[String(empId)];
@@ -168,6 +238,12 @@ function validateEmployeeSkills_(empId, skillValues, nameByEmpId) {
   return empName;
 }
 
+/**
+ * 全件を先に検証し、既存の評価・更新日・手当更新を同じロック内で実行する。
+ * changes - ({empId: unknown, skillValues: unknown})[]
+ * authToken - string
+ * 戻り値 - {employees: ({empId: unknown, skillValues: unknown, updatedAt: unknown})[], message: string}
+ */
 function saveEmployeeSkillsBatch(changes, authToken) {
   requireManagerRole_(authToken);
   return withAppLock_(function () {
@@ -185,6 +261,11 @@ function saveEmployeeSkillsBatch(changes, authToken) {
     const employees = readEmployeeRows_();
     let nextRow = sheet.getLastRow() + 1;
     const backups = [];
+    /**
+     * 変更予定のセル範囲の値と数式を退避する。
+     * range - GoogleAppsScript.Spreadsheet.Range
+     * 戻り値 - なし
+     */
     function remember(range) {
       const values = range.getValues();
       const formulas = range.getFormulas();
@@ -221,6 +302,12 @@ function saveEmployeeSkillsBatch(changes, authToken) {
   });
 }
 
+/**
+ * 従業員1人の評価を保存する。
+ * empId - unknown
+ * skillValues - unknown
+ * 戻り値 - {message: string, updatedAt: unknown}
+ */
 function saveEmployeeSkills_(empId, skillValues) {
   const empName = validateEmployeeSkills_(empId, skillValues, getActiveEmployeeNameMap());
   const sheet = getSkillSheet();
@@ -264,6 +351,11 @@ function saveEmployeeSkills_(empId, skillValues) {
   };
 }
 
+/**
+ * 習得済みとして扱うAの数を数える（B・Fは含めない）。
+ * skillValues - unknown
+ * 戻り値 - number
+ */
 function countMasteredSkills_(skillValues) {
   let masteredCount = 0;
   for (let i = 0; i < skillValues.length; i++) {
@@ -275,6 +367,11 @@ function countMasteredSkills_(skillValues) {
   return masteredCount;
 }
 
+/**
+ * 習得済の数から、今回到達したスキル手当（円/時）を求める 4個で50円、6個で100円。
+ * masteredCount - number
+ * 戻り値 - number
+ */
 function calcEarnedSkillAllowance_(masteredCount) {
   let earnedAmount = SKILL_ALLOWANCE_DEFAULT;
   for (let i = 0; i < SKILL_ALLOWANCE_TIERS.length; i++) {
@@ -286,6 +383,12 @@ function calcEarnedSkillAllowance_(masteredCount) {
   return earnedAmount;
 }
 
+/**
+ * 現在の手当を下回らない範囲でスキル手当を更新する。
+ * empId - unknown
+ * skillValues - unknown
+ * 戻り値 - number
+ */
 function promoteSkillAllowance_(empId, skillValues) {
   const savedAmount = getEmployeeSkillAllowance(empId);
   const earnedAmount = calcEarnedSkillAllowance_(countMasteredSkills_(skillValues));
@@ -295,6 +398,10 @@ function promoteSkillAllowance_(empId, skillValues) {
   return nextAmount;
 }
 
+/**
+ * 旧スキル表を評価と更新日の対になる列構成へ移す。
+ * 戻り値 - string
+ */
 function migrateSkillSheetToDatedColumns() {
   const sheet = getSheet(SHEET_NAMES.SKILLS);
   const lastRow = sheet.getLastRow();
@@ -329,6 +436,10 @@ function migrateSkillSheetToDatedColumns() {
   return newValues.length + '件のデータを新しい列構成（評価・更新日を別列）に変換しました';
 }
 
+/**
+ * 初回起動の移行から呼ぶ。
+ * 戻り値 - string
+ */
 function migrateSkillRatingsToText() {
   const sheet = getSkillSheet();
   const lastRow = sheet.getLastRow();
@@ -370,6 +481,10 @@ function migrateSkillRatingsToText() {
   return '旧スキル評価を ' + convertedCount + '件 F/B/Aへ変換しました' + unknownMessage + ' / ' + allowanceMessage;
 }
 
+/**
+ * 保存済みの評価から従業員のスキル手当を再計算する。
+ * 戻り値 - string
+ */
 function recalcSkillAllowances() {
   const columns = ensureEmployeeSkillAllowanceColumn_();
   const sheet = columns.sheet;
