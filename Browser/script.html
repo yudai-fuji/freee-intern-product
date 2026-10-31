@@ -2593,8 +2593,11 @@
         const employee = findSkillEmployee(empId);
         if (!employee) { return; }
         const key = String(empId);
+        //従業員番号をキーにし、下書きがあれば代入、なければ現在登録されているスキルの配列を格納["A","B,"...]
         const values = (skillDrafts.get(key) || SKILL_ITEMS.map(function (skill) { return employee.skills[skill]; })).slice();
+        //変更された項目とランクを格納
         values[SKILL_ITEMS.indexOf(item)] = rank;
+        //変更後が変更前とすべて一致していれば下書きを削除
         if (values.every(function (value, i) { return value === employee.skills[SKILL_ITEMS[i]]; })) {
           skillDrafts.delete(key);
         } else {
