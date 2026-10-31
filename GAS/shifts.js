@@ -140,7 +140,7 @@ function validateShiftChanges_(changes) {
     const employeeId = String(change.employeeId).trim();
     const date = parseShiftDate_(change.date);
     if (!employeeId || !date) throw new Error('登録する従業員IDまたは日付が不正です');
-    if (date.getUTCDay() === 1) throw new Error('月曜日は定休日のためシフトを編集できません');
+    // if (date.getUTCDay() === 1) throw new Error('月曜日は定休日のためシフトを編集できません');
     if (change.operation !== 'upsert' && change.operation !== 'delete') throw new Error('シフトの編集操作が不正です');
     const result = { employeeId: employeeId, date: change.date, operation: change.operation };
     const key = shiftRecordKey_(result);
