@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <?!= HtmlService.createHtmlOutputFromFile('Browser/css').getContent(); ?>
+    <?!= HtmlService.createTemplateFromFile('Browser/script').evaluate().getContent(); ?>
+  </head>
+  <body>
+    <div class="app-header">
+      <h1 class="app-title">店舗運営支援アプリ</h1>
+      <button type="button" id="screen_switch_btn" class="header-btn"
+              onclick="handleScreenSwitchButtonClick()">店長画面へ</button>
+    </div>
+
+    <div id="employee_screen" style="display:none;">
+      <div class="main-layout">
+        <div class="employee-list">
+          <div class="employee-list-header">
+            <h3>従業員一覧</h3>
+          </div>
+          <div class="employee-list-message" id="employee_list_message"></div>
+          <ul id="employee_list"></ul>
+        </div>
+        <div id="right_panel" class="clock-panel" style="display:none;">
+          <div class="selected-emp-name" id="selected_emp_name"></div>
+          <div class="current-time" id="current_time"></div>
+          <div class="clock-buttons">
+            <button type="button" class="clock-btn clock-in" data-clock-type="出勤" disabled onclick="handleClockButtonClick('出勤')">出勤</button>
+            <button type="button" class="clock-btn clock-out" data-clock-type="退勤" disabled onclick="handleClockButtonClick('退勤')">退勤</button>
+          </div>
+          <div class="break-buttons">
+            <button type="button" class="break-btn break-start" data-clock-type="休憩開始" disabled onclick="handleClockButtonClick('休憩開始')">休憩開始</button>
+            <button type="button" class="break-btn break-end" data-clock-type="休憩終了" disabled onclick="handleClockButtonClick('休憩終了')">休憩終了</button>
+          </div>
+          <div id="record_message"></div>
+          <div class="employee-cards-row">
+            <div id="today_work_card" class="today-work-card" style="display:none;">
+              <h3 class="today-work-card-heading">本日の業務</h3>
+              <div id="today_work_card_body"></div>
+            </div>
+            <div id="shared_note_card" class="today-work-card shared-note-card" style="display:none;">
+              <h3 class="today-work-card-heading">共有メモ</h3>
+              <div id="shared_note_card_body"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="manager_screen" style="display:none;">
+      <div class="manager-layout">
+        <ul class="manager-sidebar">
+          <li class="manager-nav-item" data-section="employee_edit">従業員編集</li>
+          <li class="manager-nav-item" data-section="dashboard">ダッシュボード</li>
+          <li class="manager-nav-item" data-section="attendance">勤怠管理</li>
+          <li class="manager-nav-item" data-section="skill">スキル管理</li>
+          <li class="manager-nav-item" data-section="shift_confirm">シフト確認</li>
+          <li class="manager-nav-item" data-section="shift_edit">シフト編集</li>
+          <li class="manager-nav-item" data-section="order">発注管理</li>
+          <li class="manager-nav-item" data-section="password_change">パスワード変更</li>
+        </ul>
+        <div class="manager-main">
+          <div id="section_employee_edit" class="manager-section" style="display:none;">
+            <h2 class="manager-heading">従業員編集</h2>
+
+            <div class="employee-edit-layout">
+            <div class="employee-edit-actions">
+              <button type="button" id="employee_add_mode_btn" class="employee-edit-mode-btn"
+                      onclick="showEmployeeAddForm()">従業員の追加</button>
+              <button type="button" id="employee_delete_mode_btn" class="employee-edit-mode-btn"
+                      onclick="showEmployeeDeleteList()">従業員の削除</button>
+              <button type="button" id="employee_pin_mode_btn" class="employee-edit-mode-btn"
+                      onclick="showEmployeePinForm()">PIN変更</button>
+              <button type="button" id="employee_directory_mode_btn" class="employee-edit-mode-btn"
+                      onclick="showEmployeeDirectory()">従業員一覧</button>
+            </div>
+
+            <div class="employee-edit-content">
+            <div id="employee_add_block" class="employee-edit-block" style="display:none;">
+              <h3 class="employee-edit-subheading">従業員の追加</h3>
+              <label class="employee-edit-label">姓</label>
+              <input type="text" id="add_last_name" class="employee-edit-input">
+              <label class="employee-edit-label">名</label>
+              <input type="text" id="add_first_name" class="employee-edit-input">
+              <label class="employee-edit-label" for="add_employee_pin">打刻PIN（半角数字6桁）</label>
+              <input type="password" id="add_employee_pin" class="employee-edit-input" inputmode="numeric" autocomplete="new-password">
+              <div class="employee-edit-buttons">
+                <button type="button" id="add_employee_submit_btn" class="employee-edit-submit-btn"
+                        onclick="submitAddEmployee()">登録</button>
+                <span class="employee-edit-status" id="add_employee_status"></span>
+              </div>
+            </div>
+
+            <div id="employee_pin_block" class="employee-edit-block" style="display:none;">
+              <h3 class="employee-edit-subheading">従業員PINの変更</h3>
+              <label class="employee-edit-label" for="employee_pin_target">対象従業員</label>
+              <select id="employee_pin_target" class="employee-edit-input" onchange="clearEmployeePinInputs()"></select>
+              <label class="employee-edit-label" for="employee_new_pin">新しいPIN（半角数字6桁）</label>
+              <input type="password" id="employee_new_pin" class="employee-edit-input" inputmode="numeric" autocomplete="new-password">
+              <label class="employee-edit-label" for="employee_confirm_pin">新しいPIN（確認）</label>
+              <input type="password" id="employee_confirm_pin" class="employee-edit-input" inputmode="numeric" autocomplete="new-password">
+              <div class="employee-edit-buttons">
+                <button type="button" id="employee_pin_submit_btn" class="employee-edit-submit-btn" onclick="submitEmployeePinChange()">変更</button>
+                <span class="employee-edit-status" id="employee_pin_status" role="status"></span>
+              </div>
+            </div>
+
+            <div id="employee_delete_block" class="employee-edit-block" style="display:none;">
+              <h3 class="employee-edit-subheading">従業員の削除</h3>
+              <div class="employee-edit-note">削除する従業員を選んでください。</div>
+              <div class="attendance-message" id="employee_delete_message"></div>
+              <div class="employee-edit-status" id="employee_delete_status"></div>
+              <ul class="employee-delete-list" id="employee_delete_list"></ul>
+
+              <div class="employee-delete-confirm" id="employee_delete_confirm" style="display:none;">
+                <h4 class="employee-edit-subheading">削除の確認</h4>
+                <div class="employee-delete-target" id="employee_delete_target"></div>
+                <div class="attendance-message" id="employee_delete_preview_message"></div>
+                <div class="employee-delete-impact" id="employee_delete_impact"></div>
+                <div class="employee-edit-buttons">
+                  <button type="button" id="employee_delete_back_btn" class="employee-edit-cancel-btn"
+                          onclick="backToEmployeeDeleteList()">対象選択へ戻る</button>
+                  <button type="button" id="employee_delete_submit_btn" class="employee-edit-delete-btn"
+                          onclick="submitDeleteEmployee()">削除する</button>
+                </div>
+              </div>
+            </div>
+            <div id="employee_directory_block" class="employee-edit-block" style="display:none;">
+              <h3 class="employee-edit-subheading">従業員一覧</h3>
+              <div class="employee-edit-status" id="employee_directory_message" role="status"></div>
+              <div class="employee-directory-scroll" tabindex="0" role="region" aria-label="従業員一覧">
+                <table class="employee-directory-table" id="employee_directory_table" hidden></table>
+              </div>
+            </div>
+            </div>
+            </div>
+          </div>
+
+          <div id="section_password_change" class="manager-section" style="display:none;">
+            <h2 class="manager-heading">パスワード変更</h2>
+            <div class="employee-edit-block">
+              <div class="employee-edit-note">新しいパスワードは半角英数字8〜64文字です。記号・空白は使用できません。</div>
+              <label class="employee-edit-label" for="current_manager_password">現在のパスワード</label>
+              <input type="password" id="current_manager_password" class="employee-edit-input" autocomplete="current-password">
+              <label class="employee-edit-label" for="new_manager_password">新しいパスワード</label>
+              <input type="password" id="new_manager_password" class="employee-edit-input" autocomplete="new-password">
+              <label class="employee-edit-label" for="confirm_manager_password">新しいパスワード（確認）</label>
+              <input type="password" id="confirm_manager_password" class="employee-edit-input" autocomplete="new-password">
+              <div class="employee-edit-buttons">
+                <button type="button" id="manager_password_change_btn" class="employee-edit-submit-btn" onclick="submitManagerPasswordChange()">変更</button>
+                <span class="employee-edit-status" id="manager_password_change_status" role="status"></span>
+              </div>
+            </div>
+          </div>
+
+          <div id="section_dashboard" class="manager-section" style="display:none;">
+            <h2 class="manager-heading">店長ダッシュボード</h2>
+
+            <div class="today-work-block">
+              <h3 class="today-work-heading">本日の業務設定</h3>
+              <div class="today-work-date" id="today_work_date"></div>
+              <div class="attendance-message" id="today_work_message"></div>
+              <table class="attendance-table today-work-table" id="today_work_table" style="display:none;">
+                <thead>
+                  <tr>
+                    <th>氏名</th>
+                    <th>ポジション</th>
+                    <th>確認事項</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="today_work_tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div id="section_attendance" class="manager-section" style="display:none;">
+            <div class="manager-section-header">
+              <h2 class="manager-heading">勤怠管理</h2>
+            </div>
+            <div class="attendance-date" id="attendance_date"></div>
+            <div class="attendance-message" id="attendance_message"></div>
+            <div class="attendance-table-scroll" role="region" aria-label="勤怠一覧" tabindex="0">
+            <table class="attendance-table" id="attendance_table" style="display:none;">
+              <thead>
+                <tr>
+                  <th>氏名</th>
+                  <th>出勤</th>
+                  <th>退勤</th>
+                  <th>休憩</th>
+                  <th>実労働時間</th>
+                  <th>概算給与</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="attendance_tbody"></tbody>
+            </table>
+            </div>
+          </div>
+
+          <div id="section_skill" class="manager-section" style="display:none;">
+            <h2 class="manager-heading">従業員スキル管理</h2>
+            <div class="attendance-message" id="skill_message"></div>
+
+            <div class="skill-layout" id="skill_layout" style="display:none;">
+              <div class="skill-employee-list">
+                <h3 class="skill-employee-list-heading">従業員一覧</h3>
+                <ul id="skill_employee_list"></ul>
+              </div>
+
+              <div class="skill-detail-panel">
+                <div class="skill-detail-empty" id="skill_detail_empty">左の一覧から従業員を選んでください</div>
+
+                <div id="skill_detail" style="display:none;">
+                  <div class="skill-detail-header" id="skill_detail_header">
+                    <div id="skill_detail_name"></div>
+                    <div class="skill-detail-actions">
+                      <button type="button" id="skill_edit_btn" class="modal-cancel-btn" onclick="startSkillEdit()">編集</button>
+                      <button type="button" id="skill_back_btn" class="modal-cancel-btn" onclick="cancelSkillEdit()" hidden>キャンセル</button>
+                      <button type="button" id="skill_save_btn" class="skill-save-btn" onclick="saveSelectedEmployeeSkills()" hidden>変更を保存</button>
+                    </div>
+                    <span class="skill-save-status" id="skill_save_status"></span>
+                  </div>
+                  <div class="skill-detail-items" id="skill_detail_items"></div>
+                </div>
+              </div>
+              <aside class="skill-legend" aria-labelledby="skill_legend_heading">
+                <h3 id="skill_legend_heading">評価基準</h3>
+                <? for (var rankIndex = SKILL_LEVELS.length - 1; rankIndex >= 0; rankIndex--) { var rank = SKILL_LEVELS[rankIndex]; ?>
+                  <div class="skill-legend-row" data-rank="<?= rank ?>"><span class="skill-rank-badge"><?= rank ?></span><span><?= SKILL_LEVEL_LABELS[rank] ?></span></div>
+                <? } ?>
+              </aside>
+            </div>
+          </div>
+
+          <div id="section_shift_confirm" class="manager-section" style="display:none;">
+            <div class="attendance-message shift-message" id="shift_message" role="status"></div>
+            <button type="button" id="shift_retry_btn" class="modal-cancel-btn" hidden>再読み込み</button>
+            <div id="shift_confirm_content" hidden>
+            <h2 class="manager-heading">シフト確認</h2>
+
+            <div class="shift-calendar-card">
+            <div class="shift-month-switch">
+              <button type="button" id="shift_prev_btn" class="shift-month-btn" onclick="changeShiftMonth(-1)" aria-label="前の月">‹</button>
+              <span class="shift-month-label" id="shift_month_label" aria-live="polite"></span>
+              <button type="button" id="shift_next_btn" class="shift-month-btn" onclick="changeShiftMonth(1)" aria-label="次の月">›</button>
+            </div>
+            <div class="shift-legend" aria-label="シフトの状態">
+              <span>上：ランチ／下：ディナー</span>
+              <span><span class="shift-legend-swatch status-uncreated" aria-hidden="true"></span>未作成</span>
+              <span><span class="shift-legend-swatch status-created" aria-hidden="true"></span>必要人数以上</span>
+              <span><span class="shift-legend-swatch status-shortage" aria-hidden="true"></span>人数不足</span>
+              <span><span class="shift-excess-mark" aria-hidden="true">!</span>人数超過</span>
+              <span><span class="shift-legend-swatch shift-closed" aria-hidden="true"></span>定休日</span>
+            </div>
+
+            <div class="shift-weekdays">
+              <span class="shift-weekday sunday">日</span>
+              <span class="shift-weekday">月</span>
+              <span class="shift-weekday">火</span>
+              <span class="shift-weekday">水</span>
+              <span class="shift-weekday">木</span>
+              <span class="shift-weekday">金</span>
+              <span class="shift-weekday saturday">土</span>
+            </div>
+            <div class="shift-calendar" id="shift_calendar"></div>
+            </div>
+            <div class="shift-date-detail" id="shift_date_detail" aria-live="polite">
+              日付を選択すると、その日のシフトを確認できます。
+            </div>
+            </div>
+          </div>
+
+          <div id="section_shift_edit" class="manager-section" style="display:none;">
+            <h2 class="manager-heading">シフト編集</h2>
+
+            <div class="shift-week-switch">
+              <button type="button" id="shift_week_prev_btn" class="shift-week-btn" onclick="changeShiftWeek(-1)">‹ 前週</button>
+              <span class="shift-week-label" id="shift_week_label" aria-live="polite"></span>
+              <button type="button" id="shift_week_next_btn" class="shift-week-btn" onclick="changeShiftWeek(1)">次週 ›</button>
+            </div>
+            <div class="attendance-message shift-edit-message" id="shift_edit_message" role="status"></div>
+
+            <div class="shift-editor-layout">
+              <div class="shift-table-scroll" tabindex="0" role="region" aria-label="従業員ごとの週間シフト表">
+                <table class="shift-week-table" id="shift_week_table"></table>
+              </div>
+
+              <aside class="shift-edit-panel" aria-labelledby="shift_edit_panel_heading">
+                <h3 id="shift_edit_panel_heading">編集モード</h3>
+                <div class="shift-mode-list" role="group" aria-label="編集モードの選択">
+                  <button type="button" class="shift-mode-btn" data-shift-mode="lunch" aria-pressed="false" onclick="setShiftEditMode('lunch')">ランチ<span>11:30～15:00</span></button>
+                  <button type="button" class="shift-mode-btn" data-shift-mode="dinner" aria-pressed="false" onclick="setShiftEditMode('dinner')">ディナー<span>17:00～22:00</span></button>
+                  <button type="button" class="shift-mode-btn" data-shift-mode="all" aria-pressed="false" onclick="setShiftEditMode('all')">オール<span>11:30～22:00</span></button>
+                  <button type="button" class="shift-mode-btn" data-shift-mode="custom" aria-pressed="false" onclick="setShiftEditMode('custom')">時間を指定</button>
+                  <button type="button" class="shift-mode-btn" data-shift-mode="unavailable" aria-pressed="false" onclick="setShiftEditMode('unavailable')">出勤不可</button>
+                  <button type="button" class="shift-mode-btn" data-shift-mode="delete" aria-pressed="false" onclick="setShiftEditMode('delete')">削除</button>
+                </div>
+                <div class="shift-time-inputs" id="shift_time_inputs" style="display:none;">
+                  <div class="shift-time-row">
+                    <span class="shift-time-label">開始時刻</span>
+                    <div class="shift-time-select-group">
+                      <select id="shift_start_hour" aria-label="開始時刻の時"></select>
+                      <span class="shift-time-separator">:</span>
+                      <select id="shift_start_minute" aria-label="開始時刻の分"></select>
+                    </div>
+                  </div>
+                  <div class="shift-time-row">
+                    <span class="shift-time-label">終了時刻</span>
+                    <div class="shift-time-select-group">
+                      <select id="shift_end_hour" aria-label="終了時刻の時"></select>
+                      <span class="shift-time-separator">:</span>
+                      <select id="shift_end_minute" aria-label="終了時刻の分"></select>
+                    </div>
+                  </div>
+                </div>
+                <button type="button" id="shift_register_btn" class="shift-register-btn" onclick="registerShiftDrafts()" disabled>登録</button>
+              </aside>
+            </div>
+          </div>
+
+          <div id="section_order" class="manager-section" style="display:none;">
+            <div class="manager-section-header">
+              <h2 class="manager-heading">発注管理</h2>
+            </div>
+
+            <div class="order-view-tabs" id="order_view_picker">
+              <button type="button" id="order_view_btn_cart" class="order-view-tab selected" onclick="changeOrderView('cart')">発注する食材</button>
+              <button type="button" id="order_view_btn_upcoming" class="order-view-tab" onclick="changeOrderView('upcoming')">入荷予定</button>
+              <button type="button" id="order_view_btn_history" class="order-view-tab" onclick="changeOrderView('history')">発注履歴</button>
+              <button type="button" id="order_view_btn_vendor" class="order-view-tab" onclick="changeOrderView('vendor')">業者詳細</button>
+            </div>
+
+            <div class="attendance-message" id="order_message"></div>
+
+            <div id="order_body" style="display:none;">
+              <div id="order_view_cart" class="order-view">
+                <div class="order-view-header">
+                  <h3 class="order-view-heading">発注する食材</h3>
+                  <button type="button" class="ingredient-action-btn" onclick="openOrderItemModal()">＋ 食材を追加</button>
+                </div>
+                <div class="order-cart-list" id="order_cart_list"></div>
+                <div class="order-cart-footer" id="order_cart_footer" style="display:none;">
+                  <button type="button" class="ingredient-action-btn" onclick="changeOrderView('confirm')">発注内容を確認する</button>
+                  <button type="button" class="ingredient-action-btn ingredient-action-sub" onclick="clearOrderCart()">すべて取り消す</button>
+                </div>
+              </div>
+
+              <div id="order_view_confirm" class="order-view" style="display:none;">
+                <div class="order-view-header">
+                  <h3 class="order-view-heading">発注内容確認</h3>
+                  <button type="button" class="ingredient-action-btn ingredient-action-sub" onclick="changeOrderView('cart')">発注する食材に戻る</button>
+                </div>
+                <div class="attendance-message" id="order_confirm_message"></div>
+                <div class="order-confirm-list" id="order_confirm_list"></div>
+                <div class="order-send-footer" id="order_send_footer" style="display:none;">
+                  <button type="button" id="order_send_btn" class="order-send-btn" onclick="submitOrderMails()">発注する</button>
+                  <span class="order-send-status" id="order_send_status"></span>
+                </div>
+              </div>
+
+              <div id="order_view_upcoming" class="order-view" style="display:none;">
+                <h3 class="order-view-heading">入荷予定</h3>
+                <div class="attendance-message" id="order_upcoming_message"></div>
+                <div id="order_upcoming_scroll" class="order-upcoming-scroll" tabindex="0" role="region" aria-label="入荷予定一覧">
+                  <table class="attendance-table order-upcoming-table">
+                    <thead><tr><th scope="col">食材</th><th scope="col">発注日時</th><th scope="col">個数・単位</th><th scope="col">入荷予定日</th><th scope="col">業者</th></tr></thead>
+                    <tbody id="order_upcoming_tbody"></tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div id="order_view_history" class="order-view" style="display:none;">
+                <h3 class="order-view-heading">発注履歴</h3>
+                <div class="attendance-message" id="order_history_message"></div>
+                <div class="order-history-list" id="order_history_list"></div>
+              </div>
+
+              <div id="order_view_vendor" class="order-view" style="display:none;">
+                <h3 class="order-view-heading" id="order_vendor_heading">業者詳細</h3>
+                <div class="attendance-message" id="order_vendor_message"></div>
+                <div class="skill-layout order-vendor-layout">
+                  <div class="order-vendor-list" id="order_vendor_list" aria-label="業者一覧"></div>
+                  <div class="skill-detail-panel order-vendor-detail" id="order_vendor_detail"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="clock_pin_overlay" class="modal-overlay clock-pin-overlay" onclick="handleClockPinOverlayClick(event)">
+      <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="clock_pin_title">
+        <div class="modal-header">
+          <span class="modal-title" id="clock_pin_title">打刻PINの確認</span>
+          <button type="button" class="modal-close clock-pin-close" aria-label="閉じる" onclick="closeClockPinDialog()">×</button>
+        </div>
+        <div id="clock_pin_employee" class="clock-pin-employee"></div>
+        <label class="modal-label" for="clock_pin_input">打刻PIN（半角数字6桁）</label>
+        <input type="password" id="clock_pin_input" class="modal-input" inputmode="numeric" autocomplete="off">
+        <div id="clock_pin_error" class="modal-error" role="alert"></div>
+        <div class="modal-footer">
+          <button type="button" class="modal-cancel-btn" onclick="closeClockPinDialog()">キャンセル</button>
+          <button type="button" id="clock_pin_submit_btn" class="modal-submit-btn" onclick="submitClockPin()">認証</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="manager_login_overlay" class="modal-overlay" onclick="handleManagerLoginOverlayClick(event)">
+      <div class="modal-box">
+        <div class="modal-header">
+          <span class="modal-title">店長画面へ切り替え</span>
+          <span class="modal-close" onclick="closeManagerLoginModal()">×</span>
+        </div>
+        <label class="modal-label" for="manager_password_input">店長用パスワードを入力してください</label>
+        <input type="password" id="manager_password_input" class="modal-input" autocomplete="off">
+        <div id="manager_login_error" class="modal-error"></div>
+        <div class="modal-footer">
+          <button type="button" class="modal-cancel-btn" onclick="closeManagerLoginModal()">キャンセル</button>
+          <button type="button" id="manager_login_submit_btn" class="modal-submit-btn"
+                  onclick="submitManagerLogin()">認証</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="skill_discard_overlay" class="modal-overlay" onkeydown="handleSkillDiscardKeydown(event)"
+         onclick="if (event.target === event.currentTarget) closeSkillDiscardDialog()">
+      <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="skill_discard_title" aria-describedby="skill_discard_message">
+        <div class="modal-header"><span class="modal-title" id="skill_discard_title">未保存の変更</span></div>
+        <div class="confirm-modal-text" id="skill_discard_message">変更が保存されていません</div>
+        <div class="modal-error" id="skill_discard_status" role="status"></div>
+        <div class="modal-footer">
+          <button type="button" id="skill_discard_cancel_btn" class="modal-cancel-btn" onclick="closeSkillDiscardDialog()">キャンセル</button>
+          <button type="button" id="skill_discard_confirm_btn" class="modal-submit-btn" onclick="confirmSkillDiscard()">保存せず移動</button>
+          <button type="button" id="skill_discard_save_btn" class="modal-submit-btn" onclick="saveSkillsAndLeave()">保存して移動</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="shift_discard_overlay" class="modal-overlay" onkeydown="handleShiftDiscardKeydown(event)"
+         onclick="if (event.target === event.currentTarget) closeShiftDiscardDialog()">
+      <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="shift_discard_title" aria-describedby="shift_discard_message">
+        <div class="modal-header"><span class="modal-title" id="shift_discard_title">未登録の変更</span></div>
+        <div class="confirm-modal-text" id="shift_discard_message">未登録の変更があります。変更を破棄して移動しますか？</div>
+        <div class="modal-footer">
+          <button type="button" id="shift_discard_cancel_btn" class="modal-cancel-btn" onclick="closeShiftDiscardDialog()">キャンセル</button>
+          <button type="button" id="shift_discard_confirm_btn" class="modal-submit-btn" onclick="confirmShiftDiscard()">破棄して移動</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="screen_switch_overlay" class="modal-overlay" onclick="handleScreenSwitchOverlayClick(event)">
+      <div class="modal-box">
+        <div class="modal-header">
+          <span class="modal-title">画面切り替え</span>
+          <span class="modal-close" onclick="closeScreenSwitchModal()">×</span>
+        </div>
+        <div class="confirm-modal-text">従業員画面に切り替えますか？</div>
+        <div class="modal-footer">
+          <button type="button" class="modal-cancel-btn" onclick="closeScreenSwitchModal()">キャンセル</button>
+          <button type="button" class="modal-submit-btn" onclick="confirmScreenSwitch()">切り替える</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="shared_note_overlay" class="modal-overlay">
+      <div class="modal-box modal-box-wide">
+        <div class="modal-header">
+          <span class="modal-title">共有メモ</span>
+          <span class="modal-close" onclick="closeSharedNoteModal()">×</span>
+        </div>
+
+        <div id="shared_note_input_view">
+          <label class="modal-label">共有したいスタッフ</label>
+          <div class="shared-note-select" id="shared_note_select">
+            <button type="button" class="shared-note-select-trigger" id="shared_note_select_trigger"
+                    onclick="toggleSharedNoteRecipientDropdown()">
+              <span id="shared_note_select_label"></span>
+              <span class="shared-note-select-arrow">▼</span>
+            </button>
+            <div class="shared-note-recipient-list" id="shared_note_recipient_list"></div>
+          </div>
+
+          <label class="modal-label" for="shared_note_text">共有メモ</label>
+          <textarea id="shared_note_text" class="modal-input today-work-notices-input" rows="5"></textarea>
+
+          <div id="shared_note_input_error" class="modal-error"></div>
+          <div class="modal-footer">
+            <button type="button" id="shared_note_skip_btn" class="modal-cancel-btn"
+                    onclick="submitClockOutWithoutSharedNote()">入力せず退勤</button>
+            <button type="button" class="modal-submit-btn" onclick="goToSharedNoteConfirm()">確認画面へ</button>
+          </div>
+        </div>
+
+        <div id="shared_note_confirm_view" style="display:none;">
+          <label class="modal-label">共有先</label>
+          <div class="shared-note-confirm-block" id="shared_note_confirm_recipients"></div>
+
+          <label class="modal-label">共有内容</label>
+          <div class="shared-note-confirm-block shared-note-confirm-body" id="shared_note_confirm_body"></div>
+
+          <div id="shared_note_confirm_error" class="modal-error"></div>
+          <div class="modal-footer">
+            <button type="button" class="modal-cancel-btn" onclick="backToSharedNoteInput()">戻る</button>
+            <button type="button" id="shared_note_confirm_submit_btn" class="modal-submit-btn"
+                    onclick="submitClockOutWithSharedNote()">退勤</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="order_item_overlay" class="modal-overlay" onclick="handleIngredientOverlayClick(event)">
+      <div class="modal-box modal-box-wide">
+        <div class="modal-header">
+          <span class="modal-title">食材を追加</span>
+          <span class="modal-close" onclick="closeIngredientModal('order_item_overlay')">×</span>
+        </div>
+        <div class="order-item-choices" id="order_item_choices"></div>
+        <div class="modal-footer">
+          <button type="button" class="modal-cancel-btn" onclick="closeIngredientModal('order_item_overlay')">閉じる</button>
+          <button type="button" class="modal-submit-btn" onclick="applyOrderItemSelection()">追加</button>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
