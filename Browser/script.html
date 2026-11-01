@@ -750,14 +750,17 @@
       function submitClockPin() {
         if (!clockPinContext || isClockPinSubmitting) { return; }
         const context = clockPinContext;
+        //受け取ったPINを代入
         const input = document.getElementById('clock_pin_input');
         const pin = input.value;
         input.value = '';
+        //PINが6桁か判定
         if (!isValidEmployeePin(pin)) {
           document.getElementById('clock_pin_error').textContent = 'PINは半角数字6桁で入力してください';
           input.focus();
           return;
         }
+        //PIN認証を開きなおした後に、前回の結果が反映されることを防ぐ
         const requestId = ++clockPinRequestId;
         isClockPinSubmitting = true;
         document.getElementById('clock_pin_submit_btn').disabled = true;
